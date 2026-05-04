@@ -1,7 +1,7 @@
 {
-  "name": "Forge — Training Tracker",
+  "name": "Forge — Transformation Tracker",
   "short_name": "Forge",
-  "description": "Personal transformation tracker",
+  "description": "Personal training, nutrition and progress tracker",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#080808",

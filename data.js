@@ -1,0 +1,273 @@
+// ============================================================
+// DATA LAYER
+// ============================================================
+
+const WORKOUTS = {
+  upper: {
+    name:'UPPER BODY', type:'upper',
+    muscles:'Chest · Back · Shoulders · Biceps · Triceps · Core',
+    duration:'55–60',
+    exercises:[
+      {id:'u1',name:'Chest Press',sets:4,reps:'6–8',rest:90,muscle:'Chest',yt:'https://www.youtube.com/results?search_query=chest+press+form'},
+      {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Upper Chest',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
+      {id:'u3',name:'Seated Row',sets:4,reps:'6–8',rest:90,muscle:'Back',yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
+      {id:'u4',name:'Shoulder Press',sets:3,reps:'6–8',rest:90,muscle:'Shoulders',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'u5',name:'Lat Pulldown',sets:3,reps:'8–10',rest:90,muscle:'Lats',yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
+      {id:'u6',name:'Bicep Curl',sets:3,reps:'10–12',rest:60,muscle:'Biceps',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
+      {id:'u7',name:'Tricep Pushdown',sets:3,reps:'10–12',rest:60,muscle:'Triceps',yt:'https://www.youtube.com/results?search_query=tricep+pushdown+form'},
+      {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
+      {id:'u9',name:'Plank',sets:3,reps:'30–45s',rest:45,muscle:'Core',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
+    ]
+  },
+  lower: {
+    name:'LOWER BODY', type:'lower',
+    muscles:'Quads · Hamstrings · Glutes · Calves · Lower Back · Core',
+    duration:'60–65',
+    exercises:[
+      {id:'l1',name:'Leg Press',sets:4,reps:'6–8',rest:120,muscle:'Quads',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
+      {id:'l2',name:'Romanian Deadlift',sets:4,reps:'6–8',rest:120,muscle:'Hamstrings',yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
+      {id:'l3',name:'Leg Extension',sets:3,reps:'10–12',rest:60,muscle:'Quads',yt:'https://www.youtube.com/results?search_query=leg+extension+machine+form'},
+      {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
+      {id:'l5',name:'Hip Thrust',sets:3,reps:'8–10',rest:90,muscle:'Glutes',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
+      {id:'l6',name:'Calf Raise',sets:4,reps:'15–20',rest:45,muscle:'Calves',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
+      {id:'l7',name:'Back Extension',sets:3,reps:'12–15',rest:60,muscle:'Lower Back',yt:'https://www.youtube.com/results?search_query=back+extension+form'},
+      {id:'l8',name:'Ab Crunch',sets:3,reps:'15',rest:45,muscle:'Core',yt:'https://www.youtube.com/results?search_query=ab+crunch+form+technique'},
+    ]
+  }
+};
+
+const SCHEDULE = ['upper',null,'lower',null,'upper',null,'lower']; // Mon-Sun index
+
+// ============================================================
+// PROFILE SYSTEM
+// ============================================================
+let profiles = JSON.parse(localStorage.getItem('forge_profiles')||'[]');
+let activePid = localStorage.getItem('forge_active')||null;
+
+function getActive(){return profiles.find(p=>p.id===activePid)||null;}
+function saveProfiles(){localStorage.setItem('forge_profiles',JSON.stringify(profiles));}
+function setActive(id){activePid=id;localStorage.setItem('forge_active',id);}
+
+function pKey(k){return `forge_${activePid}_${k}`;}
+function pGet(k,def=null){try{const v=localStorage.getItem(pKey(k));return v!==null?JSON.parse(v):def;}catch{return def;}}
+function pSet(k,v){localStorage.setItem(pKey(k),JSON.stringify(v));}
+
+// ============================================================
+// DATE HELPERS
+// ============================================================
+function todayStr(){return new Date().toISOString().split('T')[0];}
+function dayOfWeek(){return new Date().getDay();} // 0=Sun
+function scheduleIdx(){const map=[6,0,1,2,3,4,5];return map[dayOfWeek()];}
+function getTodaySession(){return SCHEDULE[scheduleIdx()];}
+function dayName(){return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dayOfWeek()];}
+function fmtDate(str){return new Date(str+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'});}
+function fmtNow(){const n=new Date();return n.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}
+function getLast7(){
+  const days=[];
+  for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(d.toISOString().split('T')[0]);}
+  return days;
+}
+function getLast30(){
+  const days=[];
+  for(let i=29;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(d.toISOString().split('T')[0]);}
+  return days;
+}
+
+// ============================================================
+// WEIGHT
+// ============================================================
+function getWeightLog(){return pGet('weightLog',[]);}
+function getCurrentWeight(){const l=getWeightLog();return l.length?l[l.length-1].weight:(getActive()?.startWeight||0);}
+function saveWeightEntry(kg){
+  const log=getWeightLog();
+  const idx=log.findIndex(e=>e.date===todayStr());
+  if(idx>=0)log[idx].weight=kg; else log.push({date:todayStr(),weight:kg});
+  pSet('weightLog',log);
+}
+
+// ============================================================
+// FOOD
+// ============================================================
+function getFoods(date=todayStr()){return(pGet('foods',{})[date]||[]);}
+function saveFoodEntry(entry,date=todayStr()){
+  const all=pGet('foods',{});
+  if(!all[date])all[date]=[];
+  all[date].push(entry);
+  pSet('foods',all);
+}
+function deleteFoodEntry(idx,date=todayStr()){
+  const all=pGet('foods',{});
+  if(all[date])all[date].splice(idx,1);
+  pSet('foods',all);
+}
+function getTodayTotals(){
+  const foods=getFoods();
+  return{
+    cals:foods.reduce((s,f)=>s+f.cals,0),
+    protein:foods.reduce((s,f)=>s+(f.protein||0),0),
+    carbs:foods.reduce((s,f)=>s+(f.carbs||0),0),
+    fat:foods.reduce((s,f)=>s+(f.fat||0),0),
+  };
+}
+
+// ============================================================
+// FOOD TEMPLATES
+// ============================================================
+function getTemplates(){return pGet('foodTemplates',[]);}
+function saveTemplate(t){const ts=getTemplates();ts.push(t);pSet('foodTemplates',ts);}
+function deleteTemplate(i){const ts=getTemplates();ts.splice(i,1);pSet('foodTemplates',ts);}
+
+// ============================================================
+// STEPS
+// ============================================================
+function getStepsLog(){return pGet('stepsLog',{});}
+function getTodaySteps(){return getStepsLog()[todayStr()]||0;}
+function saveSteps(val,date=todayStr()){const l=getStepsLog();l[date]=val;pSet('stepsLog',l);}
+
+// ============================================================
+// EXERCISE LOG
+// ============================================================
+function getExLog(){return pGet('exLog',{});}
+function getTodayExLog(){return getExLog()[todayStr()]||{};}
+function saveExLog(data){
+  const all=getExLog();
+  all[todayStr()]=data;
+  pSet('exLog',all);
+}
+function getBestLift(exId){
+  const log=getExLog();
+  let best=null;
+  Object.entries(log).forEach(([date,day])=>{
+    const ex=day[exId];
+    if(!ex?.sets)return;
+    ex.sets.forEach(s=>{
+      const kg=parseFloat(s.kg);
+      if(kg&&(!best||kg>best.kg))best={kg,date};
+    });
+  });
+  return best;
+}
+
+// ============================================================
+// MEASUREMENTS
+// ============================================================
+function getMeasLog(){return pGet('measLog',[]);}
+function getLatestMeas(){const l=getMeasLog();return l.length?l[l.length-1]:null;}
+function saveMeasEntry(entry){
+  const l=getMeasLog();
+  const idx=l.findIndex(e=>e.date===todayStr());
+  if(idx>=0)l[idx]={...entry,date:todayStr()}; else l.push({...entry,date:todayStr()});
+  pSet('measLog',l);
+}
+
+// ============================================================
+// SLEEP
+// ============================================================
+function getSleepLog(){return pGet('sleepLog',{});}
+function saveSleepEntry(hours,quality){const l=getSleepLog();l[todayStr()]={hours,quality};pSet('sleepLog',l);}
+function getAvgSleep(days=7){
+  const l=getSleepLog();
+  const dates=getLast7();
+  const entries=dates.map(d=>l[d]?.hours||0).filter(h=>h>0);
+  return entries.length?Math.round((entries.reduce((a,b)=>a+b,0)/entries.length)*10)/10:0;
+}
+
+// ============================================================
+// SWIM LOG
+// ============================================================
+function getSwimLog(){return pGet('swimLog',{});}
+function saveSwimEntry(entry){const l=getSwimLog();if(!l[todayStr()])l[todayStr()]=[];l[todayStr()].push(entry);pSet('swimLog',l);}
+
+// ============================================================
+// SUPPLEMENTS
+// ============================================================
+function getSupps(){return pGet('supps',[]);}
+function getSuppDone(){return pGet('suppDone',{});}
+function toggleSuppDone(i){const d=getSuppDone();const k=`${todayStr()}_${i}`;d[k]=!d[k];pSet('suppDone',d);}
+function isSuppDone(i){return!!(getSuppDone()[`${todayStr()}_${i}`]);}
+
+// ============================================================
+// WATER
+// ============================================================
+function getWater(){return pGet('water',{})[todayStr()]||0;}
+function saveWater(cups){const w=pGet('water',{});w[todayStr()]=cups;pSet('water',w);}
+
+// ============================================================
+// PHOTOS
+// ============================================================
+function getPhotos(){return pGet('photos',[]);}
+function savePhoto(dataUrl){
+  const p=getPhotos();
+  p.push({date:todayStr(),data:dataUrl});
+  pSet('photos',p);
+}
+
+// ============================================================
+// STREAKS
+// ============================================================
+function calcStreak(type){
+  let streak=0;
+  const today=new Date();
+  for(let i=0;i<365;i++){
+    const d=new Date(today);d.setDate(d.getDate()-i);
+    const key=d.toISOString().split('T')[0];
+    let hit=false;
+    if(type==='steps')hit=(getStepsLog()[key]||0)>=10000;
+    else if(type==='food')hit=((pGet('foods',{})[key]||[]).length>0);
+    else if(type==='gym'){
+      const exl=getExLog()[key]||{};
+      hit=Object.values(exl).some(e=>e.done);
+    }
+    if(hit)streak++; else if(i>0)break;
+  }
+  return streak;
+}
+
+// ============================================================
+// WEEKLY REPORT CARD
+// ============================================================
+function getWeeklyReport(){
+  const p=getActive(); if(!p)return null;
+  const days=getLast7();
+  const stepsLog=getStepsLog();
+  const foodLog=pGet('foods',{});
+  const exLog=getExLog();
+  const sleepLog=getSleepLog();
+
+  const stepsHit=days.filter(d=>(stepsLog[d]||0)>=10000).length;
+  const proteinDays=days.filter(d=>{
+    const foods=foodLog[d]||[];
+    return foods.reduce((s,f)=>s+(f.protein||0),0)>=p.proteinTarget*0.9;
+  }).length;
+  const gymDays=days.filter(d=>{
+    const el=exLog[d]||{};
+    return Object.values(el).filter(e=>e.done).length>=4;
+  }).length;
+  const avgSleep=getAvgSleep(7);
+  const wl=getWeightLog();
+  const weekWeights=wl.filter(e=>days.includes(e.date));
+  const weightChange=weekWeights.length>=2?weekWeights[weekWeights.length-1].weight-weekWeights[0].weight:null;
+
+  const scores={
+    steps:Math.round((stepsHit/7)*100),
+    protein:Math.round((proteinDays/7)*100),
+    gym:Math.round((gymDays/4)*100),
+    sleep:avgSleep>=7?100:avgSleep>=6?70:40,
+  };
+  const overall=Math.round((scores.steps+scores.protein+scores.gym+scores.sleep)/4);
+
+  return{stepsHit,proteinDays,gymDays,avgSleep,weightChange,scores,overall};
+}
+
+function grade(pct){
+  if(pct>=90)return'A';
+  if(pct>=75)return'B';
+  if(pct>=60)return'C';
+  return'F';
+}
+function gradeClass(pct){
+  if(pct>=90)return'a';
+  if(pct>=75)return'b';
+  if(pct>=60)return'c';
+  return'f';
+}
