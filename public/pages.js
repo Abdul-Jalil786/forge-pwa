@@ -598,7 +598,9 @@ function renderMore(){
       <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${p.name}</div>
       <div style="font-size:11px;color:var(--text2);margin-bottom:12px;">Start: ${p.startWeight}kg · Target: ${p.targetWeight}kg · Protein: ${p.proteinTarget}g</div>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px;" onclick="editProfile()">Edit Targets</button>
-      <button class="btn btn-red btn-sm" style="width:100%;" onclick="confirmReset()">Reset All Data</button>
+      <button class="btn btn-red btn-sm" style="width:100%;margin-bottom:8px;" onclick="confirmReset()">Reset All Data</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px;" onclick="logOut()">Log Out</button>
+      <button class="btn btn-red btn-sm" style="width:100%;background:rgba(255,59,59,.2);" onclick="deleteAccount()">Delete Account</button>
     </div>
   `;
 }

@@ -316,6 +316,22 @@ Be direct, specific and use the actual numbers. Use <strong> for key figures. Us
   }
 }
 
+// ---- ACCOUNT ----
+function logOut(){
+  localStorage.removeItem('forge_token');
+  window.location.href='/login.html';
+}
+
+async function deleteAccount(){
+  if(!confirm('Permanently delete your account? This cannot be undone.'))return;
+  const token=localStorage.getItem('forge_token');
+  try{
+    await fetch('/api/auth/account',{method:'DELETE',headers:{Authorization:'Bearer '+token}});
+  }catch{}
+  localStorage.clear();
+  window.location.href='/login.html';
+}
+
 // ---- SETTINGS ----
 function editProfile(){
   const p=getActive(); if(!p)return;
@@ -351,8 +367,20 @@ function renderAll(){
   // Others render on demand
 }
 
+// ---- AUTH CHECK ----
+async function checkAuth(){
+  const token=localStorage.getItem('forge_token');
+  if(!token){window.location.href='/login.html';return false;}
+  try{
+    const res=await fetch('/api/auth/me',{headers:{Authorization:'Bearer '+token}});
+    if(!res.ok){localStorage.removeItem('forge_token');window.location.href='/login.html';return false;}
+    return true;
+  }catch{return true;} // offline = let them in
+}
+
 // ---- INIT ----
-function init(){
+async function init(){
+  if(!await checkAuth())return;
   if(profiles.length>0&&activePid&&profiles.find(p=>p.id===activePid)){
     document.getElementById('onboarding').style.display='none';
     document.getElementById('app').style.display='flex';

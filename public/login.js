@@ -1,0 +1,45 @@
+let mode = 'login';
+
+function switchTab(tab) {
+  mode = tab;
+  document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+  document.getElementById('tab-signup').classList.toggle('active', tab === 'signup');
+  document.getElementById('submit-btn').textContent = tab === 'login' ? 'LOG IN' : 'SIGN UP';
+  document.getElementById('password').autocomplete = tab === 'login' ? 'current-password' : 'new-password';
+  document.getElementById('error').textContent = '';
+}
+
+async function handleSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const errorEl = document.getElementById('error');
+  const btn = document.getElementById('submit-btn');
+  errorEl.textContent = '';
+  btn.disabled = true;
+
+  try {
+    const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errorEl.textContent = data.error || 'Something went wrong';
+      return;
+    }
+    localStorage.setItem('forge_token', data.token);
+    window.location.href = '/index.html';
+  } catch {
+    errorEl.textContent = 'Network error. Try again.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// If already logged in, redirect
+if (localStorage.getItem('forge_token')) {
+  window.location.href = '/index.html';
+}
