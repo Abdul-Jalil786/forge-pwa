@@ -51,7 +51,7 @@ function renderToday(){
     <div class="sg sg3" style="margin-bottom:10px;">
       <div class="sb green"><div class="l">Lost</div><div class="v">${lost>0?lost.toFixed(1):'0'}<span class="u">kg</span></div></div>
       <div class="sb orange"><div class="l">To Go</div><div class="v">${toGo>0?toGo.toFixed(1):'0'}<span class="u">kg</span></div></div>
-      <div class="sb purple"><div class="l">Sleep</div><div class="v">${lastSleep||'—'}<span class="u">hrs</span></div></div>
+      <div class="sb purple"><div class="l">Sleep</div><div class="v">${lastSleep?lastSleep+'<span class="u">hrs</span>':'—'}</div></div>
     </div>
 
     ${session?`

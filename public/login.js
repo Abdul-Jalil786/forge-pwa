@@ -6,7 +6,15 @@ function switchTab(tab) {
   document.getElementById('tab-signup').classList.toggle('active', tab === 'signup');
   document.getElementById('submit-btn').textContent = tab === 'login' ? 'LOG IN' : 'SIGN UP';
   document.getElementById('password').autocomplete = tab === 'login' ? 'current-password' : 'new-password';
+  document.getElementById('confirm-wrap').style.display = tab === 'signup' ? '' : 'none';
+  document.getElementById('hint').style.display = tab === 'signup' ? '' : 'none';
+  if (tab === 'login') document.getElementById('confirm').value = '';
   document.getElementById('error').textContent = '';
+}
+
+function togglePwd(id) {
+  const inp = document.getElementById(id);
+  inp.type = inp.type === 'password' ? 'text' : 'password';
 }
 
 async function handleSubmit(e) {
@@ -17,6 +25,15 @@ async function handleSubmit(e) {
   const btn = document.getElementById('submit-btn');
   errorEl.textContent = '';
   btn.disabled = true;
+
+  if (mode === 'signup') {
+    const confirm = document.getElementById('confirm').value;
+    if (password !== confirm) {
+      errorEl.textContent = "Passwords don't match";
+      btn.disabled = false;
+      return;
+    }
+  }
 
   try {
     const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/signup';

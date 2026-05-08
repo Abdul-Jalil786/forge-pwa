@@ -318,7 +318,9 @@ Be direct, specific and use the actual numbers. Use <strong> for key figures. Us
 
 // ---- ACCOUNT ----
 function logOut(){
-  localStorage.removeItem('forge_token');
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('forge_'))
+    .forEach(k => localStorage.removeItem(k));
   window.location.href='/login.html';
 }
 

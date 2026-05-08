@@ -29,6 +29,21 @@ body{display:flex;flex-direction:column;align-items:center;justify-content:cente
 .btn:active{opacity:.8;}
 .btn:disabled{opacity:.4;cursor:not-allowed;}
 .error{color:var(--red);font-size:12px;font-weight:600;text-align:center;min-height:18px;margin-top:10px;}
+.pwd-wrap{position:relative;}
+.pwd-toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;padding:6px;line-height:1;opacity:.55;}
+.pwd-toggle:hover{opacity:1;}
+.pwd-wrap .inp{padding-right:42px;margin-bottom:10px;}
+.hint{font-size:11px;color:var(--text3);margin:-4px 0 10px 4px;}
+.inp:-webkit-autofill,
+.inp:-webkit-autofill:hover,
+.inp:-webkit-autofill:focus,
+.inp:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--s2) inset !important;
+  -webkit-text-fill-color: var(--text) !important;
+  caret-color: var(--text) !important;
+  border-color: var(--border2) !important;
+  transition: background-color 9999s ease-in-out 0s !important;
+}
 </style>
 </head>
 <body>
@@ -40,7 +55,15 @@ body{display:flex;flex-direction:column;align-items:center;justify-content:cente
     </div>
     <form id="auth-form" onsubmit="handleSubmit(event)">
       <input class="inp" id="email" type="email" placeholder="Email" autocomplete="email" required>
-      <input class="inp" id="password" type="password" placeholder="Password" autocomplete="current-password" required minlength="8">
+      <div class="pwd-wrap">
+        <input class="inp" id="password" type="password" placeholder="Password" autocomplete="current-password" required minlength="8">
+        <button type="button" class="pwd-toggle" onclick="togglePwd('password')" aria-label="Show password">👁</button>
+      </div>
+      <div class="pwd-wrap" id="confirm-wrap" style="display:none;">
+        <input class="inp" id="confirm" type="password" placeholder="Confirm password" autocomplete="new-password" minlength="8">
+        <button type="button" class="pwd-toggle" onclick="togglePwd('confirm')" aria-label="Show password">👁</button>
+      </div>
+      <div class="hint" id="hint" style="display:none;">Min 8 characters</div>
       <button class="btn" type="submit" id="submit-btn">LOG IN</button>
     </form>
     <div class="error" id="error"></div>
