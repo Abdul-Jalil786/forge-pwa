@@ -221,11 +221,19 @@ function saveSteps(val,date=todayStr()){const l=getStepsLog();l[date]=val;pSet('
 // ============================================================
 function getExLog(){return pGet('exLog',{});}
 function getTodayExLog(){return getExLog()[todayStr()]||{};}
+function getExLogForDate(date){return getExLog()[date]||{};}
+
 function saveExLog(data){
   const all=getExLog();
   all[todayStr()]=data;
   pSet('exLog',all);
 }
+function saveExLogForDate(date,data){
+  const all=getExLog();
+  all[date]=data;
+  pSet('exLog',all);
+}
+
 function getBestLift(exId){
   const log=getExLog();
   let best=null;
@@ -238,6 +246,33 @@ function getBestLift(exId){
     });
   });
   return best;
+}
+
+// Session type for any past or future date based on SCHEDULE
+function getSessionTypeForDate(dateStr){
+  const d=new Date(dateStr+'T12:00:00');
+  const dayMap=[6,0,1,2,3,4,5]; // 0=Sun → 6
+  return SCHEDULE[dayMap[d.getDay()]];
+}
+
+// Most recent session of the same type with logged sets, before a given date
+function getPreviousSessionData(beforeDate,sessionType){
+  if(!sessionType)return null;
+  const exLog=getExLog();
+  const dates=Object.keys(exLog).filter(d=>d<beforeDate).sort().reverse();
+  for(const date of dates){
+    if(getSessionTypeForDate(date)!==sessionType)continue;
+    const dayLog=exLog[date];
+    const hasData=Object.values(dayLog).some(e=>e.sets?.some(s=>s.kg||s.reps));
+    if(hasData)return{date,log:dayLog};
+  }
+  return null;
+}
+
+// Was a session completed on a date? (4+ exercises marked done)
+function wasSessionCompleted(date){
+  const log=getExLog()[date]||{};
+  return Object.values(log).filter(e=>e.done).length>=4;
 }
 
 // ============================================================
