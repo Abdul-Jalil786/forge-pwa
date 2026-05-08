@@ -39,18 +39,110 @@ const WORKOUTS = {
 const SCHEDULE = ['upper',null,'lower',null,'upper',null,'lower']; // Mon-Sun index
 
 // ============================================================
-// PROFILE SYSTEM
+// STATE — synced with backend
 // ============================================================
-let profiles = JSON.parse(localStorage.getItem('forge_profiles')||'[]');
-let activePid = localStorage.getItem('forge_active')||null;
+let STATE = {
+  profile: null,
+  weightLog: [],
+  foods: {},
+  stepsLog: {},
+  exLog: {},
+  measLog: [],
+  sleepLog: {},
+  swimLog: {},
+  supps: [],
+  suppDone: {},
+  water: {},
+  photos: [],
+  foodTemplates: [],
+};
+let saveStateTimeout = null;
 
-function getActive(){return profiles.find(p=>p.id===activePid)||null;}
-function saveProfiles(){localStorage.setItem('forge_profiles',JSON.stringify(profiles));}
-function setActive(id){activePid=id;localStorage.setItem('forge_active',id);}
+async function loadState() {
+  const cached = localStorage.getItem("forge_state_cache");
+  if (cached) { try { STATE = { ...STATE, ...JSON.parse(cached) }; } catch {} }
+  const token = localStorage.getItem("forge_token");
+  if (!token) return;
+  try {
+    const res = await fetch("/api/state", { headers: { Authorization: "Bearer " + token } });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.state && data.state.profile) {
+      STATE = { ...STATE, ...data.state };
+      localStorage.setItem("forge_state_cache", JSON.stringify(STATE));
+    } else {
+      const migrated = readLocalStorageMigration();
+      if (migrated) {
+        STATE = { ...STATE, ...migrated };
+        await saveStateNow();
+      }
+    }
+  } catch {}
+}
 
-function pKey(k){return `forge_${activePid}_${k}`;}
-function pGet(k,def=null){try{const v=localStorage.getItem(pKey(k));return v!==null?JSON.parse(v):def;}catch{return def;}}
-function pSet(k,v){localStorage.setItem(pKey(k),JSON.stringify(v));}
+async function saveStateNow() {
+  localStorage.setItem("forge_state_cache", JSON.stringify(STATE));
+  const token = localStorage.getItem("forge_token");
+  if (!token) return;
+  try {
+    await fetch("/api/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ state: STATE }),
+    });
+  } catch {}
+}
+
+function saveStateDebounced() {
+  if (saveStateTimeout) clearTimeout(saveStateTimeout);
+  saveStateTimeout = setTimeout(saveStateNow, 600);
+}
+
+function readLocalStorageMigration() {
+  const profilesJson = localStorage.getItem("forge_profiles");
+  if (!profilesJson) return null;
+  let profiles;
+  try { profiles = JSON.parse(profilesJson); } catch { return null; }
+  if (!profiles.length) return null;
+  const activeId = localStorage.getItem("forge_active");
+  const profile = profiles.find(p => p.id === activeId) || profiles[0];
+  const data = {
+    profile: {
+      name: profile.name,
+      startWeight: profile.startWeight,
+      targetWeight: profile.targetWeight,
+      targetBF: profile.targetBF,
+      calsGym: profile.calsGym,
+      calsRest: profile.calsRest,
+      proteinTarget: profile.proteinTarget,
+    },
+  };
+  const keys = ["weightLog","foods","stepsLog","exLog","measLog","sleepLog","swimLog","supps","suppDone","water","photos","foodTemplates"];
+  keys.forEach(k => {
+    const v = localStorage.getItem(`forge_${profile.id}_${k}`);
+    if (v) { try { data[k] = JSON.parse(v); } catch {} }
+  });
+  return data;
+}
+
+// ============================================================
+// PROFILE SYSTEM (single profile per account)
+// ============================================================
+function getActive() { return STATE.profile; }
+function saveProfiles() { saveStateDebounced(); }
+function setActive() { /* no-op */ }
+
+// Compatibility helpers — used by all the existing get/save functions below
+function pGet(k, def = null) { return STATE[k] !== undefined && STATE[k] !== null ? STATE[k] : def; }
+function pSet(k, v) {
+  STATE[k] = v;
+  localStorage.setItem("forge_state_cache", JSON.stringify(STATE));
+  saveStateDebounced();
+}
+
+// Globals kept for legacy code paths (read-only stubs)
+let profiles = [];
+let activePid = null;
 
 // ============================================================
 // DATE HELPERS

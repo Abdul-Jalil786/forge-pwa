@@ -4,7 +4,7 @@
 
 // ---- ONBOARDING ----
 let obData={};
-function obStep(step){
+async function obStep(step){
   if(step===1){
     const name=document.getElementById('ob-name').value.trim();
     if(!name){showToast('Enter your name');return;}
@@ -24,10 +24,14 @@ function obStep(step){
     const pr=parseInt(document.getElementById('ob-pr').value);
     if(!cg||!cr||!pr){showToast('Fill all fields');return;}
     obData.calsGym=cg; obData.calsRest=cr; obData.proteinTarget=pr;
-    const id='p_'+Date.now();
-    profiles.push({id,...obData});
-    saveProfiles(); setActive(id);
-    pSet('weightLog',[{date:todayStr(),weight:obData.startWeight}]);
+    STATE.profile = {
+      name: obData.name, startWeight: obData.startWeight,
+      targetWeight: obData.targetWeight, targetBF: obData.targetBF,
+      calsGym: obData.calsGym, calsRest: obData.calsRest,
+      proteinTarget: obData.proteinTarget,
+    };
+    STATE.weightLog = [{date: todayStr(), weight: obData.startWeight}];
+    await saveStateNow();
     document.getElementById('onboarding').style.display='none';
     document.getElementById('app').style.display='flex';
     renderProfilePills(); renderAll();
@@ -47,9 +51,9 @@ function addProfile(){
 }
 
 function renderProfilePills(){
-  document.getElementById('profilePills').innerHTML=profiles.map(p=>`
-    <button class="ppill${p.id===activePid?' active':''}" onclick="switchProfile('${p.id}')">${p.name.split(' ')[0]}</button>
-  `).join('');
+  const p = STATE.profile;
+  if (!p) return;
+  document.getElementById('profilePills').innerHTML = `<button class="ppill active">${p.name.split(' ')[0]}</button>`;
 }
 
 function switchProfile(id){setActive(id);renderProfilePills();renderAll();nav('today');}
@@ -350,7 +354,10 @@ function editProfile(){
 
 function confirmReset(){
   if(confirm('Delete ALL data for this profile? This cannot be undone.')){
-    ['weightLog','foods','stepsLog','exLog','measLog','sleepLog','swimLog','supps','suppDone','water','photos','foodTemplates'].forEach(k=>localStorage.removeItem(pKey(k)));
+    ['weightLog','foods','stepsLog','exLog','measLog','sleepLog','swimLog','supps','suppDone','water','photos','foodTemplates'].forEach(k=>{
+      STATE[k] = Array.isArray(STATE[k]) ? [] : {};
+    });
+    saveStateNow();
     renderAll();
     showToast('Data cleared');
   }
@@ -383,11 +390,15 @@ async function checkAuth(){
 // ---- INIT ----
 async function init(){
   if(!await checkAuth())return;
-  if(profiles.length>0&&activePid&&profiles.find(p=>p.id===activePid)){
+  await loadState();
+  if(STATE.profile && STATE.profile.name){
     document.getElementById('onboarding').style.display='none';
     document.getElementById('app').style.display='flex';
     renderProfilePills();
     renderAll();
+  } else {
+    document.getElementById('onboarding').style.display='flex';
+    document.getElementById('app').style.display='none';
   }
 }
 
