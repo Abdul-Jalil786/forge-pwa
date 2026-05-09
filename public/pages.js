@@ -531,7 +531,17 @@ function renderCoach(){
     <div class="pg-title" style="margin-bottom:14px;">Coach</div>
 
     <div class="sec-label">Weekly Report Card</div>
-    ${report?`
+    ${report?(report.isBaseline?`
+    <div class="card" style="margin-bottom:10px;border-color:var(--blue);background:linear-gradient(135deg,rgba(61,155,255,.04),transparent);">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:15px;letter-spacing:-.3px;margin-bottom:6px;">Week 1 — Baseline</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;">
+        You're in your first week. Grades and weekly scores activate from Week 2 onwards once we have meaningful data to compare against.
+      </div>
+      <div style="margin-top:14px;font-size:11px;color:var(--text3);">
+        Tracking so far · Steps ${report.stepsHit}/7 · Protein ${report.proteinDays}/7 · Gym ${report.gymDays} · Sleep ${report.avgSleep||'—'}h avg
+      </div>
+    </div>
+    `:`
     <div class="card hi" style="margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
         <div style="font-family:'Archivo Black',sans-serif;font-size:14px;">This Week's Score</div>
@@ -542,7 +552,8 @@ function renderCoach(){
       <div class="rc-item"><div class="rc-icon">🏋️</div><div class="rc-info"><div class="rc-label">Training</div><div class="rc-detail">${report.gymDays} gym sessions this week</div></div><div class="rc-score ${gradeClass(report.scores.gym)}">${grade(report.scores.gym)}</div></div>
       <div class="rc-item" style="border:none;"><div class="rc-icon">😴</div><div class="rc-info"><div class="rc-label">Sleep</div><div class="rc-detail">Average ${report.avgSleep||'—'} hours per night</div></div><div class="rc-score ${gradeClass(report.scores.sleep)}">${grade(report.scores.sleep)}</div></div>
       ${report.weightChange!==null?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text2);">Weight change this week: <strong style="color:${report.weightChange<=0?'var(--green)':'var(--red)'};">${report.weightChange>0?'+':''}${report.weightChange.toFixed(1)}kg</strong></div>`:''}
-    </div>`:'<div class="card" style="text-align:center;color:var(--text3);font-size:13px;padding:20px;">Log data throughout the week to generate your report card</div>'}
+    </div>
+    `):'<div class="card" style="text-align:center;color:var(--text3);font-size:13px;padding:20px;">Log data throughout the week to generate your report card</div>'}
 
     <div class="sec-label">Coaching from Cowork</div>
     ${(STATE.coachingReports||[]).length===0?`

@@ -60,6 +60,8 @@ let STATE = {
   recovery: {},
   bodyComp: {},
   coachingReports: [],
+  planStartDate: null,
+  waterClicked: {},
 };
 let saveStateTimeout = null;
 
@@ -205,6 +207,10 @@ function saveFoodEntry(entry,date=todayStr()){
   if(!all[date])all[date]=[];
   all[date].push(entry);
   pSet('foods',all);
+  if(!STATE.planStartDate){
+    STATE.planStartDate=todayStr();
+    pSet('planStartDate',todayStr());
+  }
 }
 function deleteFoodEntry(idx,date=todayStr()){
   const all=pGet('foods',{});
@@ -335,8 +341,19 @@ function isSuppDone(i){return!!(getSuppDone()[`${todayStr()}_${i}`]);}
 // ============================================================
 // WATER
 // ============================================================
-function getWater(){return pGet('water',{})[todayStr()]||0;}
-function saveWater(cups){const w=pGet('water',{});w[todayStr()]=cups;pSet('water',w);}
+function getWater(){
+  const wc=pGet('waterClicked',{});
+  if(!wc[todayStr()])return 0;
+  return pGet('water',{})[todayStr()]||0;
+}
+function saveWater(cups){
+  const w=pGet('water',{});
+  w[todayStr()]=cups;
+  pSet('water',w);
+  const wc=pGet('waterClicked',{});
+  wc[todayStr()]=true;
+  pSet('waterClicked',wc);
+}
 
 // ============================================================
 // PHOTOS
@@ -402,7 +419,10 @@ function getWeeklyReport(){
   };
   const overall=Math.round((scores.steps+scores.protein+scores.gym+scores.sleep)/4);
 
-  return{stepsHit,proteinDays,gymDays,avgSleep,weightChange,scores,overall};
+  const planStart=STATE.planStartDate?new Date(STATE.planStartDate+'T00:00:00'):null;
+  const isBaseline=!planStart||(Date.now()-planStart.getTime())<7*24*60*60*1000;
+
+  return{stepsHit,proteinDays,gymDays,avgSleep,weightChange,scores,overall,isBaseline};
 }
 
 function grade(pct){
