@@ -57,6 +57,7 @@ let STATE = {
   foodTemplates: [],
   bfLog: [],
   mealPlan: null,
+  recovery: {},
 };
 let saveStateTimeout = null;
 

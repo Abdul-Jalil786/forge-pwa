@@ -24,6 +24,9 @@ import pushRouter from "./push";
 app.use("/api/meal-plan", mealPlanRouter);
 app.use("/api/push", pushRouter);
 
+import ouraRouter from "./oura-routes";
+app.use("/api/oura", ouraRouter);
+
 // Static files — use process.cwd() so it works in both dev (tsx) and prod (dist/)
 const publicDir = path.join(process.cwd(), "public");
 app.use(express.static(publicDir));

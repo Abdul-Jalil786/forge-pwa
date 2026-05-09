@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import webpush from "web-push";
 import prisma from "./db";
+import { syncOuraForAllUsers } from "./oura";
 
 const fired = new Map<string, Set<string>>();
 
@@ -64,4 +65,15 @@ export function startCron() {
       console.error("Cron error:", err);
     }
   });
+
+  // Daily Oura sync at 08:00 UK time
+  cron.schedule("0 8 * * *", async () => {
+    console.log("Running daily Oura sync...");
+    try {
+      await syncOuraForAllUsers();
+      console.log("Daily Oura sync complete");
+    } catch (err) {
+      console.error("Daily Oura sync error:", err);
+    }
+  }, { timezone: "Europe/London" });
 }

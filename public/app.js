@@ -356,6 +356,68 @@ function urlB64ToUint8Array(base64){
   return out;
 }
 
+// ---- OURA ----
+async function loadOuraStatus(){
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/oura/status',{headers:{Authorization:'Bearer '+jwt}});
+    const data=await res.json();
+    const statusEl=document.getElementById('oura-status');
+    const ctrlEl=document.getElementById('oura-controls');
+    if(!statusEl||!ctrlEl)return;
+    if(data.connected){
+      const last=data.lastSync?new Date(data.lastSync).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'Never';
+      statusEl.innerHTML=`Connected · Last sync: <strong style="color:var(--text);">${last}</strong><br>Daily auto-sync at 8am pulls sleep, steps, HRV.`;
+      ctrlEl.innerHTML=`
+        <button class="btn btn-ghost btn-sm" style="flex:1;min-width:120px;" onclick="syncOuraNow()">Sync Now</button>
+        <button class="btn btn-red btn-sm" style="flex:1;min-width:120px;" onclick="disconnectOura()">Disconnect</button>
+      `;
+    } else {
+      statusEl.innerHTML='Connect your Oura ring to auto-sync sleep, steps and recovery data daily. Generate a Personal Access Token at <strong style="color:var(--text);">cloud.ouraring.com</strong>.';
+    }
+  }catch(e){console.error(e);}
+}
+
+async function connectOura(){
+  const token=prompt('Paste your Oura Personal Access Token:');
+  if(!token||!token.trim())return;
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/oura/token',{
+      method:'PUT',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},
+      body:JSON.stringify({token:token.trim()})
+    });
+    if(!res.ok){showToast('Failed to save token');return;}
+    showToast('Oura connected');
+    syncOuraNow();
+  }catch(e){showToast('Failed');}
+}
+
+async function syncOuraNow(){
+  const jwt=localStorage.getItem('forge_token');
+  showToast('Syncing Oura...');
+  try{
+    const res=await fetch('/api/oura/sync',{method:'POST',headers:{Authorization:'Bearer '+jwt}});
+    const data=await res.json();
+    if(data.error){showToast('Sync error: '+data.error);return;}
+    showToast(`Synced ${data.updated} entries`);
+    await loadState();
+    renderAll();
+    loadOuraStatus();
+  }catch(e){showToast('Sync failed');}
+}
+
+async function disconnectOura(){
+  if(!confirm('Disconnect Oura? Existing data stays, but auto-sync stops.'))return;
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    await fetch('/api/oura/token',{method:'DELETE',headers:{Authorization:'Bearer '+jwt}});
+    showToast('Oura disconnected');
+    loadOuraStatus();
+  }catch(e){showToast('Failed');}
+}
+
 // ---- ACCOUNT ----
 function logOut(){
   Object.keys(localStorage)

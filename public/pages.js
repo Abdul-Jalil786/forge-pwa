@@ -643,6 +643,14 @@ function renderMore(){
       <div id="token-list" style="font-size:12px;"></div>
     </div>
 
+    <div class="sec-label">Oura Ring</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div id="oura-status" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">Loading...</div>
+      <div id="oura-controls" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-lime btn-sm" style="flex:1;min-width:140px;" onclick="connectOura()">Connect Oura</button>
+      </div>
+    </div>
+
     <div class="sec-label">Calorie Stage Guide</div>
     <div class="card" style="margin-bottom:10px;">
       ${[{w:114,c:'2,300–2,400'},{w:108,c:'2,200'},{w:102,c:'2,100'},{w:96,c:'2,050'},{w:90,c:'1,950'},{w:87,c:'Maintenance'}].map(s=>`
@@ -662,6 +670,8 @@ function renderMore(){
       <button class="btn btn-red btn-sm" style="width:100%;background:rgba(255,59,59,.2);" onclick="deleteAccount()">Delete Account</button>
     </div>
   `;
+
+  loadOuraStatus();
 
   loadAccessTokens().then(tokens=>{
     const el=document.getElementById('token-list');
