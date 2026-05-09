@@ -96,10 +96,14 @@ document.querySelectorAll('.modal-bg').forEach(m=>{
 // ---- WEIGHT ----
 function saveWeight(){
   const val=parseFloat(document.getElementById('mw-val').value);
+  const bf=parseFloat(document.getElementById('mw-bf').value);
   if(!val||val<40||val>400){showToast('Enter valid weight');return;}
   saveWeightEntry(val);
+  if(bf&&bf>0&&bf<60)saveBfEntry(bf);
+  document.getElementById('mw-val').value='';
+  document.getElementById('mw-bf').value='';
   closeModal('modal-weight');
-  showToast(`${val}kg logged ✓`);
+  showToast(`${val}kg${bf?' + '+bf+'% BF':''} logged ✓`);
   renderToday(); renderTrack();
 }
 
@@ -201,123 +205,46 @@ function handlePhoto(event){
   reader.readAsDataURL(file);
 }
 
-// ---- API KEY ----
-function saveApiKey(){
-  const key=document.getElementById('mk-key').value.trim();
-  if(!key){showToast('Enter API key');return;}
-  localStorage.setItem('forge_apikey',key);
-  closeModal('modal-apikey');
-  showToast('AI Coach enabled ✓');
-  renderCoach();
+// ---- ACCESS TOKENS ----
+async function generateAccessToken(){
+  const name=prompt('Token name (e.g. "Cowork"):')||'Cowork';
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/tokens',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},
+      body:JSON.stringify({name})
+    });
+    if(!res.ok)throw new Error('Failed');
+    const data=await res.json();
+    const url=window.location.origin;
+    const msg=`Token created. Save these — token only shown once:\n\nURL: ${url}\n\nToken: ${data.token}`;
+    prompt('Copy your token (Cmd/Ctrl+C):',data.token);
+    alert(msg);
+    renderMore();
+  }catch(e){
+    showToast('Failed to create token');
+  }
 }
 
-// ---- AI ANALYSIS ----
-async function runAI(days){
-  const p=getActive(); if(!p)return;
-  const apiKey=localStorage.getItem('forge_apikey');
-  if(!apiKey){openModal('modal-apikey');return;}
-
-  const el=document.getElementById('ai-output');
-  if(!el)return;
-  el.innerHTML=`<div class="ai-section"><div class="ai-thinking"><div class="ai-dot"></div><div class="ai-dot"></div><div class="ai-dot"></div><span style="margin-left:4px;">Analysing your last ${days} days...</span></div></div>`;
-
-  // Gather data
-  const dates=[];
-  for(let i=days-1;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);dates.push(d.toISOString().split('T')[0]);}
-
-  const wl=getWeightLog().filter(e=>dates.includes(e.date));
-  const stepsLog=getStepsLog();
-  const foodLog=pGet('foods',{});
-  const exLog=getExLog();
-  const sleepLog=getSleepLog();
-  const measLog=getMeasLog();
-  const allEx=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises];
-
-  const weightSummary=wl.length>=2?`Start: ${wl[0].weight}kg, End: ${wl[wl.length-1].weight}kg, Change: ${(wl[wl.length-1].weight-wl[0].weight).toFixed(1)}kg`:`Current: ${getCurrentWeight()}kg`;
-
-  const stepsDays=dates.filter(d=>(stepsLog[d]||0)>=10000).length;
-  const avgSteps=Math.round(dates.reduce((s,d)=>s+(stepsLog[d]||0),0)/dates.length);
-
-  const nutritionDays=dates.map(d=>{
-    const foods=foodLog[d]||[];
-    return{date:d,cals:foods.reduce((s,f)=>s+f.cals,0),protein:foods.reduce((s,f)=>s+(f.protein||0),0)};
-  }).filter(d=>d.cals>0);
-  const avgCals=nutritionDays.length?Math.round(nutritionDays.reduce((s,d)=>s+d.cals,0)/nutritionDays.length):0;
-  const avgProtein=nutritionDays.length?Math.round(nutritionDays.reduce((s,d)=>s+d.protein,0)/nutritionDays.length):0;
-  const proteinDaysHit=nutritionDays.filter(d=>d.protein>=p.proteinTarget*0.9).length;
-
-  const gymDays=dates.filter(d=>{const el=exLog[d]||{};return Object.values(el).some(e=>e.done);}).length;
-
-  const sleepDays=dates.map(d=>sleepLog[d]?.hours||0).filter(h=>h>0);
-  const avgSleep=sleepDays.length?Math.round((sleepDays.reduce((a,b)=>a+b,0)/sleepDays.length)*10)/10:0;
-
-  const liftingProgress=allEx.map(ex=>{
-    const sessions=dates.map(d=>{
-      const dl=exLog[d]||{};
-      const exData=dl[ex.id];
-      if(!exData?.sets?.length)return null;
-      const maxKg=Math.max(...exData.sets.map(s=>parseFloat(s.kg)||0));
-      return maxKg>0?{date:d,kg:maxKg}:null;
-    }).filter(Boolean);
-    if(sessions.length<2)return null;
-    const change=sessions[sessions.length-1].kg-sessions[0].kg;
-    return{name:ex.name,sessions:sessions.length,start:sessions[0].kg,end:sessions[sessions.length-1].kg,change};
-  }).filter(Boolean);
-
-  const latestMeas=measLog.length?measLog[measLog.length-1]:null;
-  const prevMeas=measLog.length>=2?measLog[measLog.length-2]:null;
-
-  const prompt=`You are an expert personal trainer and nutrition coach. Analyse this ${days}-day fitness data for ${p.name} and provide a detailed, honest, actionable coaching report.
-
-PROFILE:
-- Age: 52, Height: 180cm
-- Start weight: ${p.startWeight}kg, Target: ${p.targetWeight}kg at 15% body fat
-- Current body fat: ~34% (started)
-- Daily calorie target: ${p.calsGym} (gym days), ${p.calsRest} (rest days)
-- Protein target: ${p.proteinTarget}g daily
-- Training: Upper/Lower split, 4x/week
-- Goal: Fat loss while preserving muscle
-
-DATA FOR LAST ${days} DAYS:
-Weight: ${weightSummary}
-Steps: ${stepsDays}/${days} days hit 10,000 target, average ${avgSteps.toLocaleString()} steps/day
-Nutrition: ${nutritionDays.length} days logged, avg ${avgCals} kcal/day, avg ${avgProtein}g protein/day, protein target hit ${proteinDaysHit}/${nutritionDays.length} logged days
-Training: ${gymDays} gym sessions completed
-Sleep: Average ${avgSleep} hours (${sleepDays.length} nights logged)
-${latestMeas&&prevMeas?`Measurements change: Waist ${prevMeas.waist||'?'}→${latestMeas.waist||'?'}cm`:''} 
-Lifting progress: ${liftingProgress.length>0?liftingProgress.map(l=>`${l.name}: ${l.start}→${l.end}kg (${l.change>0?'+':''}${l.change}kg over ${l.sessions} sessions)`).join(', '):'Limited data'}
-
-Write a coaching report with these sections using H3 headers:
-1. Overall Assessment — honest summary of how this period went
-2. Weight & Body Composition — is the rate of loss right, too fast, too slow?
-3. Nutrition Analysis — calorie and protein adherence, what needs to improve
-4. Training Performance — lifting progress, session frequency, what's working
-5. Recovery & Lifestyle — sleep, steps, overall activity
-6. Key Actions — exactly 3 specific things to do differently next week
-
-Be direct, specific and use the actual numbers. Use <strong> for key figures. Use class="good" for positives, class="warn" for cautions, class="bad" for problems. Keep it under 500 words total.`;
-
+async function revokeAccessToken(id){
+  if(!confirm('Revoke this token? Cowork will lose access.'))return;
+  const jwt=localStorage.getItem('forge_token');
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})
-    });
-    if(!res.ok){
-      const err=await res.json();
-      throw new Error(err.error?.message||'API error');
-    }
+    await fetch('/api/tokens/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+jwt}});
+    renderMore();
+    showToast('Token revoked');
+  }catch(e){showToast('Failed');}
+}
+
+async function loadAccessTokens(){
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/tokens',{headers:{Authorization:'Bearer '+jwt}});
+    if(!res.ok)return [];
     const data=await res.json();
-    const text=data.content?.[0]?.text||'No response';
-    const html=text
-      .replace(/^###\s(.+)$/gm,'<h3>$1</h3>')
-      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-      .replace(/\n\n/g,'<br><br>')
-      .replace(/\n/g,'<br>');
-    el.innerHTML=`<div class="ai-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><div style="font-family:'Archivo Black',sans-serif;font-size:16px;">AI Coaching Report</div><div style="font-size:10px;color:var(--text3);">Last ${days} days</div></div><div class="ai-report">${html}</div></div>`;
-  }catch(e){
-    el.innerHTML=`<div class="ai-section card warn"><div style="font-size:13px;color:var(--red);">Error: ${e.message}</div><div style="font-size:12px;color:var(--text2);margin-top:8px;">Check your API key is valid and has credits.</div></div>`;
-  }
+    return data.tokens||[];
+  }catch{return [];}
 }
 
 // ---- ACCOUNT ----

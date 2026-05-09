@@ -55,10 +55,13 @@ let STATE = {
   water: {},
   photos: [],
   foodTemplates: [],
+  bfLog: [],
 };
 let saveStateTimeout = null;
 
 async function loadState() {
+  // Phase 3: clean up old AI Coach key
+  localStorage.removeItem('forge_apikey');
   const cached = localStorage.getItem("forge_state_cache");
   if (cached) { try { STATE = { ...STATE, ...JSON.parse(cached) }; } catch {} }
   const token = localStorage.getItem("forge_token");
@@ -175,6 +178,18 @@ function saveWeightEntry(kg){
   const idx=log.findIndex(e=>e.date===todayStr());
   if(idx>=0)log[idx].weight=kg; else log.push({date:todayStr(),weight:kg});
   pSet('weightLog',log);
+}
+
+// ============================================================
+// BODY FAT
+// ============================================================
+function getBfLog(){return pGet('bfLog',[]);}
+function getCurrentBf(){const l=getBfLog();return l.length?l[l.length-1].bf:null;}
+function saveBfEntry(bf){
+  const log=getBfLog();
+  const idx=log.findIndex(e=>e.date===todayStr());
+  if(idx>=0)log[idx].bf=bf; else log.push({date:todayStr(),bf});
+  pSet('bfLog',log);
 }
 
 // ============================================================

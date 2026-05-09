@@ -433,7 +433,8 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
 <div class="modal-bg" id="modal-weight">
   <div class="modal">
     <div class="modal-hdr"><div class="modal-title">Log Weight</div><button class="modal-close" onclick="closeModal('modal-weight')">✕</button></div>
-    <input class="inp" id="mw-val" placeholder="Weight in kg" type="number" step="0.1" style="margin-bottom:12px">
+    <input class="inp" id="mw-val" placeholder="Weight in kg" type="number" step="0.1" style="margin-bottom:8px">
+    <input class="inp" id="mw-bf" placeholder="Body Fat % (optional)" type="number" step="0.1" style="margin-bottom:12px">
     <button class="btn btn-lime btn-full" onclick="saveWeight()">SAVE</button>
   </div>
 </div>
@@ -488,16 +489,6 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
     <input class="inp" id="msupp-dose" placeholder="Dose (e.g. 5g, 1 capsule)" style="margin-bottom:8px">
     <input class="inp" id="msupp-time" placeholder="Time (e.g. Morning, Pre-workout)" style="margin-bottom:12px">
     <button class="btn btn-lime btn-full" onclick="saveSupp()">ADD</button>
-  </div>
-</div>
-
-<div class="modal-bg" id="modal-apikey">
-  <div class="modal">
-    <div class="modal-hdr"><div class="modal-title">AI Coach Setup</div><button class="modal-close" onclick="closeModal('modal-apikey')">✕</button></div>
-    <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px;">Enter your Claude API key to unlock AI coaching. Get a free key at <strong style="color:var(--text)">console.anthropic.com</strong></div>
-    <input class="inp" id="mk-key" placeholder="sk-ant-..." style="margin-bottom:12px;font-size:12px;font-family:monospace;">
-    <button class="btn btn-lime btn-full" onclick="saveApiKey()">SAVE & ENABLE AI</button>
-    <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:10px;">Key is stored only on your device</div>
   </div>
 </div>
 

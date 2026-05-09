@@ -14,6 +14,11 @@ app.use(express.json({ limit: "6mb" }));
 app.use("/api/auth", authRouter);
 app.use("/api/state", stateRouter);
 
+import tokensRouter from "./tokens";
+import exportRouter from "./export";
+app.use("/api/tokens", tokensRouter);
+app.use("/api/export", exportRouter);
+
 // Static files — use process.cwd() so it works in both dev (tsx) and prod (dist/)
 const publicDir = path.join(process.cwd(), "public");
 app.use(express.static(publicDir));

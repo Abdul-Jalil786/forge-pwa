@@ -276,6 +276,24 @@ function renderTrack(){
         }).join('')}
     </div>
 
+    <div class="sec-label">Body Fat</div>
+    <div class="card" style="margin-bottom:10px;">
+      ${(()=>{
+        const bfl=getBfLog();
+        if(bfl.length===0)return'<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Log body fat % with your weight entries to see trends</div>';
+        const cur=bfl[bfl.length-1];
+        const prev=bfl.length>=2?bfl[bfl.length-2]:null;
+        const diff=prev?(cur.bf-prev.bf):null;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+          +'<div><div style="font-size:10px;color:var(--text2);">CURRENT</div><div style="font-family:\\'Archivo Black\\',sans-serif;font-size:36px;color:var(--lime);letter-spacing:-2px;">'+cur.bf+'<span style="font-size:18px;">%</span></div></div>'
+          +'<div style="text-align:right;"><div style="font-size:10px;color:var(--text2);">TARGET</div><div style="font-family:\\'Archivo Black\\',sans-serif;font-size:20px;">'+(p.targetBF||15)+'%</div>'
+          +(diff!==null?'<div style="font-size:11px;color:'+(diff<=0?'var(--green)':'var(--red)')+';">'+(diff>0?'+':'')+diff.toFixed(1)+'%</div>':'')
+          +'</div></div>'
+          +'<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">'+bfl.length+' entries</div>'
+          +[...bfl].reverse().slice(0,6).map(e=>'<div class="list-row"><div class="row-left"><div class="row-label">'+fmtDate(e.date)+'</div><div class="row-val">'+e.bf+'%</div></div></div>').join('');
+      })()}
+    </div>
+
     <div class="sec-label">Steps</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
       <div></div>
@@ -477,7 +495,6 @@ function renderBody(){
 function renderCoach(){
   const p=getActive(); if(!p)return;
   const report=getWeeklyReport();
-  const hasApiKey=!!localStorage.getItem('forge_apikey');
   const supps=getSupps();
 
   document.getElementById('page-coach').innerHTML=`
@@ -498,23 +515,11 @@ function renderCoach(){
     </div>`:'<div class="card" style="text-align:center;color:var(--text3);font-size:13px;padding:20px;">Log data throughout the week to generate your report card</div>'}
 
     <div class="sec-label">AI Coaching</div>
-    ${hasApiKey?`
-    <div class="card" style="margin-bottom:10px;">
-      <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Select a period for your AI coaching report:</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-        <button class="btn btn-ghost btn-sm" onclick="runAI(7)">Last 7 days</button>
-        <button class="btn btn-ghost btn-sm" onclick="runAI(14)">Last 14 days</button>
-        <button class="btn btn-ghost btn-sm" onclick="runAI(30)">Last 30 days</button>
+    <div class="card info" style="margin-bottom:10px;">
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;">
+        AI coaching has moved to <strong style="color:var(--text);">Cowork</strong>. Generate an access token in More → Cowork Connection, then chat with your coach there.
       </div>
     </div>
-    <div id="ai-output"></div>
-    <button class="btn btn-ghost btn-sm" onclick="openModal('modal-apikey')" style="width:100%;margin-bottom:10px;">Update API Key</button>`:`
-    <div class="card warn" style="margin-bottom:10px;">
-      <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
-        Connect your Claude API key to unlock full AI coaching — personalised analysis of your weight, training, nutrition, sleep and steps data.
-      </div>
-      <button class="btn btn-lime btn-full" onclick="openModal('modal-apikey')">CONNECT AI COACH</button>
-    </div>`}
 
     <div class="sec-label">Supplements & Reminders</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -584,6 +589,15 @@ function renderMore(){
       </button>
     </div>
 
+    <div class="sec-label">Cowork Connection</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        Generate a read-only access token to let Cowork fetch your data for AI coaching.
+      </div>
+      <button class="btn btn-lime btn-sm" style="width:100%;margin-bottom:10px;" onclick="generateAccessToken()">+ Generate Access Token</button>
+      <div id="token-list" style="font-size:12px;"></div>
+    </div>
+
     <div class="sec-label">Calorie Stage Guide</div>
     <div class="card" style="margin-bottom:10px;">
       ${[{w:114,c:'2,300–2,400'},{w:108,c:'2,200'},{w:102,c:'2,100'},{w:96,c:'2,050'},{w:90,c:'1,950'},{w:87,c:'Maintenance'}].map(s=>`
@@ -603,4 +617,15 @@ function renderMore(){
       <button class="btn btn-red btn-sm" style="width:100%;background:rgba(255,59,59,.2);" onclick="deleteAccount()">Delete Account</button>
     </div>
   `;
+
+  loadAccessTokens().then(tokens=>{
+    const el=document.getElementById('token-list');
+    if(!el)return;
+    if(tokens.length===0){el.innerHTML='<div style="color:var(--text3);">No tokens yet</div>';return;}
+    el.innerHTML=tokens.map(t=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+        <div><strong>${t.name||'Token'}</strong><br><span style="color:var(--text3);font-size:10px;">Created ${new Date(t.createdAt).toLocaleDateString()}${t.lastUsedAt?' · Last used '+new Date(t.lastUsedAt).toLocaleDateString():''}</span></div>
+        <button class="btn btn-red btn-sm" style="font-size:10px;padding:4px 8px;" onclick="revokeAccessToken('${t.id}')">Revoke</button>
+      </div>`).join('');
+  });
 }
