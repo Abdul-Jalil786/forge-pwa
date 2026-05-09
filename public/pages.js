@@ -280,17 +280,18 @@ function renderTrack(){
     <div class="card" style="margin-bottom:10px;">
       ${(()=>{
         const bfl=getBfLog();
-        if(bfl.length===0)return'<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Log body fat % with your weight entries to see trends</div>';
+        if(bfl.length===0)return '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Log body fat % with your weight entries to see trends</div>';
         const cur=bfl[bfl.length-1];
         const prev=bfl.length>=2?bfl[bfl.length-2]:null;
         const diff=prev?(cur.bf-prev.bf):null;
-        return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
-          +'<div><div style="font-size:10px;color:var(--text2);">CURRENT</div><div style="font-family:\\'Archivo Black\\',sans-serif;font-size:36px;color:var(--lime);letter-spacing:-2px;">'+cur.bf+'<span style="font-size:18px;">%</span></div></div>'
-          +'<div style="text-align:right;"><div style="font-size:10px;color:var(--text2);">TARGET</div><div style="font-family:\\'Archivo Black\\',sans-serif;font-size:20px;">'+(p.targetBF||15)+'%</div>'
-          +(diff!==null?'<div style="font-size:11px;color:'+(diff<=0?'var(--green)':'var(--red)')+';">'+(diff>0?'+':'')+diff.toFixed(1)+'%</div>':'')
-          +'</div></div>'
-          +'<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">'+bfl.length+' entries</div>'
-          +[...bfl].reverse().slice(0,6).map(e=>'<div class="list-row"><div class="row-left"><div class="row-label">'+fmtDate(e.date)+'</div><div class="row-val">'+e.bf+'%</div></div></div>').join('');
+        const diffHtml=diff!==null?`<div style="font-size:11px;color:${diff<=0?'var(--green)':'var(--red)'};">${diff>0?'+':''}${diff.toFixed(1)}%</div>`:'';
+        const rows=[...bfl].reverse().slice(0,6).map(e=>`<div class="list-row"><div class="row-left"><div class="row-label">${fmtDate(e.date)}</div><div class="row-val">${e.bf}%</div></div></div>`).join('');
+        return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div><div style="font-size:10px;color:var(--text2);">CURRENT</div><div style="font-family:'Archivo Black',sans-serif;font-size:36px;color:var(--lime);letter-spacing:-2px;">${cur.bf}<span style="font-size:18px;">%</span></div></div>
+          <div style="text-align:right;"><div style="font-size:10px;color:var(--text2);">TARGET</div><div style="font-family:'Archivo Black',sans-serif;font-size:20px;">${p.targetBF||15}%</div>${diffHtml}</div>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${bfl.length} entries</div>
+        ${rows}`;
       })()}
     </div>
 
