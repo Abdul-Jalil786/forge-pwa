@@ -36,7 +36,16 @@ const WORKOUTS = {
   }
 };
 
-const SCHEDULE = ['upper',null,'lower',null,'upper',null,'lower']; // Mon-Sun index
+// Training cycle — anchored to a start date
+// 4-day pattern: Day 0=Upper, Day 1=Rest, Day 2=Lower, Day 3=Rest
+function _trainingDayInCycle(dateStr){
+  const startDate = STATE.trainingStartDate || '2026-05-08';
+  const start = new Date(startDate + 'T12:00:00');
+  const target = new Date(dateStr + 'T12:00:00');
+  const diffDays = Math.floor((target - start) / 86400000);
+  if (diffDays < 0) return -1;
+  return ((diffDays % 4) + 4) % 4;
+}
 
 // ============================================================
 // STATE — synced with backend
@@ -61,6 +70,7 @@ let STATE = {
   bodyComp: {},
   coachingReports: [],
   planStartDate: null,
+  trainingStartDate: null,
   waterClicked: {},
 };
 let saveStateTimeout = null;
@@ -158,8 +168,7 @@ let activePid = null;
 // ============================================================
 function todayStr(){return new Date().toISOString().split('T')[0];}
 function dayOfWeek(){return new Date().getDay();} // 0=Sun
-function scheduleIdx(){const map=[6,0,1,2,3,4,5];return map[dayOfWeek()];}
-function getTodaySession(){return SCHEDULE[scheduleIdx()];}
+function getTodaySession(){return getSessionTypeForDate(todayStr());}
 function dayName(){return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dayOfWeek()];}
 function fmtDate(str){return new Date(str+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'});}
 function fmtNow(){const n=new Date();return n.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}
@@ -275,9 +284,10 @@ function getBestLift(exId){
 
 // Session type for any past or future date based on SCHEDULE
 function getSessionTypeForDate(dateStr){
-  const d=new Date(dateStr+'T12:00:00');
-  const dayMap=[6,0,1,2,3,4,5]; // 0=Sun → 6
-  return SCHEDULE[dayMap[d.getDay()]];
+  const cycle = _trainingDayInCycle(dateStr);
+  if (cycle === 0) return 'upper';
+  if (cycle === 2) return 'lower';
+  return null;
 }
 
 // Most recent session of the same type with logged sets, before a given date
