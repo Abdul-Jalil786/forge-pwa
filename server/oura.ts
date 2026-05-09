@@ -36,16 +36,19 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
 
   let updated = 0;
   try {
-    const [dailySleep, sleepDetail, readiness, activity] = await Promise.all([
+    const [dailySleep, sleepDetail, readiness, activity, workouts] = await Promise.all([
       ouraGet(token, "daily_sleep", params),
       ouraGet(token, "sleep", params),
       ouraGet(token, "daily_readiness", params),
       ouraGet(token, "daily_activity", params),
+      ouraGet(token, "workout", params),
     ]);
 
     const sleepLog = state.sleepLog || {};
     const stepsLog = state.stepsLog || {};
     const recovery = state.recovery || {};
+    const calorieLog = state.calorieLog || {};
+    const ouraWorkouts = state.ouraWorkouts || {};
 
     // Sleep score -> quality 1-4
     const scoreByDay: Record<string, number> = {};
@@ -67,10 +70,18 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       }
     }
 
-    // Steps from daily activity
+    // Steps + calories from daily activity
     for (const e of activity.data || []) {
       if (typeof e.steps === "number") {
         stepsLog[e.day] = e.steps;
+        updated++;
+      }
+      if (typeof e.total_calories === "number" || typeof e.active_calories === "number") {
+        calorieLog[e.day] = {
+          total: e.total_calories ?? null,
+          active: e.active_calories ?? null,
+          target: e.target_calories ?? null,
+        };
         updated++;
       }
     }
@@ -85,6 +96,25 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       };
     }
 
+    // Workouts (auto-detected + manually tagged)
+    for (const w of workouts.data || []) {
+      const day = w.day;
+      if (!ouraWorkouts[day]) ouraWorkouts[day] = [];
+      // Avoid duplicates by id
+      const existing = ouraWorkouts[day].find((x: any) => x.id === w.id);
+      if (existing) continue;
+      ouraWorkouts[day].push({
+        id: w.id,
+        activity: w.activity,
+        intensity: w.intensity,
+        source: w.source,
+        start: w.start_datetime,
+        end: w.end_datetime,
+        calories: w.calories,
+      });
+      updated++;
+    }
+
     await prisma.user.update({
       where: { id: userId },
       data: {
@@ -93,6 +123,8 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
           sleepLog,
           stepsLog,
           recovery,
+          calorieLog,
+          ouraWorkouts,
           ouraLastSync: new Date().toISOString(),
         },
       },
