@@ -59,6 +59,7 @@ let STATE = {
   mealPlan: null,
   recovery: {},
   bodyComp: {},
+  coachingReports: [],
 };
 let saveStateTimeout = null;
 

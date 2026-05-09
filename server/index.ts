@@ -30,6 +30,9 @@ app.use("/api/oura", ouraRouter);
 import withingsRouter from "./withings-routes";
 app.use("/api/withings", withingsRouter);
 
+import coachingRouter from "./coaching";
+app.use("/api/coaching-reports", coachingRouter);
+
 // Static files — use process.cwd() so it works in both dev (tsx) and prod (dist/)
 const publicDir = path.join(process.cwd(), "public");
 app.use(express.static(publicDir));

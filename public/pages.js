@@ -544,6 +544,28 @@ function renderCoach(){
       ${report.weightChange!==null?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text2);">Weight change this week: <strong style="color:${report.weightChange<=0?'var(--green)':'var(--red)'};">${report.weightChange>0?'+':''}${report.weightChange.toFixed(1)}kg</strong></div>`:''}
     </div>`:'<div class="card" style="text-align:center;color:var(--text3);font-size:13px;padding:20px;">Log data throughout the week to generate your report card</div>'}
 
+    <div class="sec-label">Coaching from Cowork</div>
+    ${(STATE.coachingReports||[]).length===0?`
+    <div class="card" style="margin-bottom:10px;text-align:center;color:var(--text3);font-size:13px;padding:20px;">
+      No reports yet. Cowork delivers a weekly review every Sunday.
+    </div>`:`
+    <div class="card" style="margin-bottom:10px;">
+      ${STATE.coachingReports.slice(0,1).map((r)=>{
+        const dt=new Date(r.createdAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+            <div>
+              <div style="font-family:'Archivo Black',sans-serif;font-size:15px;letter-spacing:-.3px;">${r.title}</div>
+              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">${r.type} · ${dt}</div>
+            </div>
+          </div>
+          <div class="ai-report" style="font-size:13px;line-height:1.7;color:var(--text2);">${formatCoachingReport(r.content)}</div>
+        `;
+      }).join('')}
+    </div>
+    ${STATE.coachingReports.length>1?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px;" onclick="showCoachingHistory()">View ${STATE.coachingReports.length-1} older report${STATE.coachingReports.length>2?'s':''}</button>`:''}
+    `}
+
     <div class="sec-label">Reminders</div>
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
@@ -586,6 +608,35 @@ function renderCoach(){
       `;
     }
   });
+}
+
+function formatCoachingReport(text){
+  return (text||'')
+    .replace(/^### (.+)$/gm,'<h3 style="font-family:\'Archivo Black\',sans-serif;font-size:14px;color:var(--lime);margin:14px 0 6px;">$1</h3>')
+    .replace(/^## (.+)$/gm,'<h3 style="font-family:\'Archivo Black\',sans-serif;font-size:15px;color:var(--lime);margin:14px 0 6px;">$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong style="color:var(--text);">$1</strong>')
+    .replace(/\n\n/g,'<br><br>')
+    .replace(/\n/g,'<br>');
+}
+
+function showCoachingHistory(){
+  const list=(STATE.coachingReports||[]).slice(1);
+  if(!list.length){showToast('No older reports');return;}
+  const html=list.map(r=>{
+    const dt=new Date(r.createdAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    return `<div class="card" style="margin-bottom:10px;">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:14px;margin-bottom:4px;">${r.title}</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">${r.type} · ${dt}</div>
+      <div class="ai-report" style="font-size:12px;line-height:1.6;color:var(--text2);">${formatCoachingReport(r.content)}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('page-coach').innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div class="pg-title">Past Reports</div>
+      <button class="btn btn-ghost btn-sm" onclick="renderCoach()">Back</button>
+    </div>
+    ${html}
+  `;
 }
 
 // ============================================================
