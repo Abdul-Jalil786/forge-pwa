@@ -19,6 +19,9 @@ import exportRouter from "./export";
 app.use("/api/tokens", tokensRouter);
 app.use("/api/export", exportRouter);
 
+import mealPlanRouter from "./mealplan";
+app.use("/api/meal-plan", mealPlanRouter);
+
 // Static files — use process.cwd() so it works in both dev (tsx) and prod (dist/)
 const publicDir = path.join(process.cwd(), "public");
 app.use(express.static(publicDir));

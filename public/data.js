@@ -56,6 +56,7 @@ let STATE = {
   photos: [],
   foodTemplates: [],
   bfLog: [],
+  mealPlan: null,
 };
 let saveStateTimeout = null;
 

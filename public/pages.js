@@ -134,6 +134,8 @@ function renderFood(){
       <button class="btn btn-lime btn-sm" onclick="openModal('modal-food')">+ Log</button>
     </div>
 
+    ${STATE.mealPlan?renderTodaysPlan():''}
+
     <div class="card hi">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px;">
         <div>
@@ -206,6 +208,33 @@ function renderFoodTemplatesModal(){
         <div style="flex:1;font-size:12px;font-weight:600;">${t.name} <span style="color:var(--text2);font-weight:400;">${t.cals}kcal</span></div>
         <button class="btn btn-lime btn-sm" style="font-size:11px;" onclick="addFromTemplate(${i});closeModal('modal-food');">Use</button>
       </div>`).join('');
+}
+
+function renderTodaysPlan(){
+  const plan=STATE.mealPlan;
+  if(!plan||!plan.meals||!plan.meals.length)return '';
+  const todayFoods=getFoods();
+  const loggedNames=new Set(todayFoods.map(f=>f.name));
+  const totalCals=plan.meals.reduce((s,m)=>s+(m.cals||0),0);
+  const totalP=plan.meals.reduce((s,m)=>s+(m.protein||0),0);
+  return `
+    <div class="sec-label">Today's Plan${plan.name?' — '+plan.name:''}</div>
+    <div class="card" style="margin-bottom:10px;border-color:var(--lime);background:linear-gradient(135deg,rgba(200,255,0,.04),transparent);">
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${plan.meals.length} meals · ${totalCals} kcal · ${totalP}g protein</div>
+      ${plan.meals.map(m=>{
+        const logged=loggedNames.has(m.name);
+        return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-top:1px solid var(--border);">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;width:46px;flex-shrink:0;padding-top:3px;">${m.time||''}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:13px;${logged?'color:var(--text3);text-decoration:line-through;':''}">${m.name}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px;">${m.cals||0} kcal · ${m.protein||0}g P · ${m.carbs||0}g C · ${m.fat||0}g F</div>
+            ${m.ingredients?`<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.55;">${m.ingredients}</div>`:''}
+          </div>
+          <button class="btn ${logged?'btn-ghost':'btn-lime'} btn-sm" style="font-size:11px;padding:6px 10px;flex-shrink:0;" onclick="logPlannedMeal('${m.id}')">${logged?'✓':'+ Log'}</button>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
 }
 
 function delFood(i){deleteFoodEntry(i);renderFood();renderToday();showToast('Removed');}

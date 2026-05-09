@@ -42,6 +42,34 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 }
 
+// Access token middleware (for PAT-authenticated routes)
+export async function requireAccessToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Missing token" });
+    return;
+  }
+  const token = auth.slice(7);
+  if (!token.startsWith("forge_pat_")) {
+    res.status(401).json({ error: "Invalid token format" });
+    return;
+  }
+  const accessToken = await prisma.accessToken.findUnique({
+    where: { token },
+    select: { id: true, userId: true },
+  });
+  if (!accessToken) {
+    res.status(401).json({ error: "Invalid token" });
+    return;
+  }
+  req.userId = accessToken.userId;
+  prisma.accessToken.update({
+    where: { id: accessToken.id },
+    data: { lastUsedAt: new Date() },
+  }).catch(() => {});
+  next();
+}
+
 // POST /api/auth/signup
 router.post("/signup", async (req: Request, res: Response) => {
   try {
