@@ -20,7 +20,9 @@ app.use("/api/tokens", tokensRouter);
 app.use("/api/export", exportRouter);
 
 import mealPlanRouter from "./mealplan";
+import pushRouter from "./push";
 app.use("/api/meal-plan", mealPlanRouter);
+app.use("/api/push", pushRouter);
 
 // Static files — use process.cwd() so it works in both dev (tsx) and prod (dist/)
 const publicDir = path.join(process.cwd(), "public");
@@ -31,6 +33,9 @@ app.get("*", (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
 
+import { startCron } from "./cron";
+
 app.listen(PORT, () => {
   console.log(`Forge server running on port ${PORT}`);
+  startCron();
 });

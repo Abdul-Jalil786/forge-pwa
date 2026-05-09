@@ -271,6 +271,91 @@ async function loadAccessTokens(){
   }catch{return [];}
 }
 
+// ---- PUSH NOTIFICATIONS ----
+async function enableReminders(){
+  if(!("serviceWorker" in navigator)||!("PushManager" in window)){
+    showToast("Push not supported on this browser");
+    return;
+  }
+  try{
+    const reg=await navigator.serviceWorker.ready;
+    const perm=await Notification.requestPermission();
+    if(perm!=="granted"){
+      showToast("Notification permission denied");
+      return;
+    }
+    const keyRes=await fetch("/api/push/public-key");
+    const{publicKey}=await keyRes.json();
+    const sub=await reg.pushManager.subscribe({
+      userVisibleOnly:true,
+      applicationServerKey:urlB64ToUint8Array(publicKey),
+    });
+    const jwt=localStorage.getItem("forge_token");
+    await fetch("/api/push/subscribe",{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:"Bearer "+jwt},
+      body:JSON.stringify({
+        endpoint:sub.endpoint,
+        keys:sub.toJSON().keys,
+        name:navigator.userAgent.slice(0,100),
+      }),
+    });
+    showToast("Reminders enabled ✓");
+    renderCoach();
+  }catch(e){
+    console.error(e);
+    showToast("Failed to enable reminders");
+  }
+}
+
+async function disableReminders(){
+  try{
+    const reg=await navigator.serviceWorker.ready;
+    const sub=await reg.pushManager.getSubscription();
+    if(sub){
+      const jwt=localStorage.getItem("forge_token");
+      await fetch("/api/push/subscribe",{
+        method:"DELETE",
+        headers:{"Content-Type":"application/json",Authorization:"Bearer "+jwt},
+        body:JSON.stringify({endpoint:sub.endpoint}),
+      });
+      await sub.unsubscribe();
+    }
+    showToast("Reminders disabled");
+    renderCoach();
+  }catch(e){
+    showToast("Failed to disable");
+  }
+}
+
+async function testReminder(){
+  const jwt=localStorage.getItem("forge_token");
+  const res=await fetch("/api/push/test",{
+    method:"POST",
+    headers:{Authorization:"Bearer "+jwt},
+  });
+  const data=await res.json();
+  showToast(data.sent?`Test sent to ${data.sent} device(s)`:"No subscriptions");
+}
+
+async function isReminderEnabled(){
+  if(!("serviceWorker" in navigator))return false;
+  try{
+    const reg=await navigator.serviceWorker.ready;
+    const sub=await reg.pushManager.getSubscription();
+    return!!sub;
+  }catch{return false;}
+}
+
+function urlB64ToUint8Array(base64){
+  const padding="=".repeat((4-base64.length%4)%4);
+  const base64Safe=(base64+padding).replace(/-/g,"+").replace(/_/g,"/");
+  const raw=atob(base64Safe);
+  const out=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);
+  return out;
+}
+
 // ---- ACCOUNT ----
 function logOut(){
   Object.keys(localStorage)

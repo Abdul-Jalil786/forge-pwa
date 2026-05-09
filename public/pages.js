@@ -544,10 +544,14 @@ function renderCoach(){
       ${report.weightChange!==null?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text2);">Weight change this week: <strong style="color:${report.weightChange<=0?'var(--green)':'var(--red)'};">${report.weightChange>0?'+':''}${report.weightChange.toFixed(1)}kg</strong></div>`:''}
     </div>`:'<div class="card" style="text-align:center;color:var(--text3);font-size:13px;padding:20px;">Log data throughout the week to generate your report card</div>'}
 
-    <div class="sec-label">AI Coaching</div>
-    <div class="card info" style="margin-bottom:10px;">
-      <div style="font-size:13px;color:var(--text2);line-height:1.6;">
-        AI coaching has moved to <strong style="color:var(--text);">Cowork</strong>. Generate an access token in More → Cowork Connection, then chat with your coach there.
+    <div class="sec-label">Reminders</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        Push notifications for each meal at the scheduled time. Works on devices where Forge is installed to the home screen.
+      </div>
+      <div id="reminder-controls" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-lime btn-sm" style="flex:1;min-width:140px;" onclick="enableReminders()">Enable Reminders</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1;min-width:80px;" onclick="testReminder()">Test</button>
       </div>
     </div>
 
@@ -571,6 +575,17 @@ function renderCoach(){
           </div>`).join('')}
     </div>
   `;
+
+  isReminderEnabled().then(on=>{
+    const el=document.getElementById("reminder-controls");
+    if(!el)return;
+    if(on){
+      el.innerHTML=`
+        <button class="btn btn-ghost btn-sm" style="flex:1;min-width:140px;" onclick="disableReminders()">Disable Reminders</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1;min-width:80px;" onclick="testReminder()">Test</button>
+      `;
+    }
+  });
 }
 
 // ============================================================

@@ -8,13 +8,14 @@ datasource db {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  passwordHash String
-  state        Json          @default("{}")
-  tokens       AccessToken[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id                String             @id @default(cuid())
+  email             String             @unique
+  passwordHash      String
+  state             Json               @default("{}")
+  tokens            AccessToken[]
+  pushSubscriptions PushSubscription[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 }
 
 model AccessToken {
@@ -25,4 +26,15 @@ model AccessToken {
   name       String?
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  name      String?
+  createdAt DateTime @default(now())
 }
