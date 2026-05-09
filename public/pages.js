@@ -743,11 +743,13 @@ function renderMore(){
     <div class="sec-label">Profile Settings</div>
     <div class="card">
       <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${p.name}</div>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:12px;">Start: ${p.startWeight}kg · Target: ${p.targetWeight}kg · Protein: ${p.proteinTarget}g</div>
-      <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px;" onclick="editProfile()">Edit Targets</button>
-      <button class="btn btn-red btn-sm" style="width:100%;margin-bottom:8px;" onclick="confirmReset()">Reset All Data</button>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">Start: ${p.startWeight}kg · Target: ${p.targetWeight}kg @ ${p.targetBF||15}% BF</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">Protein: ${p.proteinTarget}g · Fat: ${p.fatTarget||'auto'}g · Carbs: ${p.carbsTarget||'auto'}g</div>
+      ${p.updatedBy==='cowork'?`<div style="font-size:10px;color:var(--lime);margin-bottom:12px;">Auto-managed by Cowork · last update ${p.updatedAt?new Date(p.updatedAt).toLocaleDateString('en-GB'):'—'}</div>`:`<div style="font-size:10px;color:var(--text3);margin-bottom:12px;">Manually set</div>`}
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px;" onclick="editProfile()">Edit Targets (override)</button>
+      <button class="btn btn-red btn-sm" style="width:100%;margin-bottom:8px;background:rgba(255,59,59,.2);" onclick="confirmReset()">Reset All Data</button>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px;" onclick="logOut()">Log Out</button>
-      <button class="btn btn-red btn-sm" style="width:100%;background:rgba(255,59,59,.2);" onclick="deleteAccount()">Delete Account</button>
+      <button class="btn btn-red btn-sm" style="width:100%;" onclick="deleteAccount()">Delete Account</button>
     </div>
   `;
 
