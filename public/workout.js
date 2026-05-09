@@ -23,8 +23,6 @@ function renderWorkout(){
   const dateLabel=dateObj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'});
 
   let html=renderWeekStrip();
-
-  // Date header with "Today" button when not on today
   html+=`<div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 14px;">
     <div>
       <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:700;">${isToday?'Today':isFuture?'Upcoming':'Past'}</div>
@@ -37,7 +35,7 @@ function renderWorkout(){
     html+=`<div class="rest-hero">
       <div class="rest-emoji">😴</div>
       <div class="rest-title">Rest Day</div>
-      <div class="rest-sub">${isToday?'Recovery is where the gains happen.<br>Walk, swim, sleep well.':isFuture?'Rest day — no training scheduled.':'Rest day.'}</div>
+      <div class="rest-sub">${isToday?'Recovery is where the gains happen.<br>Walk, swim, sleep well.':'Rest day.'}</div>
     </div>`;
     el.innerHTML=html;
     return;
@@ -50,13 +48,10 @@ function renderWorkout(){
   const prev=getPreviousSessionData(date,session);
 
   html+=`<div class="pg-title">${w.name}</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">${w.muscles}</div>`;
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">${w.muscles}</div>`;
 
-  if(prev){
-    const prevDateLabel=new Date(prev.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
-    html+=`<div style="font-size:11px;color:var(--text3);margin-bottom:14px;">↺ Previous ${session.toUpperCase()}: ${prevDateLabel}</div>`;
-  } else {
-    html+=`<div style="margin-bottom:14px;"></div>`;
+  if(isToday && !isFuture){
+    html+=`<button class="btn btn-lime btn-full" style="margin-bottom:14px;font-size:17px;padding:16px;" onclick="startGuidedWorkout()">🚀 START WORKOUT</button>`;
   }
 
   if(isFuture){
@@ -67,16 +62,8 @@ function renderWorkout(){
       <div class="pb-head"><span class="pb-lbl">Session Progress</span><span class="pb-pct">${pct}%</span></div>
       <div class="pb"><div class="pb-fill" style="width:${pct}%"></div></div>
     </div>
-    <div class="sec-label">Exercises — Tap to expand & log sets</div>
-    <div id="exList">
-      ${w.exercises.map(ex=>buildExItem(ex,dayLog,prev,isFuture)).join('')}
-    </div>`;
-
-  if(!isFuture){
-    html+=`<button class="btn btn-lime btn-full" onclick="finishSession()" style="${done===w.exercises.length?'':'opacity:.35;pointer-events:none;'}">
-      ${done===w.exercises.length?'✓ FINISH SESSION':`${done}/${w.exercises.length} EXERCISES DONE`}
-    </button>`;
-  }
+    <div class="sec-label">Exercises (tap to view/edit)</div>
+    <div id="exList">${w.exercises.map(ex=>buildExItem(ex,dayLog,prev,isFuture)).join('')}</div>`;
 
   el.innerHTML=html;
 }
@@ -173,7 +160,6 @@ function buildExItem(ex,dayLog,prevSession,readonly){
       ${readonly?'':`<button class="add-set" onclick="addSet('${ex.id}')">+ Add Set</button>
       <div style="display:flex;gap:8px;margin-top:10px;">
         <button class="btn btn-ghost btn-sm" style="flex:1" onclick="saveSets('${ex.id}')">Save Sets</button>
-        <button class="btn btn-blue btn-sm" style="flex:1" onclick="startTimer(${ex.rest},'${ex.name}')">⏱ Rest ${ex.rest}s</button>
       </div>`}
       ${best?`<div class="pb-best">🏆 Personal Best: ${best.kg}kg on ${fmtDate(best.date)}</div>`:''}
     </div>
@@ -255,54 +241,304 @@ function finishSession(){
 }
 
 // ============================================================
-// REST TIMER
+// GUIDED WORKOUT MODE
 // ============================================================
-let timerInterval=null;
-let timerRemaining=0;
-let timerTotal=0;
-const CIRCUMFERENCE=2*Math.PI*90;
+let wm = { active:false, exIdx:0, setIdx:0, mode:'outline', restTarget:0, restStarted:0, restInterval:null };
 
-function startTimer(secs,exName){
-  timerTotal=secs;
-  timerRemaining=secs;
-  document.getElementById('timerExName').textContent=exName;
-  document.getElementById('timerNextSet').textContent='';
-  document.getElementById('timerOverlay').classList.add('open');
-  updateTimerDisplay();
-  if(timerInterval)clearInterval(timerInterval);
-  timerInterval=setInterval(()=>{
-    timerRemaining--;
-    if(timerRemaining<=0){
-      timerRemaining=0;
-      updateTimerDisplay();
-      clearInterval(timerInterval);
-      if(navigator.vibrate)navigator.vibrate([200,100,200]);
-      document.getElementById('timerNextSet').textContent='GO! Start your next set';
-      document.getElementById('timerCircle').style.stroke='var(--green)';
-      setTimeout(stopTimer,2000);
-    } else {
-      updateTimerDisplay();
-    }
-  },1000);
+function startGuidedWorkout(){
+  const session=getTodaySession(); if(!session)return showToast('Rest day — no workout');
+  wm = { active:true, exIdx:0, setIdx:0, mode:'outline', session, restTarget:0, restStarted:0, restInterval:null };
+  document.getElementById('workoutMode').classList.add('open');
+  renderWmOutline();
 }
 
-function updateTimerDisplay(){
-  const el=document.getElementById('timerNum');
-  const circle=document.getElementById('timerCircle');
-  if(el)el.textContent=timerRemaining;
-  if(circle){
-    const progress=(timerRemaining/timerTotal);
-    const offset=CIRCUMFERENCE*(1-progress);
-    circle.style.strokeDashoffset=offset;
-    circle.style.strokeDasharray=CIRCUMFERENCE;
-    circle.style.stroke=timerRemaining<=5?'var(--red)':'var(--lime)';
+function exitGuidedWorkout(){
+  if(wm.restInterval)clearInterval(wm.restInterval);
+  wm.active=false;
+  document.getElementById('workoutMode').classList.remove('open');
+  renderWorkout();
+  renderToday();
+}
+
+function suggestWeight(exId, prevSession){
+  if(!prevSession||!prevSession.log[exId])return null;
+  const exObj=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises].find(e=>e.id===exId);
+  if(!exObj)return null;
+  const repMatch=String(exObj.reps).match(/(\d+)-(\d+)/);
+  const upperRep=repMatch?parseInt(repMatch[2]):null;
+  const sets=(prevSession.log[exId].sets||[]).filter(s=>s.kg&&s.reps);
+  if(!sets.length)return null;
+  const lastKg=parseFloat(sets[sets.length-1].kg);
+  const efforts=sets.map(s=>s.effort).filter(e=>e);
+  const hasEffort=efforts.length>0;
+
+  if(!upperRep){
+    return { kg:lastKg, reason:'Same as last session' };
+  }
+
+  const allHitUpper=sets.every(s=>parseInt(s.reps)>=upperRep);
+  const firstFailed=parseInt(sets[0].reps)<(upperRep-2);
+
+  if(hasEffort){
+    const allEasy=efforts.every(e=>e==='easy');
+    const mostlySolid=efforts.filter(e=>e==='solid').length>=efforts.length/2;
+    const anyTough=efforts.some(e=>e==='tough');
+    if(allEasy&&allHitUpper) return { kg:lastKg+5, reason:'+5kg (rated easy)', dir:'up' };
+    if(mostlySolid&&allHitUpper) return { kg:lastKg+2.5, reason:'+2.5kg (solid)', dir:'up' };
+    if(anyTough&&!allHitUpper) return { kg:lastKg, reason:'Hold (tough sets)' };
+  }
+
+  if(allHitUpper) return { kg:lastKg+2.5, reason:'+2.5kg (top reps)', dir:'up' };
+  if(firstFailed) return { kg:Math.max(0,lastKg-2.5), reason:'-2.5kg (deload)', dir:'down' };
+  return { kg:lastKg, reason:'Hold' };
+}
+
+function renderWmOutline(){
+  const w=WORKOUTS[wm.session];
+  const date=todayStr();
+  const prev=getPreviousSessionData(date,wm.session);
+  const html=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div class="wm-title">${w.name}</div>
+    <div class="wm-sub">${w.muscles} · ${w.exercises.length} exercises · ~${w.duration} mins</div>
+    <div class="wm-h">Today's Plan</div>
+    <div style="margin-bottom:24px;">
+      ${w.exercises.map((ex,i)=>{
+        const sug=suggestWeight(ex.id,prev);
+        const arrow=sug?.dir==='up'?'<span class="wm-arrow-up">↑</span>':sug?.dir==='down'?'<span class="wm-arrow-down">↓</span>':'';
+        const wt=sug?`@ ${sug.kg}kg ${arrow}`:'';
+        return `<div class="wm-ex-row"><div><div style="font-size:10px;color:var(--text3);font-weight:700;">${i+1}.</div><div class="wm-ex-name">${ex.name}</div></div><div class="wm-ex-spec">${ex.sets}×${ex.reps}<br>${wt}</div></div>`;
+      }).join('')}
+    </div>
+    <button class="wm-cta" onclick="wmStartFirstSet()">START WORKOUT →</button>
+  `;
+  document.getElementById('wmContent').innerHTML=html;
+}
+
+function wmStartFirstSet(){
+  wm.exIdx=0; wm.setIdx=0; wm.mode='set';
+  renderWmSet();
+}
+
+function renderWmSet(){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const prev=getPreviousSessionData(date,wm.session);
+  const sug=suggestWeight(ex.id,prev);
+  const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
+  const startKg=existingSet?.kg||sug?.kg||'';
+  const repMatch=String(ex.reps).match(/(\d+)-(\d+)/);
+  const targetReps=existingSet?.reps||(repMatch?parseInt(repMatch[2]):8);
+  const html=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
+    <div class="wm-title" style="margin-top:6px;">${ex.name}</div>
+    <div class="wm-sub">Set ${wm.setIdx+1} of ${ex.sets} · Target ${ex.reps} reps</div>
+    <a href="${ex.yt}" target="_blank" style="color:var(--blue);font-size:12px;text-decoration:none;display:block;margin-bottom:24px;">🎥 Watch ${ex.name} form →</a>
+    <div class="wm-h">Weight</div>
+    <div class="wm-stepper">
+      <button class="wm-step-btn" onclick="wmStepKg(-2.5)">−</button>
+      <input id="wm-kg" type="number" step="0.5" inputmode="decimal" value="${startKg}">
+      <button class="wm-step-btn" onclick="wmStepKg(2.5)">+</button>
+    </div>
+    ${sug?`<div class="wm-progress-hint">${sug.reason}</div>`:''}
+    <div class="wm-h" style="margin-top:24px;">Reps</div>
+    <div class="wm-stepper">
+      <button class="wm-step-btn" onclick="wmStepReps(-1)">−</button>
+      <input id="wm-reps" type="number" inputmode="numeric" value="${targetReps}">
+      <button class="wm-step-btn" onclick="wmStepReps(1)">+</button>
+    </div>
+    <button class="wm-cta" onclick="wmMarkSetDone(${ex.rest})">SET DONE</button>
+  `;
+  document.getElementById('wmContent').innerHTML=html;
+}
+
+function wmStepKg(delta){
+  const el=document.getElementById('wm-kg');
+  const cur=parseFloat(el.value)||0;
+  el.value=Math.max(0,Math.round((cur+delta)*2)/2);
+}
+function wmStepReps(delta){
+  const el=document.getElementById('wm-reps');
+  const cur=parseInt(el.value)||0;
+  el.value=Math.max(0,cur+delta);
+}
+
+function wmMarkSetDone(restSec){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  const kg=parseFloat(document.getElementById('wm-kg').value)||'';
+  const reps=parseInt(document.getElementById('wm-reps').value)||'';
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  if(!dayLog[ex.id])dayLog[ex.id]={done:false,sets:[]};
+  while(dayLog[ex.id].sets.length<=wm.setIdx)dayLog[ex.id].sets.push({kg:'',reps:'',done:false});
+  dayLog[ex.id].sets[wm.setIdx]={kg,reps,done:true,doneAt:Date.now()};
+  if(dayLog[ex.id].sets.filter(s=>s.done).length>=ex.sets)dayLog[ex.id].done=true;
+  saveExLogForDate(date,dayLog);
+  wm.restTarget=restSec;
+  wm.mode='effort';
+  renderWmEffort();
+}
+
+function renderWmEffort(){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const lastSet=dayLog[ex.id]?.sets?.[wm.setIdx];
+  const html=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Set ${wm.setIdx+1} done ✓</div>
+    <div class="wm-title" style="font-size:22px;margin-top:6px;">${lastSet?.kg||'-'}kg × ${lastSet?.reps||'-'} reps</div>
+    <div class="wm-sub">How did that feel?</div>
+    <button class="wm-effort-btn" onclick="wmRecordEffort('easy')">
+      <div class="em">😌</div>
+      <div class="lbl">EASY<div class="desc">Could've done 3+ more reps</div></div>
+    </button>
+    <button class="wm-effort-btn" onclick="wmRecordEffort('solid')">
+      <div class="em">💪</div>
+      <div class="lbl">SOLID<div class="desc">1-2 reps left in tank</div></div>
+    </button>
+    <button class="wm-effort-btn" onclick="wmRecordEffort('tough')">
+      <div class="em">🔥</div>
+      <div class="lbl">TOUGH<div class="desc">All-out, fought for reps</div></div>
+    </button>
+    <button class="wm-cta ghost" onclick="wmRecordEffort(null)">Skip rating</button>
+  `;
+  document.getElementById('wmContent').innerHTML=html;
+}
+
+function wmRecordEffort(effort){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  if(dayLog[ex.id]?.sets?.[wm.setIdx]&&effort){
+    dayLog[ex.id].sets[wm.setIdx].effort=effort;
+    saveExLogForDate(date,dayLog);
+  }
+  const isLastSet=wm.setIdx>=ex.sets-1;
+  if(isLastSet){
+    wm.mode='exDone';
+    renderWmExerciseDone();
+  } else {
+    wm.mode='rest';
+    wm.restStarted=Date.now();
+    renderWmRest();
   }
 }
 
-function skipTimer(){stopTimer();}
-function stopTimer(){
-  if(timerInterval)clearInterval(timerInterval);
-  document.getElementById('timerOverlay').classList.remove('open');
-  const circle=document.getElementById('timerCircle');
-  if(circle){circle.style.stroke='var(--lime)';circle.style.strokeDashoffset=0;}
+function renderWmRest(){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const lastSet=dayLog[ex.id]?.sets?.[wm.setIdx];
+  const effortEmoji={easy:'😌',solid:'💪',tough:'🔥'};
+  const html=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Resting</div>
+    <div class="wm-sub" style="margin-top:8px;">✓ Set ${wm.setIdx+1}: ${lastSet?.kg||'-'}kg × ${lastSet?.reps||'-'}${lastSet?.effort?' '+effortEmoji[lastSet.effort]:''}</div>
+    <div style="text-align:center;padding:60px 0;">
+      <div id="wm-timer" style="font-family:'Archivo Black',sans-serif;font-size:96px;letter-spacing:-4px;color:var(--lime);line-height:1;">${wm.restTarget}s</div>
+      <div id="wm-timer-status" style="font-size:14px;color:var(--text2);margin-top:8px;">counting down</div>
+    </div>
+    <div class="wm-meta">Next: Set ${wm.setIdx+2} of ${ex.sets} · ${ex.name}</div>
+    <button id="wm-next-btn" class="wm-cta ghost" onclick="wmStartNextSet()">SKIP REST · START NEXT SET</button>
+  `;
+  document.getElementById('wmContent').innerHTML=html;
+  if(wm.restInterval)clearInterval(wm.restInterval);
+  wm.restInterval=setInterval(updateWmRest,200);
+  updateWmRest();
+}
+
+function updateWmRest(){
+  if(!wm.active||wm.mode!=='rest')return;
+  const elapsed=(Date.now()-wm.restStarted)/1000;
+  const remaining=wm.restTarget-elapsed;
+  const t=document.getElementById('wm-timer');
+  const s=document.getElementById('wm-timer-status');
+  const b=document.getElementById('wm-next-btn');
+  if(!t)return;
+  if(remaining>0){
+    t.textContent=Math.ceil(remaining)+'s';
+    t.style.color='var(--lime)';
+    s.textContent='counting down';
+    if(b){b.textContent='SKIP REST · START NEXT SET';b.classList.add('ghost');b.classList.remove('over');}
+  } else {
+    const over=Math.floor(-remaining);
+    if(t.dataset.transitioned!=='true'){
+      t.dataset.transitioned='true';
+      if(navigator.vibrate)navigator.vibrate([200,100,200,100,200]);
+    }
+    t.textContent='+'+over+'s';
+    t.style.color='var(--orange)';
+    s.textContent='GO! Tap to start next set';
+    if(b){b.textContent='START NEXT SET';b.classList.remove('ghost');b.classList.add('over');}
+  }
+}
+
+function wmStartNextSet(){
+  const elapsed=Math.floor((Date.now()-wm.restStarted)/1000);
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  if(dayLog[ex.id]?.sets?.[wm.setIdx])dayLog[ex.id].sets[wm.setIdx].restAfter=elapsed;
+  saveExLogForDate(date,dayLog);
+  if(wm.restInterval){clearInterval(wm.restInterval);wm.restInterval=null;}
+  wm.setIdx++;
+  wm.mode='set';
+  renderWmSet();
+}
+
+function renderWmExerciseDone(){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const sets=dayLog[ex.id]?.sets||[];
+  const volume=sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
+  const isLastEx=wm.exIdx>=w.exercises.length-1;
+  const effortEmoji={easy:'😌',solid:'💪',tough:'🔥'};
+  const html=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} complete</div>
+    <div class="wm-title" style="color:var(--green);margin-top:6px;">✓ ${ex.name}</div>
+    <div class="wm-sub">${sets.filter(s=>s.done).length} sets · ${volume>0?volume.toFixed(0)+'kg total volume':''}</div>
+    <div class="wm-h" style="margin-top:24px;">Sets</div>
+    ${sets.filter(s=>s.done).map((s,i)=>`<div class="wm-set-summary"><div>Set ${i+1}</div><div>${s.kg}kg × ${s.reps}${s.effort?' '+effortEmoji[s.effort]:''}${s.restAfter?` · ${s.restAfter}s rest`:''}</div></div>`).join('')}
+    <button class="wm-cta" style="margin-top:24px;" onclick="wmNextExercise()">${isLastEx?'FINISH WORKOUT 🎉':'NEXT EXERCISE →'}</button>
+  `;
+  document.getElementById('wmContent').innerHTML=html;
+}
+
+function wmNextExercise(){
+  const w=WORKOUTS[wm.session];
+  if(wm.exIdx>=w.exercises.length-1){wmFinish();return;}
+  wm.exIdx++;
+  wm.setIdx=0;
+  wm.mode='set';
+  renderWmSet();
+}
+
+function wmFinish(){
+  const w=WORKOUTS[wm.session];
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const totalVolume=Object.values(dayLog).reduce((tot,ex)=>tot+(ex.sets||[]).reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0),0);
+  const totalSets=Object.values(dayLog).reduce((tot,ex)=>tot+(ex.sets||[]).filter(s=>s.done).length,0);
+  const html=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:60px;text-align:center;">Workout complete</div>
+    <div class="wm-title" style="text-align:center;font-size:36px;color:var(--green);margin-top:8px;">✓ ${w.name} DONE</div>
+    <div style="text-align:center;font-size:48px;margin:24px 0;">🔥</div>
+    <div style="text-align:center;color:var(--text2);font-size:14px;margin-bottom:16px;">${w.exercises.length}/${w.exercises.length} exercises · ${totalSets} sets · ${totalVolume.toFixed(0)}kg total volume</div>
+    <button class="wm-cta" onclick="exitGuidedWorkout()">FINISH</button>
+  `;
+  document.getElementById('wmContent').innerHTML=html;
+  showToast('🔥 Session complete! Great work!');
 }
