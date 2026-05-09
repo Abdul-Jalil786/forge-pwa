@@ -20,7 +20,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "https://api.ouraring.com", "https://wbsapi.withings.net"],
+      connectSrc: ["'self'", "https://api.ouraring.com", "https://wbsapi.withings.net", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
       frameSrc: ["'self'"],
       objectSrc: ["'none'"],
     },
