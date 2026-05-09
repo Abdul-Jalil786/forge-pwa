@@ -2,6 +2,7 @@ import cron from "node-cron";
 import webpush from "web-push";
 import prisma from "./db";
 import { syncOuraForAllUsers } from "./oura";
+import { syncWithingsForAllUsers } from "./withings";
 
 const fired = new Map<string, Set<string>>();
 
@@ -74,6 +75,17 @@ export function startCron() {
       console.log("Daily Oura sync complete");
     } catch (err) {
       console.error("Daily Oura sync error:", err);
+    }
+  }, { timezone: "Europe/London" });
+
+  // Daily Withings sync at 08:15 UK time
+  cron.schedule("15 8 * * *", async () => {
+    console.log("Running daily Withings sync...");
+    try {
+      await syncWithingsForAllUsers();
+      console.log("Daily Withings sync complete");
+    } catch (err) {
+      console.error("Daily Withings sync error:", err);
     }
   }, { timezone: "Europe/London" });
 }

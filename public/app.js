@@ -418,6 +418,62 @@ async function disconnectOura(){
   }catch(e){showToast('Failed');}
 }
 
+// ---- WITHINGS ----
+async function loadWithingsStatus(){
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/withings/status',{headers:{Authorization:'Bearer '+jwt}});
+    const data=await res.json();
+    const statusEl=document.getElementById('withings-status');
+    const ctrlEl=document.getElementById('withings-controls');
+    if(!statusEl||!ctrlEl)return;
+    if(data.connected){
+      const last=data.lastSync?new Date(data.lastSync).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'Never';
+      statusEl.innerHTML=`Connected · Last sync: <strong style="color:var(--text);">${last}</strong><br>Daily auto-sync at 8:15am pulls weight, body fat, muscle mass.`;
+      ctrlEl.innerHTML=`
+        <button class="btn btn-ghost btn-sm" style="flex:1;min-width:120px;" onclick="syncWithingsNow()">Sync Now</button>
+        <button class="btn btn-red btn-sm" style="flex:1;min-width:120px;" onclick="disconnectWithings()">Disconnect</button>
+      `;
+    } else {
+      statusEl.innerHTML='Connect your Withings scale to auto-sync weight, body fat, muscle mass and visceral fat daily.';
+    }
+  }catch(e){console.error(e);}
+}
+
+async function connectWithings(){
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/withings/auth-url',{headers:{Authorization:'Bearer '+jwt}});
+    const data=await res.json();
+    if(data.authUrl){window.location.href=data.authUrl;}
+    else showToast('Failed to start Withings auth');
+  }catch(e){showToast('Failed');}
+}
+
+async function syncWithingsNow(){
+  const jwt=localStorage.getItem('forge_token');
+  showToast('Syncing Withings...');
+  try{
+    const res=await fetch('/api/withings/sync',{method:'POST',headers:{Authorization:'Bearer '+jwt}});
+    const data=await res.json();
+    if(data.error){showToast('Sync error: '+data.error);return;}
+    showToast(`Synced ${data.updated} entries`);
+    await loadState();
+    renderAll();
+    loadWithingsStatus();
+  }catch(e){showToast('Sync failed');}
+}
+
+async function disconnectWithings(){
+  if(!confirm('Disconnect Withings? Existing data stays, but auto-sync stops.'))return;
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    await fetch('/api/withings/disconnect',{method:'DELETE',headers:{Authorization:'Bearer '+jwt}});
+    showToast('Withings disconnected');
+    loadWithingsStatus();
+  }catch(e){showToast('Failed');}
+}
+
 // ---- ACCOUNT ----
 function logOut(){
   Object.keys(localStorage)

@@ -58,6 +58,7 @@ let STATE = {
   bfLog: [],
   mealPlan: null,
   recovery: {},
+  bodyComp: {},
 };
 let saveStateTimeout = null;
 

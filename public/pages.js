@@ -596,6 +596,16 @@ function renderMore(){
   const water=getWater();
   const waterTarget=8;
 
+  const params=new URLSearchParams(window.location.search);
+  const wResult=params.get('withings');
+  if(wResult==='connected'){
+    showToast('Withings connected');
+    history.replaceState({},'','/');
+  } else if(wResult==='error'||wResult==='invalid_state'||wResult==='missing_params'){
+    showToast('Withings connection failed');
+    history.replaceState({},'','/');
+  }
+
   document.getElementById('page-more').innerHTML=`
     <div class="pg-title" style="margin-bottom:14px;">More</div>
 
@@ -651,6 +661,14 @@ function renderMore(){
       </div>
     </div>
 
+    <div class="sec-label">Withings Scale</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div id="withings-status" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">Loading...</div>
+      <div id="withings-controls" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-lime btn-sm" style="flex:1;min-width:140px;" onclick="connectWithings()">Connect Withings</button>
+      </div>
+    </div>
+
     <div class="sec-label">Calorie Stage Guide</div>
     <div class="card" style="margin-bottom:10px;">
       ${[{w:114,c:'2,300–2,400'},{w:108,c:'2,200'},{w:102,c:'2,100'},{w:96,c:'2,050'},{w:90,c:'1,950'},{w:87,c:'Maintenance'}].map(s=>`
@@ -672,6 +690,7 @@ function renderMore(){
   `;
 
   loadOuraStatus();
+  loadWithingsStatus();
 
   loadAccessTokens().then(tokens=>{
     const el=document.getElementById('token-list');

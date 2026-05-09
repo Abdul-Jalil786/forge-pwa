@@ -1,0 +1,154 @@
+import prisma from "./db";
+
+const TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2";
+const MEAS_URL = "https://wbsapi.withings.net/measure";
+const AUTH_URL = "https://account.withings.com/oauth2_user/authorize2";
+
+const CLIENT_ID = process.env.WITHINGS_CLIENT_ID || "";
+const CLIENT_SECRET = process.env.WITHINGS_CLIENT_SECRET || "";
+
+export function getAuthUrl(redirectUri: string, state: string): string {
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: CLIENT_ID,
+    scope: "user.metrics",
+    redirect_uri: redirectUri,
+    state,
+  });
+  return `${AUTH_URL}?${params.toString()}`;
+}
+
+export async function exchangeCodeForToken(code: string, redirectUri: string): Promise<any> {
+  const body = new URLSearchParams({
+    action: "requesttoken",
+    client_id: CLIENT_ID,
+    client_secret: CLIENT_SECRET,
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirectUri,
+  });
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const data: any = await res.json();
+  if (data.status !== 0) throw new Error(`Withings token error: ${JSON.stringify(data)}`);
+  return data.body;
+}
+
+export async function refreshToken(refresh: string): Promise<any> {
+  const body = new URLSearchParams({
+    action: "requesttoken",
+    client_id: CLIENT_ID,
+    client_secret: CLIENT_SECRET,
+    grant_type: "refresh_token",
+    refresh_token: refresh,
+  });
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const data: any = await res.json();
+  if (data.status !== 0) throw new Error(`Withings refresh error: ${JSON.stringify(data)}`);
+  return data.body;
+}
+
+async function ensureFreshToken(userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const state: any = user?.state || {};
+  const w = state.withings;
+  if (!w?.accessToken) throw new Error("Not connected");
+  // Refresh if expiring within 5 mins
+  if (Date.now() > (w.expiresAt || 0) - 5 * 60 * 1000) {
+    const fresh = await refreshToken(w.refreshToken);
+    state.withings = {
+      ...w,
+      accessToken: fresh.access_token,
+      refreshToken: fresh.refresh_token,
+      expiresAt: Date.now() + fresh.expires_in * 1000,
+    };
+    await prisma.user.update({ where: { id: userId }, data: { state } });
+    return fresh.access_token;
+  }
+  return w.accessToken;
+}
+
+export async function syncWithingsForUser(userId: string): Promise<{ updated: number; error?: string }> {
+  let token: string;
+  try {
+    token = await ensureFreshToken(userId);
+  } catch (e: any) {
+    return { updated: 0, error: e.message };
+  }
+
+  const startdate = Math.floor(Date.now() / 1000) - 30 * 86400; // last 30 days
+  const meastypes = "1,5,6,8,76,88,77,170,169,91,226";
+  const url = `${MEAS_URL}?action=getmeas&meastypes=${meastypes}&startdate=${startdate}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const json: any = await res.json();
+  if (json.status !== 0) return { updated: 0, error: JSON.stringify(json) };
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const state: any = user?.state || {};
+  const weightLog = state.weightLog || [];
+  const bfLog = state.bfLog || [];
+  const bodyComp = state.bodyComp || {};
+
+  const byDate: Record<string, any> = {};
+  for (const grp of json.body.measuregrps || []) {
+    const dateStr = new Date(grp.date * 1000).toISOString().split("T")[0];
+    if (!byDate[dateStr]) byDate[dateStr] = {};
+    for (const m of grp.measures || []) {
+      const v = m.value * Math.pow(10, m.unit);
+      if (m.type === 1) byDate[dateStr].weight = Math.round(v * 10) / 10;
+      else if (m.type === 5) byDate[dateStr].bf = Math.round(v * 10) / 10;
+      else if (m.type === 6) byDate[dateStr].fatFreeMass = Math.round(v * 10) / 10;
+      else if (m.type === 8) byDate[dateStr].fatMass = Math.round(v * 10) / 10;
+      else if (m.type === 76) byDate[dateStr].muscleMass = Math.round(v * 10) / 10;
+      else if (m.type === 88) byDate[dateStr].boneMass = Math.round(v * 10) / 10;
+      else if (m.type === 77) byDate[dateStr].hydration = Math.round(v * 10) / 10;
+      else if (m.type === 170) byDate[dateStr].visceralFat = Math.round(v * 10) / 10;
+      else if (m.type === 169) byDate[dateStr].vascularAge = v;
+      else if (m.type === 91) byDate[dateStr].pulseWaveVelocity = Math.round(v * 10) / 10;
+      else if (m.type === 226) byDate[dateStr].standingHR = v;
+    }
+  }
+
+  let updated = 0;
+  for (const [date, meas] of Object.entries(byDate)) {
+    if (meas.weight) {
+      const existing = weightLog.findIndex((e: any) => e.date === date);
+      if (existing >= 0) weightLog[existing].weight = meas.weight;
+      else weightLog.push({ date, weight: meas.weight });
+      updated++;
+    }
+    if (meas.bf) {
+      const existing = bfLog.findIndex((e: any) => e.date === date);
+      if (existing >= 0) bfLog[existing].bf = meas.bf;
+      else bfLog.push({ date, bf: meas.bf });
+      updated++;
+    }
+    bodyComp[date] = meas;
+  }
+
+  weightLog.sort((a: any, b: any) => a.date.localeCompare(b.date));
+  bfLog.sort((a: any, b: any) => a.date.localeCompare(b.date));
+
+  state.weightLog = weightLog;
+  state.bfLog = bfLog;
+  state.bodyComp = bodyComp;
+  state.withings = { ...state.withings, lastSync: new Date().toISOString() };
+  await prisma.user.update({ where: { id: userId }, data: { state } });
+  return { updated };
+}
+
+export async function syncWithingsForAllUsers(): Promise<void> {
+  const users = await prisma.user.findMany();
+  for (const user of users) {
+    const state: any = user.state;
+    if (!state?.withings?.accessToken) continue;
+    await syncWithingsForUser(user.id).catch(e => console.error(`Withings sync ${user.id}:`, e));
+  }
+}
