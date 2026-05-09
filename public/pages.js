@@ -354,7 +354,6 @@ function renderTrack(){
   const p=getActive(); if(!p)return;
   const wl=getWeightLog();
   const cw=getCurrentWeight();
-  const lost=p.startWidth-cw;
   const pct=Math.max(0,Math.min(100,Math.round(((p.startWeight-cw)/(p.startWeight-p.targetWeight))*100)));
   const stepsLog=getStepsLog();
   const last7=getLast7();
@@ -525,13 +524,12 @@ function renderCalendar(){
 }
 
 // ============================================================
-// BODY PAGE (Measurements + Photos + Sleep)
+// BODY PAGE (Measurements + Sleep)
 // ============================================================
 function renderBody(){
   const measLog=getMeasLog();
   const latest=getLatestMeas();
   const prev=measLog.length>=2?measLog[measLog.length-2]:null;
-  const photos=getPhotos();
   const sleepLog=getSleepLog();
   const last7=getLast7();
   const swimLog=getSwimLog();
@@ -603,19 +601,6 @@ function renderBody(){
           </div>`).join('')}
     </div>
 
-    <div class="sec-label">Progress Photos</div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <div style="font-size:11px;color:var(--text2);">${photos.length} photos</div>
-      <label class="btn btn-ghost btn-sm" style="cursor:pointer;">+ Photo<input type="file" accept="image/*" capture="environment" onchange="handlePhoto(event)" style="display:none;"></label>
-    </div>
-    <div class="photo-grid">
-      ${photos.slice(-9).reverse().map(ph=>`
-        <div class="photo-thumb">
-          <img src="${ph.data}" alt="">
-          <div class="pt-date">${fmtDate(ph.date)}</div>
-        </div>`).join('')}
-      ${photos.length===0?'<div class="photo-thumb photo-add"><div style="font-size:28px;">📷</div><div>Add photo</div></div>':''}
-    </div>
   `;
 }
 

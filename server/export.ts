@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import crypto from "crypto";
 import prisma from "./db";
 
 const router = Router();
@@ -15,8 +16,9 @@ router.get("/", async (req: Request, res: Response) => {
       res.status(401).json({ error: "Invalid token format" });
       return;
     }
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     const accessToken = await prisma.accessToken.findUnique({
-      where: { token },
+      where: { tokenHash },
       include: { user: { select: { email: true, state: true, updatedAt: true } } },
     });
     if (!accessToken) {

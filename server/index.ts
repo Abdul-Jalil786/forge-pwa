@@ -1,14 +1,59 @@
 import "dotenv/config";
 import express from "express";
 import path from "path";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
 import authRouter from "./auth";
 import stateRouter from "./state";
+import prisma from "./db";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
 const app = express();
 
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://api.ouraring.com", "https://wbsapi.withings.net"],
+      frameSrc: ["'self'"],
+      objectSrc: ["'none'"],
+    },
+  },
+}));
+
 app.use(express.json({ limit: "6mb" }));
+
+// Health check
+app.get("/api/health", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true, db: "ok", uptime: process.uptime() });
+  } catch (err) {
+    res.status(503).json({ ok: false, db: "error" });
+  }
+});
+
+// Rate limiters for auth endpoints
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Too many login attempts, try again in 15 minutes" },
+  standardHeaders: true,
+});
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: "Too many signup attempts, try again later" },
+  standardHeaders: true,
+});
+
+app.post("/api/auth/login", loginLimiter, (_req, _res, next) => next());
+app.post("/api/auth/signup", signupLimiter, (_req, _res, next) => next());
 
 // API routes
 app.use("/api/auth", authRouter);
@@ -50,7 +95,20 @@ app.get("*", (_req, res) => {
 
 import { startCron } from "./cron";
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Forge server running on port ${PORT}`);
   startCron();
 });
+
+const shutdown = async (signal: string) => {
+  console.log(`${signal} received, shutting down...`);
+  server.close(async () => {
+    await prisma.$disconnect();
+    console.log("Cleanup complete, exiting");
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 25000);
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

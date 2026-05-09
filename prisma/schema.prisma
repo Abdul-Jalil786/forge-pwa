@@ -22,7 +22,8 @@ model AccessToken {
   id         String    @id @default(cuid())
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token      String    @unique
+  tokenHash  String    @unique
+  prefix     String?
   name       String?
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?

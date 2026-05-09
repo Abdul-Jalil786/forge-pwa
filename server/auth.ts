@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import prisma from "./db";
 
 const router = Router();
@@ -54,8 +55,9 @@ export async function requireAccessToken(req: Request, res: Response, next: Next
     res.status(401).json({ error: "Invalid token format" });
     return;
   }
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
   const accessToken = await prisma.accessToken.findUnique({
-    where: { token },
+    where: { tokenHash },
     select: { id: true, userId: true },
   });
   if (!accessToken) {

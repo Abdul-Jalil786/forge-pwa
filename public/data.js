@@ -62,7 +62,6 @@ let STATE = {
   supps: [],
   suppDone: {},
   water: {},
-  photos: [],
   foodTemplates: [],
   bfLog: [],
   mealPlan: null,
@@ -136,7 +135,7 @@ function readLocalStorageMigration() {
       proteinTarget: profile.proteinTarget,
     },
   };
-  const keys = ["weightLog","foods","stepsLog","exLog","measLog","sleepLog","swimLog","supps","suppDone","water","photos","foodTemplates"];
+  const keys = ["weightLog","foods","stepsLog","exLog","measLog","sleepLog","swimLog","supps","suppDone","water","foodTemplates"];
   keys.forEach(k => {
     const v = localStorage.getItem(`forge_${profile.id}_${k}`);
     if (v) { try { data[k] = JSON.parse(v); } catch {} }
@@ -363,16 +362,6 @@ function saveWater(cups){
   const wc=pGet('waterClicked',{});
   wc[todayStr()]=true;
   pSet('waterClicked',wc);
-}
-
-// ============================================================
-// PHOTOS
-// ============================================================
-function getPhotos(){return pGet('photos',[]);}
-function savePhoto(dataUrl){
-  const p=getPhotos();
-  p.push({date:todayStr(),data:dataUrl});
-  pSet('photos',p);
 }
 
 // ============================================================

@@ -217,18 +217,6 @@ function toggleSupp(i){toggleSuppDone(i);renderCoach();}
 function setWater(cups){saveWater(cups);renderMore();renderToday();showToast(`${cups} cups 💧`);}
 function resetWater(){saveWater(0);renderMore();renderToday();}
 
-// ---- PHOTOS ----
-function handlePhoto(event){
-  const file=event.target.files[0]; if(!file)return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    savePhoto(e.target.result);
-    renderBody();
-    showToast('Photo saved ✓');
-  };
-  reader.readAsDataURL(file);
-}
-
 // ---- ACCESS TOKENS ----
 async function generateAccessToken(){
   const name=prompt('Token name (e.g. "Cowork"):')||'Cowork';
@@ -508,7 +496,7 @@ function editProfile(){
 
 function confirmReset(){
   if(confirm('Delete ALL data for this profile? This cannot be undone.')){
-    ['weightLog','foods','stepsLog','exLog','measLog','sleepLog','swimLog','supps','suppDone','water','photos','foodTemplates'].forEach(k=>{
+    ['weightLog','foods','stepsLog','exLog','measLog','sleepLog','swimLog','supps','suppDone','water','foodTemplates'].forEach(k=>{
       STATE[k] = Array.isArray(STATE[k]) ? [] : {};
     });
     saveStateNow();
