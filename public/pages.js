@@ -1,81 +1,179 @@
 // ============================================================
 // TODAY PAGE
 // ============================================================
+function spark(values,color){
+  if(!values||values.length<2)return '<svg width="80" height="24"></svg>';
+  const w=80,h=24,p=2;
+  const min=Math.min(...values),max=Math.max(...values),range=max-min||1;
+  const points=values.map((v,i)=>{
+    const x=p+(i/(values.length-1))*(w-p*2);
+    const y=h-p-((v-min)/range)*(h-p*2);
+    return x.toFixed(1)+','+y.toFixed(1);
+  }).join(' ');
+  return `<svg width="${w}" height="${h}" style="display:block;"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function trendDelta(values,days){
+  if(!values||values.length<2)return null;
+  const recent=values.slice(-Math.min(days,values.length));
+  if(recent.length<2)return null;
+  const change=recent[recent.length-1]-recent[0];
+  const dir=Math.abs(change)<0.1?'flat':change<0?'down':'up';
+  const arrow=dir==='down'?'▼':dir==='up'?'▲':'•';
+  return { dir, arrow, delta: Math.abs(change).toFixed(1) };
+}
+
 function renderToday(){
   const p=getActive(); if(!p)return;
   const session=getTodaySession();
   const cw=getCurrentWeight();
-  const lost=p.startWeight-cw;
-  const toGo=cw-p.targetWeight;
+  const bf=getCurrentBf();
+  const lost=Math.max(0,p.startWeight-cw);
+  const toGo=Math.max(0,cw-p.targetWeight);
   const pct=Math.max(0,Math.min(100,Math.round((lost/(p.startWeight-p.targetWeight))*100)));
   const totals=getTodayTotals();
   const calTarget=session?p.calsGym:p.calsRest;
   const steps=getTodaySteps();
-  const water=getWater();
   const sleepLog=getSleepLog();
   const lastSleep=sleepLog[todayStr()]?.hours||sleepLog[Object.keys(sleepLog).sort().pop()]?.hours||0;
-  const dayLog=getTodayExLog();
-  const w=session?WORKOUTS[session]:null;
-  const exDone=w?w.exercises.filter(e=>dayLog[e.id]?.done).length:0;
-  const exTotal=w?w.exercises.length:0;
-  const exPct=exTotal?Math.round((exDone/exTotal)*100):0;
-  const report=getWeeklyReport();
+  const recovery=pGet('recovery',{});
+  const recoveryToday=recovery[todayStr()]||recovery[Object.keys(recovery).sort().pop()]||{};
+  const reports=pGet('coachingReports',[]);
+  const latestReport=reports[0];
+  const measLog=getMeasLog();
+  const latestWaist=measLog.length?[...measLog].reverse().find(m=>m.waist):null;
   const stepStreak=calcStreak('steps');
+  const gymStreak=calcStreak('gym');
+  const foodStreak=calcStreak('food');
+
+  const planStart=STATE.planStartDate||todayStr();
+  const startDate=new Date(planStart+'T00:00:00');
+  const dayOfCut=Math.floor((Date.now()-startDate.getTime())/86400000)+1;
+
+  const readiness=recoveryToday.readiness||0;
+  let recRec='—', recColor='var(--text2)';
+  if(readiness>=75){recRec='Push hard today'; recColor='var(--green)';}
+  else if(readiness>=60){recRec='Train as planned'; recColor='var(--lime)';}
+  else if(readiness>=45){recRec='Take it easier'; recColor='var(--orange)';}
+  else if(readiness>0){recRec='Consider full rest'; recColor='var(--red)';}
+
+  const plan=STATE.mealPlan;
+  let nextMealStr='No meal plan set';
+  if(plan&&plan.meals?.length){
+    const now=new Date();
+    const nowHHMM=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+    const next=plan.meals.find(m=>m.time>nowHHMM);
+    if(next){
+      const [h,m]=next.time.split(':').map(Number);
+      const target=new Date();target.setHours(h,m,0,0);
+      const diff=target.getTime()-now.getTime();
+      const hrs=Math.floor(diff/3600000);
+      const mins=Math.floor((diff%3600000)/60000);
+      nextMealStr=`Next: ${next.name} in ${hrs>0?hrs+'h ':''}${mins}m`;
+    } else {
+      nextMealStr='Window closed · next meal 12:00 tomorrow';
+    }
+  }
+
+  const weightSpark=spark((getWeightLog()||[]).slice(-14).map(e=>e.weight),'var(--lime)');
+  const bfSpark=spark((getBfLog()||[]).slice(-14).map(e=>e.bf),'var(--cyan)');
+  const waistSpark=measLog.filter(m=>m.waist).slice(-14).map(m=>m.waist);
+  const waistSparkSvg=waistSpark.length?spark(waistSpark,'var(--orange)'):'';
+
+  const weightTrend=trendDelta(getWeightLog().map(e=>e.weight),7);
+  const bfTrend=trendDelta(getBfLog().map(e=>e.bf),7);
 
   document.getElementById('page-today').innerHTML=`
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
-      <div>
-        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;">${dayName()}</div>
-        <div class="pg-title">${p.name.split(' ')[0]}'s<br>Dashboard</div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;">${dayName()} ${new Date().getDate()} ${new Date().toLocaleDateString('en-GB',{month:'short'})}</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+        <div class="pg-title">Day ${dayOfCut}</div>
+        <div style="font-size:11px;color:var(--text3);">of your cut</div>
       </div>
-      <button class="btn btn-lime btn-sm" onclick="openModal('modal-weight')" style="margin-top:4px;">+ Weight</button>
     </div>
 
     <div class="card hi" style="margin-bottom:10px;">
+      <div style="font-size:9px;font-weight:700;color:var(--lime);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px;">TODAY</div>
+      ${session?`
+        <div style="font-family:'Archivo Black',sans-serif;font-size:18px;letter-spacing:-.5px;margin-bottom:4px;">${WORKOUTS[session].name} — 16:00</div>
+      `:`
+        <div style="font-family:'Archivo Black',sans-serif;font-size:18px;letter-spacing:-.5px;margin-bottom:4px;">Rest Day</div>
+      `}
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">${nextMealStr}</div>
+      ${readiness?`<div style="font-size:12px;color:${recColor};font-weight:600;">${recRec} · Readiness ${readiness}</div>`:''}
+    </div>
+
+    <div class="sec-label">Progress to Goal</div>
+    <div class="card" style="margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px;">
         <div>
-          <div style="font-size:10px;color:var(--text2);margin-bottom:2px;">CURRENT WEIGHT</div>
-          <div style="font-family:'Archivo Black',sans-serif;font-size:38px;color:var(--lime);letter-spacing:-2px;">${cw}kg</div>
+          <div style="font-size:10px;color:var(--text2);">CURRENT</div>
+          <div style="font-family:'Archivo Black',sans-serif;font-size:34px;color:var(--lime);letter-spacing:-2px;line-height:1;">${cw}<span style="font-size:16px;">kg</span></div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:10px;color:var(--text2);">TARGET</div>
-          <div style="font-family:'Archivo Black',sans-serif;font-size:20px;">${p.targetWeight}kg</div>
+          <div style="font-family:'Archivo Black',sans-serif;font-size:18px;">${p.targetWeight}kg @ ${p.targetBF||15}%</div>
         </div>
       </div>
       <div class="pb-wrap" style="margin-bottom:0;">
-        <div class="pb-head"><span class="pb-lbl">${p.startWeight}kg → ${p.targetWeight}kg</span><span class="pb-pct">${pct}%</span></div>
+        <div class="pb-head"><span class="pb-lbl">${lost.toFixed(1)}kg lost · ${toGo.toFixed(1)}kg to go</span><span class="pb-pct">${pct}%</span></div>
         <div class="pb"><div class="pb-fill" style="width:${pct}%"></div></div>
       </div>
     </div>
 
-    <div class="sg sg3" style="margin-bottom:10px;">
-      <div class="sb green"><div class="l">Lost</div><div class="v">${lost>0?lost.toFixed(1):'0'}<span class="u">kg</span></div></div>
-      <div class="sb orange"><div class="l">To Go</div><div class="v">${toGo>0?toGo.toFixed(1):'0'}<span class="u">kg</span></div></div>
-      <div class="sb purple"><div class="l">Sleep</div><div class="v">${lastSleep?lastSleep+'<span class="u">hrs</span>':'—'}</div></div>
+    <div class="sec-label">Key Metrics</div>
+    <div class="card" style="margin-bottom:10px;padding:10px 12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Weight</div>
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--lime);">${cw}<span style="font-size:11px;color:var(--text2);">kg</span></div>
+            ${weightTrend?`<div style="font-size:11px;color:${weightTrend.dir==='down'?'var(--green)':weightTrend.dir==='up'?'var(--red)':'var(--text2)'};">${weightTrend.arrow} ${weightTrend.delta}kg/wk</div>`:''}
+          </div>
+        </div>
+        <div>${weightSpark}</div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Body Fat</div>
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--cyan);">${bf?bf+'%':'—'}</div>
+            ${bfTrend?`<div style="font-size:11px;color:${bfTrend.dir==='down'?'var(--green)':bfTrend.dir==='up'?'var(--red)':'var(--text2)'};">${bfTrend.arrow} ${bfTrend.delta}%/wk</div>`:''}
+          </div>
+        </div>
+        <div>${bfSpark}</div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;">
+        <div style="flex:1;">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Waist</div>
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--orange);">${latestWaist?latestWaist.waist+'cm':'—'}</div>
+          </div>
+        </div>
+        <div>${waistSparkSvg}</div>
+      </div>
     </div>
 
-    ${session?`
-    <div class="card hi" style="margin-bottom:10px;cursor:pointer;" onclick="nav('workout')">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    ${readiness?`
+    <div class="sec-label">Recovery</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px;">
         <div>
-          <div style="font-size:9px;font-weight:700;color:var(--lime);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">TODAY'S SESSION</div>
-          <div style="font-family:'Archivo Black',sans-serif;font-size:18px;letter-spacing:-.5px;">${w.name}</div>
-          <div style="font-size:11px;color:var(--text2);">${w.muscles}</div>
+          <div style="font-size:10px;color:var(--text2);">READINESS</div>
+          <div style="font-family:'Archivo Black',sans-serif;font-size:30px;color:${readiness>=75?'var(--green)':readiness>=60?'var(--lime)':readiness>=45?'var(--orange)':'var(--red)'};">${readiness}</div>
         </div>
-        <div style="text-align:right;">
-          <div style="font-family:'Archivo Black',sans-serif;font-size:28px;color:var(--lime);">${exDone}/${exTotal}</div>
-          <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;">done</div>
+        <div style="text-align:right;font-size:11px;color:var(--text2);">
+          ${lastSleep?`Sleep ${lastSleep}h<br>`:''}
+          ${recoveryToday.hrv?`HRV ${recoveryToday.hrv}<br>`:''}
+          ${recoveryToday.restingHR?`RHR ${recoveryToday.restingHR}`:''}
         </div>
       </div>
-      <div class="pb"><div class="pb-fill" style="width:${exPct}%"></div></div>
-    </div>`:`
-    <div class="rest-hero" style="padding:20px;margin-bottom:10px;">
-      <div class="rest-emoji">🔋</div>
-      <div class="rest-title" style="font-size:22px;">Rest Day</div>
-      <div class="rest-sub">Walk, swim, recover. Come back stronger.</div>
-    </div>`}
+      <div style="font-size:11px;color:${recColor};font-weight:600;">${recRec}</div>
+    </div>
+    `:''}
 
-    <div class="sg sg2">
+    <div class="sec-label">Today's Targets</div>
+    <div class="sg sg2" style="margin-bottom:6px;">
       <div class="sb${totals.cals>=calTarget?' green':' lime'}">
         <div class="l">Calories</div>
         <div class="v">${totals.cals}<span class="u">/${calTarget}</span></div>
@@ -85,34 +183,36 @@ function renderToday(){
         <div class="v">${totals.protein}<span class="u">/${p.proteinTarget}g</span></div>
       </div>
     </div>
-    <div class="sg sg2">
+    <div class="sg sg2" style="margin-bottom:10px;">
       <div class="sb${steps>=10000?' green':' blue'}">
         <div class="l">Steps</div>
         <div class="v">${steps>=1000?(steps/1000).toFixed(1)+'k':steps||'0'}<span class="u">/10k</span></div>
       </div>
-      <div class="sb cyan" style="--cyan:var(--cyan)">
-        <div class="l">Water</div>
-        <div class="v" style="color:var(--cyan)">${water}<span class="u">/8 cups</span></div>
+      <div class="sb purple">
+        <div class="l">Sleep</div>
+        <div class="v">${lastSleep||'—'}<span class="u">hrs</span></div>
       </div>
     </div>
 
-    ${report?`
-    <div class="sec-label">This Week</div>
-    <div class="card" onclick="nav('coach')" style="cursor:pointer;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-weight:700;font-size:14px;">Weekly Score</div>
-        <div style="font-family:'Archivo Black',sans-serif;font-size:28px;color:${report.overall>=75?'var(--green)':report.overall>=60?'var(--lime)':'var(--orange)'};">${report.overall}<span style="font-size:14px;color:var(--text2);">/100</span></div>
-      </div>
-      <div class="pb"><div class="pb-fill" style="width:${report.overall}%"></div></div>
-      <div style="font-size:11px;color:var(--text2);margin-top:6px;">Steps ${report.stepsHit}/7 · Protein ${report.proteinDays}/7 · Gym ${report.gymDays}/4 · Tap for AI coaching →</div>
-    </div>`:''}
+    ${latestReport?`
+    <div class="sec-label">Coach</div>
+    <div class="card" style="margin-bottom:10px;border-color:var(--blue);background:linear-gradient(135deg,rgba(61,155,255,.04),transparent);cursor:pointer;" onclick="nav('coach')">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:13px;margin-bottom:4px;">${latestReport.title}</div>
+      <div style="font-size:11px;color:var(--text2);line-height:1.5;">${(latestReport.content||'').slice(0,140).replace(/[#*]/g,'').trim()}…</div>
+      <div style="font-size:10px;color:var(--blue);margin-top:6px;">Tap to read full →</div>
+    </div>
+    `:''}
 
-    <div style="display:flex;gap:8px;margin-bottom:10px;">
-      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="nav('food')">+ Food</button>
-      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="openModal('modal-sleep')">+ Sleep</button>
-      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="nav('more')">+ Water</button>
+    <div class="sec-label">Streaks</div>
+    <div class="sg sg3">
+      <div class="sb lime"><div class="l">Gym</div><div class="v">${gymStreak}<span class="u">days</span></div></div>
+      <div class="sb green"><div class="l">Food</div><div class="v">${foodStreak}<span class="u">days</span></div></div>
+      <div class="sb orange"><div class="l">Steps 10k</div><div class="v">${stepStreak}<span class="u">days</span></div></div>
     </div>
   `;
+
+  if(window._todayTimer)clearTimeout(window._todayTimer);
+  window._todayTimer=setTimeout(()=>{ if(document.getElementById('page-today').classList.contains('active'))renderToday(); },60000);
 }
 
 // ============================================================
