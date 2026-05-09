@@ -36,6 +36,9 @@ app.use("/api/coaching-reports", coachingRouter);
 import profileRouter from "./profile-routes";
 app.use("/api/profile", profileRouter);
 
+import remindersRouter from "./reminders-routes";
+app.use("/api/reminders", remindersRouter);
+
 // Static files — use process.cwd() so it works in both dev (tsx) and prod (dist/)
 const publicDir = path.join(process.cwd(), "public");
 app.use(express.static(publicDir));
