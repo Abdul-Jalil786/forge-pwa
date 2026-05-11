@@ -87,7 +87,7 @@ function renderWeekStrip(){
 
   let html='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:6px;">';
   days.forEach((d,i)=>{
-    const key=d.toISOString().split('T')[0];
+    const key=_ukDate(d);
     const session=getSessionTypeForDate(key);
     const isPast=key<today;
     const isToday=key===today;

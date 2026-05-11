@@ -246,7 +246,7 @@ function setFoodViewDate(d){foodViewDate=(d===todayStr())?null:d;renderFood();}
 function shiftFoodDate(days){
   const cur=new Date(getFoodViewDate()+'T12:00:00');
   cur.setDate(cur.getDate()+days);
-  const newDate=cur.toISOString().split('T')[0];
+  const newDate=_ukDate(cur);
   if(newDate>todayStr())return; // no future dates
   setFoodViewDate(newDate);
 }
@@ -612,7 +612,7 @@ function renderCalendar(){
   for(let i=0;i<pad;i++)html+='<div></div>';
 
   days.forEach(d=>{
-    const key=d.toISOString().split('T')[0];
+    const key=_ukDate(d);
     const isToday=key===todayStr();
     const isFuture=d>today;
     const el=exLog[key]||{};

@@ -182,7 +182,8 @@ let activePid = null;
 // ============================================================
 // DATE HELPERS
 // ============================================================
-function todayStr(){return new Date().toISOString().split('T')[0];}
+const _ukDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+function todayStr(){return _ukDate(new Date());}
 function dayOfWeek(){return new Date().getDay();} // 0=Sun
 function getTodaySession(){return getSessionTypeForDate(todayStr());}
 function dayName(){return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dayOfWeek()];}
@@ -190,12 +191,12 @@ function fmtDate(str){return new Date(str+'T12:00:00').toLocaleDateString('en-GB
 function fmtNow(){const n=new Date();return n.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}
 function getLast7(){
   const days=[];
-  for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(d.toISOString().split('T')[0]);}
+  for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(_ukDate(d));}
   return days;
 }
 function getLast30(){
   const days=[];
-  for(let i=29;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(d.toISOString().split('T')[0]);}
+  for(let i=29;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(_ukDate(d));}
   return days;
 }
 
@@ -407,7 +408,7 @@ function calcStreak(type){
   const today=new Date();
   for(let i=0;i<365;i++){
     const d=new Date(today);d.setDate(d.getDate()-i);
-    const key=d.toISOString().split('T')[0];
+    const key=_ukDate(d);
     let hit=false;
     if(type==='steps')hit=(getStepsLog()[key]||0)>=10000;
     else if(type==='food')hit=((pGet('foods',{})[key]||[]).length>0);

@@ -98,7 +98,10 @@ export async function syncWithingsForUser(userId: string): Promise<{ updated: nu
 
   const byDate: Record<string, any> = {};
   for (const grp of json.body.measuregrps || []) {
-    const dateStr = new Date(grp.date * 1000).toISOString().split("T")[0];
+    const dateStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/London",
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date(grp.date * 1000));
     if (!byDate[dateStr]) byDate[dateStr] = {};
     for (const m of grp.measures || []) {
       const v = m.value * Math.pow(10, m.unit);

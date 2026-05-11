@@ -3,7 +3,10 @@ import prisma from "./db";
 const BASE = "https://api.ouraring.com/v2/usercollection";
 
 function ymd(d: Date): string {
-  return d.toISOString().split("T")[0];
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(d);
 }
 
 function mapSleepQuality(score: number): number {
