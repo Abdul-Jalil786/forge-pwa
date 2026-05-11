@@ -27,6 +27,11 @@ router.get("/auth-url", requireAuth, async (req: Request, res: Response) => {
 router.get("/callback", async (req: Request, res: Response) => {
   try {
     const { code, state } = req.query as { code?: string; state?: string };
+    // Withings probes the callback URL on registration with no params — return 200 OK
+    if (!code && !state) {
+      res.status(200).type("text/plain").send("Forge Withings callback OK");
+      return;
+    }
     if (!code || !state) {
       res.redirect(`/?withings=missing_params`);
       return;

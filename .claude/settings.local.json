@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && mv index.html app.js data.js workout.js pages.js manifest.json sw.js public/)",
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && mv .env.txt .env && rm vercel.json)",
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && npm install)",
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && npx prisma migrate dev --name init 2>&1)",
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && npx tsc --noEmit 2>&1)",
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && npx tsc 2>&1)",
+      "Bash(railway version:*)",
+      "Bash(railway --version 2>&1)",
+      "Bash(railway status:*)",
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && npx prisma generate 2>&1)",
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && npx prisma migrate dev --name add_user_state --create-only 2>&1)",
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && npm install web-push node-cron 2>&1)",
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && npm install --save-dev @types/web-push @types/node-cron 2>&1)",
+      "Bash(cd C:/Users/abdul/Projects/forge-pwa && npx web-push generate-vapid-keys 2>&1)"
+    ]
+  }
+}
