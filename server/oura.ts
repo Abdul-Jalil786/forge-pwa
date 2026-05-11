@@ -65,10 +65,23 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       const day = e.day;
       durationByDay[day] = (durationByDay[day] || 0) + seconds;
     }
-    for (const day of new Set([...Object.keys(scoreByDay), ...Object.keys(durationByDay)])) {
-      const hours = durationByDay[day] ? Math.round((durationByDay[day] / 3600) * 10) / 10 : null;
-      if (hours !== null && hours > 0) {
+    // Build list of all days in the lookback window
+    const allDays: string[] = [];
+    const cursor = new Date(start);
+    const endStr = ymd(today);
+    while (ymd(cursor) <= endStr) {
+      allDays.push(ymd(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    // For each day: if we have valid sleep duration, store it. Otherwise delete any stale entry.
+    for (const day of allDays) {
+      if (durationByDay[day]) {
+        const hours = Math.round((durationByDay[day] / 3600) * 10) / 10;
         sleepLog[day] = { hours, quality: scoreByDay[day] ? mapSleepQuality(scoreByDay[day]) : 3 };
+        updated++;
+      } else if (sleepLog[day]) {
+        // No valid main-sleep for this day in Oura — remove any stale (possibly nap-only) entry
+        delete sleepLog[day];
         updated++;
       }
     }
