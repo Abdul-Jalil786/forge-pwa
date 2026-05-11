@@ -377,6 +377,10 @@ function calcStreak(type){
     if(type==='steps')hit=(getStepsLog()[key]||0)>=10000;
     else if(type==='food')hit=((pGet('foods',{})[key]||[]).length>0);
     else if(type==='gym'){
+      // Skip scheduled rest days — they shouldn't break a training streak
+      if(getSessionTypeForDate(key)===null){
+        continue;
+      }
       const exl=getExLog()[key]||{};
       hit=Object.values(exl).some(e=>e.done);
     }
