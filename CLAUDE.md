@@ -56,11 +56,16 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
 - 9: Dashboard rebuild (action-first Today page + sparklines)
 - 11: Focused workout mode + smart progression + RIR effort
 - 12: Critical security (token hashing, rate limit, helmet, health check, graceful shutdown) + remove photos + this CLAUDE.md
+- 14: Daily evening + weekly preview cron nudges (protein check 22:00, weekly summary Sun 21:00)
+- 16a: Field-scoped atomic state endpoints (jsonb_set) to fix concurrent write races
+- 16b: UTC date bug fix — all date helpers now use Europe/London timezone
+- 16c: Source tagging (manual/withings/oura) — manual entries protected from sync overwrite
+- 16d: Network-first service worker for HTML/JS — deploys reflect on next page load
 
 ## Skipped/deferred
 - Photos to R2 (entire feature removed in Phase 12)
 - Workout customisation editor (deferred, may revisit)
-- Phase 14/15 (UI polish, de-hardcoding) — explicitly skipped per user
+- Phase 15 (UI polish, de-hardcoding) — explicitly skipped per user
 
 ## Known issues / open work
 - Calorie Stage Guide hardcoded for 114->87kg cut (pages.js:836)
@@ -72,8 +77,7 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
 - No password reset flow
 - No exercise customisation
 - Friend onboarding flow doesn't set trainingStartDate (defaults to 2026-05-08)
-- Race condition: last-write-wins on full state PUT (no etag/version)
-- Manual weight entries get overwritten by Withings sync (no source flag)
+- Race condition: full state PUT still used as fallback for non-hot fields (foods/exLog/water/weight/sleep use field-scoped endpoints)
 - "Reset All Data" doesn't clear all keys (Oura/Withings tokens, reminders, etc. survive)
 
 ## How Cowork interacts with Forge
@@ -85,6 +89,9 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
    - PUT /api/reminders — updates reminders array
    - POST /api/coaching-reports — pushes weekly review
 3. Sunday cron task in Cowork does the weekly review automatically
+4. Field-scoped state endpoints (used by frontend, not Cowork):
+   - PUT /api/state/foods/:date, /api/state/exLog/:date, /api/state/water/:date
+   - PUT /api/state/weight, /api/state/sleep/:date
 
 ## Style conventions
 - Lime (#c8ff00) primary, black (#080808) bg, Archivo Black for headlines
