@@ -77,10 +77,12 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       cursor.setDate(cursor.getDate() + 1);
     }
     // For each day: if we have valid sleep duration, store it. Otherwise delete any stale entry.
+    // Skip days where user logged manually — manual wins.
     for (const day of allDays) {
+      if (sleepLog[day]?.source === "manual") continue;
       if (durationByDay[day]) {
         const hours = Math.round((durationByDay[day] / 3600) * 10) / 10;
-        sleepLog[day] = { hours, quality: scoreByDay[day] ? mapSleepQuality(scoreByDay[day]) : 3 };
+        sleepLog[day] = { hours, quality: scoreByDay[day] ? mapSleepQuality(scoreByDay[day]) : 3, source: "oura" };
         updated++;
       } else if (sleepLog[day]) {
         // No valid main-sleep for this day in Oura — remove any stale (possibly nap-only) entry

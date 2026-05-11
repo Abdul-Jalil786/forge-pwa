@@ -510,8 +510,10 @@ function renderTrack(){
           const diff=prev?(e.weight-prev.weight):null;
           const cls=diff===null?'':diff<0?'dn':'up';
           const txt=diff===null?'—':diff<0?`▼ ${Math.abs(diff).toFixed(1)}kg`:`▲ ${diff.toFixed(1)}kg`;
+          const srcBadge=e.source==='manual'?'<span style="font-size:9px;color:var(--text3);background:var(--card);border:1px solid var(--border);border-radius:3px;padding:0 3px;margin-left:4px;vertical-align:middle;">M</span>'
+            :e.source==='withings'?'<span style="font-size:9px;color:var(--text3);background:var(--card);border:1px solid var(--border);border-radius:3px;padding:0 3px;margin-left:4px;vertical-align:middle;">W</span>':'';
           return `<div class="list-row">
-            <div class="row-left"><div class="row-label">${fmtDate(e.date)}</div><div class="row-val">${e.weight}kg</div></div>
+            <div class="row-left"><div class="row-label">${fmtDate(e.date)}${srcBadge}</div><div class="row-val">${e.weight}kg</div></div>
             <div class="row-diff ${cls}">${txt}</div>
           </div>`;
         }).join('')}
@@ -891,10 +893,12 @@ function renderBody(){
         if(!s)return`<div class="step-row"><div class="step-date">${d===todayStr()?'Today':new Date(d+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric'})}</div><div class="step-bar-wrap"><div class="step-bar"></div></div><div class="step-count">—</div></div>`;
         const pct=Math.min(100,(s.hours/9)*100);
         const qualEmoji=['','😴','😐','😊','🌟'][s.quality||0]||'';
+        const sleepSrc=s.source==='manual'?'<span style="font-size:8px;color:var(--text3);margin-left:2px;">M</span>'
+          :s.source==='oura'?'<span style="font-size:8px;color:var(--text3);margin-left:2px;">O</span>':'';
         return`<div class="step-row">
           <div class="step-date">${d===todayStr()?'Today':new Date(d+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric'})}</div>
           <div class="step-bar-wrap"><div class="step-bar"><div class="step-fill" style="width:${pct}%;background:linear-gradient(90deg,var(--purple),var(--blue));"></div></div></div>
-          <div class="step-count${s.hours>=7?' hit':''}" style="${s.hours>=7?'':'color:var(--orange);'}">${fmtHrsPlain(s.hours)}${qualEmoji}</div>
+          <div class="step-count${s.hours>=7?' hit':''}" style="${s.hours>=7?'':'color:var(--orange);'}">${fmtHrsPlain(s.hours)}${qualEmoji}${sleepSrc}</div>
         </div>`;
       }).join('')}
     </div>

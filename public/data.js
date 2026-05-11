@@ -208,7 +208,8 @@ function getCurrentWeight(){const l=getWeightLog();return l.length?l[l.length-1]
 function saveWeightEntry(kg){
   const log=getWeightLog();
   const idx=log.findIndex(e=>e.date===todayStr());
-  if(idx>=0)log[idx].weight=kg; else log.push({date:todayStr(),weight:kg});
+  if(idx>=0){log[idx].weight=kg;log[idx].source='manual';}
+  else log.push({date:todayStr(),weight:kg,source:'manual'});
   STATE.weightLog=log;
   updateLocalCache();
   saveFieldToServer('/api/state/weight',{date:todayStr(),weight:kg});
@@ -222,7 +223,8 @@ function getCurrentBf(){const l=getBfLog();return l.length?l[l.length-1].bf:null
 function saveBfEntry(bf){
   const log=getBfLog();
   const idx=log.findIndex(e=>e.date===todayStr());
-  if(idx>=0)log[idx].bf=bf; else log.push({date:todayStr(),bf});
+  if(idx>=0){log[idx].bf=bf;log[idx].source='manual';}
+  else log.push({date:todayStr(),bf,source:'manual'});
   pSet('bfLog',log);
 }
 
@@ -355,10 +357,10 @@ function saveMeasEntry(entry){
 function getSleepLog(){return pGet('sleepLog',{});}
 function saveSleepEntry(hours,quality){
   const l=getSleepLog();
-  l[todayStr()]={hours,quality};
+  l[todayStr()]={hours,quality,source:'manual'};
   STATE.sleepLog=l;
   updateLocalCache();
-  saveFieldToServer(`/api/state/sleep/${todayStr()}`,{value:{hours,quality}});
+  saveFieldToServer(`/api/state/sleep/${todayStr()}`,{value:{hours,quality,source:'manual'}});
 }
 function getAvgSleep(days=7){
   const l=getSleepLog();

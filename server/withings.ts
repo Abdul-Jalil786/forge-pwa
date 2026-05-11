@@ -122,19 +122,31 @@ export async function syncWithingsForUser(userId: string): Promise<{ updated: nu
     }
   }
 
+  // Migrate legacy entries without source tag to 'withings'
+  for (const e of weightLog) { if (!e.source) e.source = "withings"; }
+  for (const e of bfLog) { if (!e.source) e.source = "withings"; }
+
   let updated = 0;
   for (const [date, meas] of Object.entries(byDate)) {
     if (meas.weight) {
       const existing = weightLog.findIndex((e: any) => e.date === date);
-      if (existing >= 0) weightLog[existing].weight = meas.weight;
-      else weightLog.push({ date, weight: meas.weight });
-      updated++;
+      if (existing >= 0) {
+        if (weightLog[existing].source === "manual") { /* skip — manual wins */ }
+        else { weightLog[existing].weight = meas.weight; weightLog[existing].source = "withings"; updated++; }
+      } else {
+        weightLog.push({ date, weight: meas.weight, source: "withings" });
+        updated++;
+      }
     }
     if (meas.bf) {
       const existing = bfLog.findIndex((e: any) => e.date === date);
-      if (existing >= 0) bfLog[existing].bf = meas.bf;
-      else bfLog.push({ date, bf: meas.bf });
-      updated++;
+      if (existing >= 0) {
+        if (bfLog[existing].source === "manual") { /* skip */ }
+        else { bfLog[existing].bf = meas.bf; bfLog[existing].source = "withings"; updated++; }
+      } else {
+        bfLog.push({ date, bf: meas.bf, source: "withings" });
+        updated++;
+      }
     }
     bodyComp[date] = meas;
   }
