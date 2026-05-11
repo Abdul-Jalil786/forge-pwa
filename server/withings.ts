@@ -84,7 +84,7 @@ export async function syncWithingsForUser(userId: string): Promise<{ updated: nu
   }
 
   const startdate = Math.floor(Date.now() / 1000) - 30 * 86400; // last 30 days
-  const meastypes = "1,5,6,8,76,88,77,170,169,91,226";
+  const meastypes = "1,5,6,8,76,88,77,170,169,91";
   const url = `${MEAS_URL}?action=getmeas&meastypes=${meastypes}&startdate=${startdate}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   const json: any = await res.json();
@@ -102,9 +102,13 @@ export async function syncWithingsForUser(userId: string): Promise<{ updated: nu
     if (!byDate[dateStr]) byDate[dateStr] = {};
     for (const m of grp.measures || []) {
       const v = m.value * Math.pow(10, m.unit);
+      // Withings type IDs per official docs:
+      // 1=weight kg, 5=fat-free mass kg, 6=fat ratio %, 8=fat mass kg,
+      // 76=muscle mass kg, 77=hydration kg, 88=bone mass kg,
+      // 91=pulse wave velocity, 169=vascular age, 170=visceral fat index
       if (m.type === 1) byDate[dateStr].weight = Math.round(v * 10) / 10;
-      else if (m.type === 5) byDate[dateStr].bf = Math.round(v * 10) / 10;
-      else if (m.type === 6) byDate[dateStr].fatFreeMass = Math.round(v * 10) / 10;
+      else if (m.type === 6) byDate[dateStr].bf = Math.round(v * 10) / 10;
+      else if (m.type === 5) byDate[dateStr].fatFreeMass = Math.round(v * 10) / 10;
       else if (m.type === 8) byDate[dateStr].fatMass = Math.round(v * 10) / 10;
       else if (m.type === 76) byDate[dateStr].muscleMass = Math.round(v * 10) / 10;
       else if (m.type === 88) byDate[dateStr].boneMass = Math.round(v * 10) / 10;
@@ -112,7 +116,6 @@ export async function syncWithingsForUser(userId: string): Promise<{ updated: nu
       else if (m.type === 170) byDate[dateStr].visceralFat = Math.round(v * 10) / 10;
       else if (m.type === 169) byDate[dateStr].vascularAge = v;
       else if (m.type === 91) byDate[dateStr].pulseWaveVelocity = Math.round(v * 10) / 10;
-      else if (m.type === 226) byDate[dateStr].standingHR = v;
     }
   }
 
