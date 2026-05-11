@@ -61,6 +61,7 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
 - 16b: UTC date bug fix — all date helpers now use Europe/London timezone
 - 16c: Source tagging (manual/withings/oura) — manual entries protected from sync overwrite
 - 16d: Network-first service worker for HTML/JS — deploys reflect on next page load
+- 16e: Fix friend onboarding — set planStartDate + trainingStartDate on signup + migrate existing users
 
 ## Skipped/deferred
 - Photos to R2 (entire feature removed in Phase 12)
@@ -76,7 +77,7 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
 - No real charts (sparklines only)
 - No password reset flow
 - No exercise customisation
-- Friend onboarding flow doesn't set trainingStartDate (defaults to 2026-05-08)
+- Friend onboarding flow now sets trainingStartDate but anchors to signup date (not Jay's 2026-05-08)
 - Race condition: full state PUT still used as fallback for non-hot fields (foods/exLog/water/weight/sleep use field-scoped endpoints)
 - "Reset All Data" doesn't clear all keys (Oura/Withings tokens, reminders, etc. survive)
 
