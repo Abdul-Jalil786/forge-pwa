@@ -1,6 +1,27 @@
 // ============================================================
 // TODAY PAGE
 // ============================================================
+
+// Format hours decimal → "7h 30m" with .u-styled subscripts
+function fmtHrs(h){
+  if(h===null||h===undefined||h<=0||isNaN(h))return '—';
+  const whole=Math.floor(h);
+  const mins=Math.round((h-whole)*60);
+  if(mins===0)return `${whole}<span class="u">h</span>`;
+  if(mins===60)return `${whole+1}<span class="u">h</span>`;
+  return `${whole}<span class="u">h</span> ${mins}<span class="u">m</span>`;
+}
+
+// Plain text version (no HTML) for inline use
+function fmtHrsPlain(h){
+  if(h===null||h===undefined||h<=0||isNaN(h))return '—';
+  const whole=Math.floor(h);
+  const mins=Math.round((h-whole)*60);
+  if(mins===0)return `${whole}h`;
+  if(mins===60)return `${whole+1}h`;
+  return `${whole}h ${mins}m`;
+}
+
 function spark(values,color){
   if(!values||values.length<2)return '<svg width="80" height="24"></svg>';
   const w=80,h=24,p=2;
@@ -163,7 +184,7 @@ function renderToday(){
           <div style="font-family:'Archivo Black',sans-serif;font-size:30px;color:${readiness>=75?'var(--green)':readiness>=60?'var(--lime)':readiness>=45?'var(--orange)':'var(--red)'};">${readiness}</div>
         </div>
         <div style="text-align:right;font-size:11px;color:var(--text2);">
-          ${lastSleep?`Sleep ${lastSleep}h<br>`:''}
+          ${lastSleep?`Sleep ${fmtHrsPlain(lastSleep)}<br>`:''}
           ${recoveryToday.hrv?`HRV ${recoveryToday.hrv}<br>`:''}
           ${recoveryToday.restingHR?`RHR ${recoveryToday.restingHR}`:''}
         </div>
@@ -190,7 +211,7 @@ function renderToday(){
       </div>
       <div class="sb purple">
         <div class="l">Sleep</div>
-        <div class="v">${lastSleep||'—'}<span class="u">hrs</span></div>
+        <div class="v">${fmtHrs(lastSleep)}</div>
       </div>
     </div>
 
@@ -620,8 +641,8 @@ function renderBody(){
       <button class="btn btn-ghost btn-sm" onclick="openModal('modal-sleep')">+ Log</button>
     </div>
     <div class="sg sg3" style="margin-bottom:8px;">
-      <div class="sb purple"><div class="l">Last Night</div><div class="v">${sleepLog[todayStr()]?.hours||sleepLog[Object.keys(sleepLog).sort().pop()]?.hours||'—'}<span class="u">hrs</span></div></div>
-      <div class="sb blue"><div class="l">7-Day Avg</div><div class="v">${getAvgSleep(7)||'—'}<span class="u">hrs</span></div></div>
+      <div class="sb purple"><div class="l">Last Night</div><div class="v">${fmtHrs(sleepLog[todayStr()]?.hours||sleepLog[Object.keys(sleepLog).sort().pop()]?.hours)}</div></div>
+      <div class="sb blue"><div class="l">7-Day Avg</div><div class="v">${fmtHrs(getAvgSleep(7))}</div></div>
       <div class="sb${getAvgSleep(7)>=7?' green':' orange'}"><div class="l">Status</div><div class="v" style="font-size:14px;">${getAvgSleep(7)>=7?'Good':'Low'}</div></div>
     </div>
     <div class="card" style="margin-bottom:10px;">
@@ -633,7 +654,7 @@ function renderBody(){
         return`<div class="step-row">
           <div class="step-date">${d===todayStr()?'Today':new Date(d+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric'})}</div>
           <div class="step-bar-wrap"><div class="step-bar"><div class="step-fill" style="width:${pct}%;background:linear-gradient(90deg,var(--purple),var(--blue));"></div></div></div>
-          <div class="step-count${s.hours>=7?' hit':''}" style="${s.hours>=7?'':'color:var(--orange);'}">${s.hours}h${qualEmoji}</div>
+          <div class="step-count${s.hours>=7?' hit':''}" style="${s.hours>=7?'':'color:var(--orange);'}">${fmtHrsPlain(s.hours)}${qualEmoji}</div>
         </div>`;
       }).join('')}
     </div>
