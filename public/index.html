@@ -298,6 +298,9 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
 
 #workoutMode{position:fixed;inset:0;z-index:500;background:var(--bg);display:none;flex-direction:column;overflow-y:auto;padding:calc(var(--safe-top)+16px) 16px calc(var(--safe-bottom)+16px);}
 #workoutMode.open{display:flex;}
+#dayDetail{position:fixed;inset:0;z-index:500;background:var(--bg);display:none;flex-direction:column;overflow-y:auto;padding:calc(var(--safe-top)+16px) 16px calc(var(--safe-bottom)+16px);}
+#dayDetail.open{display:flex;}
+.dd-back{background:var(--s2);border:1px solid var(--border2);color:var(--text);width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;}
 .wm-close{position:absolute;top:calc(var(--safe-top)+12px);right:14px;background:var(--s2);border:1px solid var(--border2);color:var(--text2);width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;z-index:10;}
 .wm-title{font-family:'Archivo Black',sans-serif;font-size:28px;letter-spacing:-1px;color:var(--lime);margin:32px 0 4px;}
 .wm-sub{font-size:13px;color:var(--text2);margin-bottom:24px;}
@@ -504,6 +507,10 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
 
 <div id="workoutMode">
   <div id="wmContent"></div>
+</div>
+
+<div id="dayDetail">
+  <div id="ddContent"></div>
 </div>
 
 <script src="data.js"></script>

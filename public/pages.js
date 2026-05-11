@@ -239,34 +239,67 @@ function renderToday(){
 // ============================================================
 // FOOD PAGE
 // ============================================================
+let foodViewDate=null; // null = today
+function getFoodViewDate(){return foodViewDate||todayStr();}
+function isFoodViewingToday(){return getFoodViewDate()===todayStr();}
+function setFoodViewDate(d){foodViewDate=(d===todayStr())?null:d;renderFood();}
+function shiftFoodDate(days){
+  const cur=new Date(getFoodViewDate()+'T12:00:00');
+  cur.setDate(cur.getDate()+days);
+  const newDate=cur.toISOString().split('T')[0];
+  if(newDate>todayStr())return; // no future dates
+  setFoodViewDate(newDate);
+}
+
 function renderFood(){
   const p=getActive(); if(!p)return;
-  const session=getTodaySession();
+  const viewDate=getFoodViewDate();
+  const isToday=isFoodViewingToday();
+  const dateObj=new Date(viewDate+'T12:00:00');
+  const dateLabel=dateObj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'});
+
+  // Determine if this view date was a gym day
+  const session=getSessionTypeForDate(viewDate);
   const calTarget=session?p.calsGym:p.calsRest;
-  const foods=getFoods().sort((a,b)=>a.time.localeCompare(b.time));
-  const totals=getTodayTotals();
-  const carbTarget=Math.round((calTarget*0.38)/4);
-  const fatTarget=Math.round((calTarget*0.28)/9);
+
+  const foods=getFoods(viewDate).sort((a,b)=>a.time.localeCompare(b.time));
+  const totals={
+    cals:foods.reduce((s,f)=>s+(f.cals||0),0),
+    protein:foods.reduce((s,f)=>s+(f.protein||0),0),
+    carbs:foods.reduce((s,f)=>s+(f.carbs||0),0),
+    fat:foods.reduce((s,f)=>s+(f.fat||0),0),
+  };
+  const carbTarget=p.carbsTarget||Math.round((calTarget*0.38)/4);
+  const fatTarget=p.fatTarget||Math.round((calTarget*0.28)/9);
   const templates=getTemplates();
 
   document.getElementById('page-food').innerHTML=`
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div class="pg-title">Food</div>
-      <button class="btn btn-lime btn-sm" onclick="openModal('modal-food')">+ Log</button>
+      ${isToday?`<button class="btn btn-lime btn-sm" onclick="openModal('modal-food')">+ Log</button>`:`<button class="btn btn-ghost btn-sm" onclick="setFoodViewDate(todayStr())">← Today</button>`}
     </div>
 
-    ${STATE.mealPlan?renderTodaysPlan():''}
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;">
+      <button onclick="shiftFoodDate(-1)" style="background:none;border:none;color:var(--text);font-size:18px;cursor:pointer;padding:4px 8px;">‹</button>
+      <div style="text-align:center;flex:1;">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">${isToday?'Today':'Viewing'}</div>
+        <div style="font-family:'Archivo Black',sans-serif;font-size:14px;letter-spacing:-.3px;">${dateLabel}</div>
+      </div>
+      <button onclick="shiftFoodDate(1)" style="background:none;border:none;color:${isToday?'var(--text3)':'var(--text)'};font-size:18px;cursor:pointer;padding:4px 8px;" ${isToday?'disabled':''}>›</button>
+    </div>
+
+    ${isToday && STATE.mealPlan?renderTodaysPlan():''}
 
     <div class="card hi">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px;">
         <div>
-          <div style="font-size:10px;color:var(--text2);margin-bottom:2px;">CALORIES TODAY</div>
+          <div style="font-size:10px;color:var(--text2);margin-bottom:2px;">${isToday?'CALORIES TODAY':'CALORIES'}</div>
           <div style="font-family:'Archivo Black',sans-serif;font-size:42px;color:var(--lime);letter-spacing:-2px;">${totals.cals}</div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:10px;color:var(--text2);">TARGET</div>
           <div style="font-family:'Archivo Black',sans-serif;font-size:20px;">${calTarget}</div>
-          <div style="font-size:11px;color:${totals.cals>calTarget?'var(--red)':'var(--text2)'};">${Math.abs(calTarget-totals.cals)} ${totals.cals>calTarget?'over':'left'}</div>
+          <div style="font-size:11px;color:${totals.cals>calTarget?'var(--red)':'var(--text2)'};">${Math.abs(calTarget-totals.cals)} ${totals.cals>calTarget?'over':isToday?'left':'short'}</div>
         </div>
       </div>
       <div class="pb"><div class="pb-fill" style="width:${Math.min(100,(totals.cals/calTarget)*100)}%"></div></div>
@@ -284,19 +317,19 @@ function renderFood(){
       <div class="macro-row" style="margin-bottom:0;"><div class="macro-hdr"><span class="macro-name" style="color:var(--purple);">Fat</span><span class="macro-amt">${totals.fat}g / ${fatTarget}g</span></div><div class="macro-bar"><div class="macro-fill mf-f" style="width:${Math.min(100,(totals.fat/fatTarget)*100)}%"></div></div></div>
     </div>
 
-    <div class="sec-label">Today's Log</div>
+    <div class="sec-label">${isToday?"Today's Log":"Food Log"}</div>
     <div class="card">
-      ${foods.length===0?'<div style="text-align:center;color:var(--text3);padding:20px 0;font-size:13px;">Nothing logged yet</div>':
+      ${foods.length===0?`<div style="text-align:center;color:var(--text3);padding:20px 0;font-size:13px;">Nothing logged ${isToday?'yet':'on this day'}</div>`:
         foods.map((f,i)=>`
           <div class="food-row">
             <div class="food-time">${f.time}</div>
             <div class="food-name">${f.name}</div>
             <div class="food-right"><div class="food-cals">${f.cals} kcal</div><div class="food-p">${f.protein||0}g protein</div></div>
-            <button class="del-btn" onclick="delFood(${i})">×</button>
+            ${isToday?`<button class="del-btn" onclick="delFood(${i})">×</button>`:`<button class="del-btn" onclick="delFoodOnDate(${i},'${viewDate}')" title="Delete from this past day">×</button>`}
           </div>`).join('')}
     </div>
 
-    ${templates.length>0?`
+    ${isToday && templates.length>0?`
     <div class="sec-label">Quick Templates</div>
     <div class="card">
       ${templates.map((t,i)=>`
@@ -308,15 +341,23 @@ function renderFood(){
         </div>`).join('')}
     </div>`:''}
 
+    ${isToday?`
     <div class="sec-label">Eating Window</div>
     <div class="card">
       <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">6-HOUR WINDOW · LOW GI</div>
       <div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:var(--lime);">12:00 PM — 6:00 PM</div>
       <div style="font-size:12px;color:var(--text2);margin-top:4px;">18 hours fasting</div>
-    </div>
+    </div>`:''}
   `;
 
   renderFoodTemplatesModal();
+}
+
+function delFoodOnDate(idx,date){
+  if(!confirm('Delete this entry from '+date+'?'))return;
+  deleteFoodEntry(idx,date);
+  renderFood();
+  showToast('Removed');
 }
 
 function renderFoodTemplatesModal(){
@@ -577,13 +618,14 @@ function renderCalendar(){
     const el=exLog[key]||{};
     const hasGym=Object.values(el).some(e=>e.done);
     const hitSteps=(stepsLog[key]||0)>=10000;
+    const wasScheduledTraining=getSessionTypeForDate(key)!==null;
     let cls='cal-dot';
     if(isFuture)cls+=' future';
     else if(hasGym)cls+=' gym';
     else if(hitSteps)cls+=' rest-active';
-    else if(key<todayStr())cls+=' missed';
+    else if(wasScheduledTraining && key<todayStr())cls+=' missed';
     if(isToday)cls+=' today';
-    html+=`<div class="${cls}" title="${key}">${d.getDate()}</div>`;
+    html+=`<div class="${cls}" style="cursor:pointer;" title="${key}" onclick="openPastDay('${key}')">${d.getDate()}</div>`;
   });
 
   html+='</div>';
@@ -593,6 +635,204 @@ function renderCalendar(){
     <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2);"><div style="width:10px;height:10px;border-radius:3px;background:rgba(255,59,59,.08);"></div>Missed</div>
   </div></div>`;
   return html;
+}
+
+function openPastDay(dateKey){
+  openDayDetail(dateKey);
+}
+
+function openDayDetail(date){
+  const el=document.getElementById('dayDetail');
+  if(!el)return;
+  el.classList.add('open');
+  renderDayDetail(date);
+  window.scrollTo(0,0);
+}
+
+function closeDayDetail(){
+  const el=document.getElementById('dayDetail');
+  if(el)el.classList.remove('open');
+}
+
+function renderDayDetail(date){
+  const dateObj=new Date(date+'T12:00:00');
+  const dateLabel=dateObj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const isToday=date===todayStr();
+  const isFuture=date>todayStr();
+
+  // Pull all data for this date
+  const weight=getWeightLog().find(e=>e.date===date)?.weight;
+  const bf=getBfLog().find(e=>e.date===date)?.bf;
+  const sleep=getSleepLog()[date];
+  const recovery=pGet('recovery',{})[date];
+  const steps=getStepsLog()[date];
+  const cals=pGet('calorieLog',{})[date];
+  const sessionLog=getExLog()[date]||{};
+  const sessionType=getSessionTypeForDate(date);
+  const foods=(pGet('foods',{})[date]||[]).slice().sort((a,b)=>String(a.time||'').localeCompare(String(b.time||'')));
+  const meas=getMeasLog().find(e=>e.date===date);
+  const swims=getSwimLog()[date]||[];
+  const supps=getSupps();
+  const suppDoneAll=getSuppDone();
+  const bodyComp=pGet('bodyComp',{})[date];
+
+  const foodTotals={
+    cals:foods.reduce((s,f)=>s+(f.cals||0),0),
+    protein:foods.reduce((s,f)=>s+(f.protein||0),0),
+    carbs:foods.reduce((s,f)=>s+(f.carbs||0),0),
+    fat:foods.reduce((s,f)=>s+(f.fat||0),0),
+  };
+
+  let html=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <button class="dd-back" onclick="closeDayDetail()">←</button>
+      <div style="text-align:center;flex:1;padding:0 12px;">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">${isToday?'Today':isFuture?'Upcoming':'Day Detail'}</div>
+        <div style="font-family:'Archivo Black',sans-serif;font-size:16px;letter-spacing:-.3px;line-height:1.2;">${dateLabel}</div>
+      </div>
+      <div style="width:36px;"></div>
+    </div>
+  `;
+
+  // OVERVIEW
+  if(weight||bf||sleep){
+    html+=`<div class="sec-label">Overview</div><div class="sg sg3" style="margin-bottom:10px;">`;
+    if(weight!==undefined)html+=`<div class="sb lime"><div class="l">Weight</div><div class="v">${weight}<span class="u">kg</span></div></div>`;
+    else html+=`<div class="sb"><div class="l">Weight</div><div class="v" style="color:var(--text3);">—</div></div>`;
+    if(bf!==undefined)html+=`<div class="sb cyan"><div class="l">Body Fat</div><div class="v">${bf}<span class="u">%</span></div></div>`;
+    else html+=`<div class="sb"><div class="l">Body Fat</div><div class="v" style="color:var(--text3);">—</div></div>`;
+    if(sleep)html+=`<div class="sb purple"><div class="l">Sleep</div><div class="v">${fmtHrs(sleep.hours)}</div></div>`;
+    else html+=`<div class="sb"><div class="l">Sleep</div><div class="v" style="color:var(--text3);">—</div></div>`;
+    html+=`</div>`;
+  }
+
+  // RECOVERY (Oura)
+  if(recovery&&(recovery.readiness||recovery.hrv||recovery.restingHR)){
+    html+=`<div class="sec-label">Recovery</div>
+      <div class="card" style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          ${recovery.readiness?`<div><div style="font-size:10px;color:var(--text2);">READINESS</div><div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:${recovery.readiness>=75?'var(--green)':recovery.readiness>=60?'var(--lime)':recovery.readiness>=45?'var(--orange)':'var(--red)'};">${recovery.readiness}</div></div>`:''}
+          ${recovery.hrv?`<div><div style="font-size:10px;color:var(--text2);">HRV</div><div style="font-family:'Archivo Black',sans-serif;font-size:20px;">${recovery.hrv}</div></div>`:''}
+          ${recovery.restingHR?`<div><div style="font-size:10px;color:var(--text2);">RHR</div><div style="font-family:'Archivo Black',sans-serif;font-size:20px;">${recovery.restingHR}</div></div>`:''}
+        </div>
+      </div>`;
+  }
+
+  // TRAINING
+  html+=`<div class="sec-label">Training</div>`;
+  if(!sessionType){
+    html+=`<div class="card" style="margin-bottom:10px;text-align:center;color:var(--text2);font-size:13px;padding:14px;">😴 Scheduled rest day</div>`;
+  }else{
+    const w=WORKOUTS[sessionType];
+    const doneEx=w.exercises.filter(e=>sessionLog[e.id]?.done);
+    if(doneEx.length===0){
+      html+=`<div class="card" style="margin-bottom:10px;text-align:center;color:var(--orange);font-size:13px;padding:14px;">⚠️ ${w.name} scheduled but no session logged</div>`;
+    }else{
+      let totalVolume=0;
+      const setRows=doneEx.map(ex=>{
+        const sets=(sessionLog[ex.id].sets||[]).filter(s=>s.kg||s.reps);
+        const exVol=sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
+        totalVolume+=exVol;
+        const summary=sets.map(s=>`${s.kg||'-'}×${s.reps||'-'}${s.effort?({easy:' 😌',solid:' 💪',tough:' 🔥'})[s.effort]:''}`).join(', ');
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
+          <div style="font-weight:600;font-size:13px;">${ex.name}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px;">${summary||'no sets logged'}</div>
+        </div>`;
+      }).join('');
+      html+=`<div class="card" style="margin-bottom:10px;">
+        <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:var(--lime);margin-bottom:4px;">${w.name}</div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${doneEx.length}/${w.exercises.length} exercises · ${totalVolume.toFixed(0)}kg total volume</div>
+        ${setRows}
+      </div>`;
+    }
+  }
+
+  // FOOD
+  html+=`<div class="sec-label">Food</div>`;
+  if(foods.length===0){
+    html+=`<div class="card" style="margin-bottom:10px;text-align:center;color:var(--text2);font-size:13px;padding:14px;">Nothing logged on this day</div>`;
+  }else{
+    html+=`<div class="card" style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border);">
+        <div>${foods.length} entries</div>
+        <div><strong style="color:var(--lime);">${foodTotals.cals}</strong> kcal · <strong style="color:var(--orange);">${foodTotals.protein}g</strong> P · <strong style="color:var(--blue);">${foodTotals.carbs}g</strong> C · <strong style="color:var(--purple);">${foodTotals.fat}g</strong> F</div>
+      </div>
+      ${foods.map(f=>`<div class="food-row">
+        <div class="food-time">${f.time||''}</div>
+        <div class="food-name">${f.name}</div>
+        <div class="food-right"><div class="food-cals">${f.cals} kcal</div><div class="food-p">${f.protein||0}g P</div></div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  // ACTIVITY
+  if(steps||cals){
+    html+=`<div class="sec-label">Activity</div><div class="sg sg3" style="margin-bottom:10px;">`;
+    html+=`<div class="sb blue"><div class="l">Steps</div><div class="v">${steps?(steps>=1000?(steps/1000).toFixed(1)+'k':steps):'—'}<span class="u">/10k</span></div></div>`;
+    if(cals?.active)html+=`<div class="sb orange"><div class="l">Active cal</div><div class="v">${cals.active}</div></div>`;
+    if(cals?.total)html+=`<div class="sb lime"><div class="l">TDEE</div><div class="v">${cals.total}<span class="u">kcal</span></div></div>`;
+    html+=`</div>`;
+  }
+
+  // MEASUREMENTS
+  if(meas&&(meas.waist||meas.chest||meas.larm||meas.rarm||meas.lthigh||meas.rthigh||meas.neck)){
+    const items=[];
+    if(meas.waist)items.push(['Waist',meas.waist]);
+    if(meas.chest)items.push(['Chest',meas.chest]);
+    if(meas.larm)items.push(['L.Arm',meas.larm]);
+    if(meas.rarm)items.push(['R.Arm',meas.rarm]);
+    if(meas.lthigh)items.push(['L.Thigh',meas.lthigh]);
+    if(meas.rthigh)items.push(['R.Thigh',meas.rthigh]);
+    if(meas.neck)items.push(['Neck',meas.neck]);
+    html+=`<div class="sec-label">Measurements</div>
+      <div class="card" style="margin-bottom:10px;">
+        ${items.map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);"><div style="font-size:12px;color:var(--text2);">${l}</div><div style="font-weight:600;font-size:13px;">${v}<span style="color:var(--text2);font-weight:400;font-size:11px;">cm</span></div></div>`).join('')}
+      </div>`;
+  }
+
+  // BODY COMPOSITION (Withings)
+  if(bodyComp&&(bodyComp.muscleMass||bodyComp.fatMass||bodyComp.visceralFat||bodyComp.hydration)){
+    html+=`<div class="sec-label">Body Composition</div>
+      <div class="card" style="margin-bottom:10px;font-size:12px;">
+        ${bodyComp.fatMass?`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text2);">Fat mass</span><strong>${bodyComp.fatMass} kg</strong></div>`:''}
+        ${bodyComp.muscleMass?`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text2);">Muscle mass</span><strong>${bodyComp.muscleMass} kg</strong></div>`:''}
+        ${bodyComp.fatFreeMass?`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text2);">Fat-free mass</span><strong>${bodyComp.fatFreeMass} kg</strong></div>`:''}
+        ${bodyComp.visceralFat?`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text2);">Visceral fat</span><strong>${bodyComp.visceralFat}</strong></div>`:''}
+        ${bodyComp.hydration?`<div style="display:flex;justify-content:space-between;padding:5px 0;"><span style="color:var(--text2);">Hydration</span><strong>${bodyComp.hydration} kg</strong></div>`:''}
+      </div>`;
+  }
+
+  // SUPPLEMENTS
+  if(supps.length>0){
+    const taken=supps.map((s,i)=>({...s,done:!!suppDoneAll[`${date}_${i}`]}));
+    const someTaken=taken.some(s=>s.done);
+    if(someTaken||isToday){
+      html+=`<div class="sec-label">Supplements & Meds</div>
+        <div class="card" style="margin-bottom:10px;">
+          ${taken.map(s=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">
+            <div style="font-size:14px;">${s.done?'✅':'⬜'}</div>
+            <div style="flex:1;font-size:13px;font-weight:${s.done?'600':'400'};color:${s.done?'var(--text)':'var(--text3)'};">${s.name}</div>
+            <div style="font-size:11px;color:var(--text2);">${s.dose||''}</div>
+          </div>`).join('')}
+        </div>`;
+    }
+  }
+
+  // SWIM
+  if(swims.length>0){
+    html+=`<div class="sec-label">Swim</div>
+      <div class="card" style="margin-bottom:10px;">
+        ${swims.map(s=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+          <div style="font-size:13px;font-weight:600;">${s.mins} mins${s.laps?` · ${s.laps} laps`:''}</div>
+          <div style="font-size:11px;color:var(--cyan);">${s.feel||''}</div>
+        </div>`).join('')}
+      </div>`;
+  }
+
+  // Bottom padding so last card isn't hugged by safe-area
+  html+=`<div style="height:20px;"></div>`;
+
+  document.getElementById('ddContent').innerHTML=html;
 }
 
 // ============================================================
