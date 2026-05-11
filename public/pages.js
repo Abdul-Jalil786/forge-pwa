@@ -320,21 +320,72 @@ function renderTodaysPlan(){
   return `
     <div class="sec-label">Today's Plan${plan.name?' — '+plan.name:''}</div>
     <div class="card" style="margin-bottom:10px;border-color:var(--lime);background:linear-gradient(135deg,rgba(200,255,0,.04),transparent);">
-      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${plan.meals.length} meals · ${totalCals} kcal · ${totalP}g protein</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${plan.meals.length} meals · ${totalCals} kcal · ${totalP}g protein · tap a meal for details</div>
       ${plan.meals.map(m=>{
         const logged=loggedNames.has(m.name);
-        return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-top:1px solid var(--border);">
-          <div style="font-size:11px;color:var(--text3);font-weight:700;width:46px;flex-shrink:0;padding-top:3px;">${m.time||''}</div>
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;font-size:13px;${logged?'color:var(--text3);text-decoration:line-through;':''}">${m.name}</div>
-            <div style="font-size:11px;color:var(--text2);margin-top:2px;">${m.cals||0} kcal · ${m.protein||0}g P · ${m.carbs||0}g C · ${m.fat||0}g F</div>
-            ${m.ingredients?`<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.55;">${m.ingredients}</div>`:''}
+        return `<div style="display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--border);">
+          <div onclick="openMealDetail('${m.id}')" style="flex:1;min-width:0;cursor:pointer;">
+            <div style="display:flex;align-items:baseline;gap:8px;">
+              <div style="font-size:11px;color:var(--text3);font-weight:700;">${m.time||''}</div>
+              <div style="font-weight:600;font-size:14px;${logged?'color:var(--text3);text-decoration:line-through;':''}">${m.name}</div>
+            </div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px;">${m.cals||0} kcal · ${m.protein||0}g P · ${m.carbs||0}g C · ${m.fat||0}g F</div>
           </div>
-          <button class="btn ${logged?'btn-ghost':'btn-lime'} btn-sm" style="font-size:11px;padding:6px 10px;flex-shrink:0;" onclick="logPlannedMeal('${m.id}')">${logged?'✓':'+ Log'}</button>
+          <button class="btn ${logged?'btn-ghost':'btn-lime'} btn-sm" style="font-size:11px;padding:8px 14px;flex-shrink:0;" onclick="logPlannedMeal('${m.id}')">${logged?'✓':'+ Log'}</button>
         </div>`;
       }).join('')}
     </div>
   `;
+}
+
+function openMealDetail(mealId){
+  const plan=STATE.mealPlan;
+  if(!plan)return;
+  const m=plan.meals.find(x=>x.id===mealId);
+  if(!m)return;
+  const todayFoods=getFoods();
+  const logged=todayFoods.some(f=>f.name===m.name);
+
+  // Parse "Take with:" if present in ingredients
+  let mainIngredients=m.ingredients||'';
+  let takeWith='';
+  const takeWithMatch=/(?:· )?Take with:\s*([^·]+?)(?:\.|$)/i.exec(mainIngredients);
+  if(takeWithMatch){
+    takeWith=takeWithMatch[1].trim();
+    mainIngredients=mainIngredients.replace(takeWithMatch[0],'').trim();
+  }
+  // Split ingredients by · for bullet display
+  const bullets=mainIngredients.split('·').map(s=>s.trim()).filter(s=>s.length);
+
+  document.getElementById('md-title').textContent=`${m.time||''} · ${m.name}`;
+  document.getElementById('md-body').innerHTML=`
+    <div style="background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Macros</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center;">
+        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--lime);">${m.cals||0}</div><div style="font-size:9px;color:var(--text3);">KCAL</div></div>
+        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--orange);">${m.protein||0}g</div><div style="font-size:9px;color:var(--text3);">PROTEIN</div></div>
+        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--blue);">${m.carbs||0}g</div><div style="font-size:9px;color:var(--text3);">CARBS</div></div>
+        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--purple);">${m.fat||0}g</div><div style="font-size:9px;color:var(--text3);">FAT</div></div>
+      </div>
+    </div>
+    ${bullets.length?`
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Ingredients</div>
+    <ul style="list-style:none;padding:0;margin:0 0 16px;">
+      ${bullets.map(b=>`<li style="font-size:13px;color:var(--text);line-height:1.6;padding:6px 0 6px 18px;position:relative;border-bottom:1px solid var(--border);">
+        <span style="position:absolute;left:0;color:var(--lime);">•</span>${b}
+      </li>`).join('')}
+    </ul>`:''}
+    ${takeWith?`
+    <div style="background:rgba(255,85,0,.08);border:1px solid rgba(255,85,0,.25);border-radius:10px;padding:10px 12px;margin-bottom:16px;">
+      <div style="font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">💊 Take with</div>
+      <div style="font-size:13px;color:var(--text);">${takeWith}</div>
+    </div>`:''}
+    ${logged?
+      `<button class="btn btn-ghost btn-full" onclick="logPlannedMeal('${m.id}');closeModal('modal-meal-detail');">✓ Logged · Tap to unlog</button>`:
+      `<button class="btn btn-lime btn-full" onclick="logPlannedMeal('${m.id}');closeModal('modal-meal-detail');">+ LOG THIS MEAL</button>`
+    }
+  `;
+  openModal('modal-meal-detail');
 }
 
 function delFood(i){deleteFoodEntry(i);renderFood();renderToday();showToast('Removed');}
