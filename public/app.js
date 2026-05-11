@@ -30,7 +30,9 @@ async function obStep(step){
       calsGym: obData.calsGym, calsRest: obData.calsRest,
       proteinTarget: obData.proteinTarget,
     };
-    STATE.weightLog = [{date: todayStr(), weight: obData.startWeight}];
+    STATE.weightLog = [{date: todayStr(), weight: obData.startWeight, source: 'manual'}];
+    STATE.planStartDate = todayStr();
+    STATE.trainingStartDate = todayStr();
     await saveStateNow();
     document.getElementById('onboarding').style.display='none';
     document.getElementById('app').style.display='flex';
@@ -533,6 +535,15 @@ async function checkAuth(){
 async function init(){
   if(!await checkAuth())return;
   await loadState();
+  // Migrate: ensure planStartDate + trainingStartDate exist for existing users
+  if(STATE.profile && STATE.profile.name && (!STATE.planStartDate || !STATE.trainingStartDate)){
+    const earliest = (STATE.weightLog||[]).length
+      ? STATE.weightLog.reduce((m,e)=>e.date<m?e.date:m, STATE.weightLog[0].date)
+      : todayStr();
+    if(!STATE.planStartDate) STATE.planStartDate = earliest;
+    if(!STATE.trainingStartDate) STATE.trainingStartDate = earliest;
+    saveStateNow();
+  }
   if(STATE.profile && STATE.profile.name){
     document.getElementById('onboarding').style.display='none';
     document.getElementById('app').style.display='flex';
