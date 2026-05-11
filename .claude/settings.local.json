@@ -15,7 +15,8 @@
       "Bash(cd C:/Users/abdul/Projects/forge-pwa && npm install web-push node-cron 2>&1)",
       "Bash(cd C:/Users/abdul/Projects/forge-pwa && npm install --save-dev @types/web-push @types/node-cron 2>&1)",
       "Bash(cd C:/Users/abdul/Projects/forge-pwa && npx web-push generate-vapid-keys 2>&1)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git add:*)"
     ]
   }
 }

@@ -107,25 +107,25 @@ export function startCron() {
     }
   });
 
-  // Daily Oura sync at 08:00 UK time
-  cron.schedule("0 8 * * *", async () => {
-    console.log("Running daily Oura sync...");
+  // Hourly Oura sync — runs at :00 every hour, all day
+  cron.schedule("0 * * * *", async () => {
+    console.log("Running hourly Oura sync...");
     try {
       await syncOuraForAllUsers();
-      console.log("Daily Oura sync complete");
+      console.log("Hourly Oura sync complete");
     } catch (err) {
-      console.error("Daily Oura sync error:", err);
+      console.error("Hourly Oura sync error:", err);
     }
   }, { timezone: "Europe/London" });
 
-  // Daily Withings sync at 08:15 UK time
-  cron.schedule("15 8 * * *", async () => {
-    console.log("Running daily Withings sync...");
+  // Hourly Withings sync — runs at :15 every hour
+  cron.schedule("15 * * * *", async () => {
+    console.log("Running hourly Withings sync...");
     try {
       await syncWithingsForAllUsers();
-      console.log("Daily Withings sync complete");
+      console.log("Hourly Withings sync complete");
     } catch (err) {
-      console.error("Daily Withings sync error:", err);
+      console.error("Hourly Withings sync error:", err);
     }
   }, { timezone: "Europe/London" });
 }
