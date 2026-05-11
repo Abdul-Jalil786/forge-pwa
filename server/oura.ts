@@ -55,11 +55,14 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     for (const e of dailySleep.data || []) {
       scoreByDay[e.day] = e.score;
     }
-    // Sleep duration from detailed sleep (sum if multiple periods per day)
+    // Sleep duration — only count main overnight sleep, skip naps/short rests
+    // Oura type values: "long_sleep" = main overnight, "sleep" = main sleep, "late_nap" = nap, "rest" = quiet rest, "deleted" = ignored
     const durationByDay: Record<string, number> = {};
     for (const e of sleepDetail.data || []) {
-      const day = e.day;
+      if (e.type === "late_nap" || e.type === "rest" || e.type === "deleted") continue;
       const seconds = e.total_sleep_duration || 0;
+      if (seconds < 10800) continue; // Skip anything under 3 hours (probably a nap mis-categorised)
+      const day = e.day;
       durationByDay[day] = (durationByDay[day] || 0) + seconds;
     }
     for (const day of new Set([...Object.keys(scoreByDay), ...Object.keys(durationByDay)])) {
