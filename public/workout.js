@@ -260,37 +260,45 @@ function exitGuidedWorkout(){
   renderToday();
 }
 
-function suggestWeight(exId, prevSession){
+function suggestWeight(exId, prevSession, setIdx){
   if(!prevSession||!prevSession.log[exId])return null;
   const exObj=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises].find(e=>e.id===exId);
   if(!exObj)return null;
   const repMatch=String(exObj.reps).match(/(\d+)-(\d+)/);
+  const lowerRep=repMatch?parseInt(repMatch[1]):null;
   const upperRep=repMatch?parseInt(repMatch[2]):null;
   const sets=(prevSession.log[exId].sets||[]).filter(s=>s.kg&&s.reps);
   if(!sets.length)return null;
-  const lastKg=parseFloat(sets[sets.length-1].kg);
+  // Match same set index from previous session if requested, else use the heaviest first set as ref
+  const refSet = (typeof setIdx==='number' && sets[setIdx]) ? sets[setIdx] : sets[0];
+  const lastKg=parseFloat(refSet.kg);
+  const lastReps=parseInt(refSet.reps);
   const efforts=sets.map(s=>s.effort).filter(e=>e);
   const hasEffort=efforts.length>0;
+  const prevSummary = sets.map(s=>`${s.kg}×${s.reps}`).join(', ');
 
   if(!upperRep){
-    return { kg:lastKg, reason:'Same as last session' };
+    // Timed/non-weighted exercise (e.g. plank "30-45s")
+    return { kg:lastKg, reps:lastReps, reason:`Last: ${prevSummary}`, dir:null };
   }
 
   const allHitUpper=sets.every(s=>parseInt(s.reps)>=upperRep);
-  const firstFailed=parseInt(sets[0].reps)<(upperRep-2);
+  const firstFailed=parseInt(sets[0].reps)<(lowerRep||0);
 
   if(hasEffort){
     const allEasy=efforts.every(e=>e==='easy');
     const mostlySolid=efforts.filter(e=>e==='solid').length>=efforts.length/2;
     const anyTough=efforts.some(e=>e==='tough');
-    if(allEasy&&allHitUpper) return { kg:lastKg+5, reason:'+5kg (rated easy)', dir:'up' };
-    if(mostlySolid&&allHitUpper) return { kg:lastKg+2.5, reason:'+2.5kg (solid)', dir:'up' };
-    if(anyTough&&!allHitUpper) return { kg:lastKg, reason:'Hold (tough sets)' };
+    if(allEasy&&allHitUpper) return { kg:lastKg+5, reps:lowerRep, reason:`+5kg ↑ (last: ${prevSummary}, felt easy)`, dir:'up' };
+    if(mostlySolid&&allHitUpper) return { kg:lastKg+2.5, reps:lowerRep, reason:`+2.5kg ↑ (last: ${prevSummary}, solid)`, dir:'up' };
+    if(anyTough&&!allHitUpper) return { kg:lastKg, reps:lastReps, reason:`Hold weight (last: ${prevSummary}, was tough)`, dir:null };
   }
 
-  if(allHitUpper) return { kg:lastKg+2.5, reason:'+2.5kg (top reps)', dir:'up' };
-  if(firstFailed) return { kg:Math.max(0,lastKg-2.5), reason:'-2.5kg (deload)', dir:'down' };
-  return { kg:lastKg, reason:'Hold' };
+  if(allHitUpper) return { kg:lastKg+2.5, reps:lowerRep, reason:`+2.5kg ↑ (last: ${prevSummary})`, dir:'up' };
+  if(firstFailed) return { kg:Math.max(0,lastKg-2.5), reps:upperRep, reason:`-2.5kg ↓ (last: ${prevSummary}, struggled)`, dir:'down' };
+  // Hold weight — aim for +1 rep beyond last time
+  const targetReps = Math.min(upperRep, lastReps+1);
+  return { kg:lastKg, reps:targetReps, reason:`Same weight, target ${targetReps} reps (last: ${prevSummary})`, dir:null };
 }
 
 function renderWmOutline(){
@@ -326,11 +334,11 @@ function renderWmSet(){
   const date=todayStr();
   const dayLog=getExLogForDate(date);
   const prev=getPreviousSessionData(date,wm.session);
-  const sug=suggestWeight(ex.id,prev);
+  const sug=suggestWeight(ex.id,prev,wm.setIdx);
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const startKg=existingSet?.kg||sug?.kg||'';
   const repMatch=String(ex.reps).match(/(\d+)-(\d+)/);
-  const targetReps=existingSet?.reps||(repMatch?parseInt(repMatch[2]):8);
+  const targetReps=existingSet?.reps||sug?.reps||(repMatch?parseInt(repMatch[2]):8);
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
