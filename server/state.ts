@@ -19,6 +19,7 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
 });
 
 router.put("/", requireAuth, async (req: Request, res: Response) => {
+  console.warn(`[state] Full PUT from user ${req.userId} — prefer field-scoped endpoints`);
   try {
     const { state } = req.body;
     if (typeof state !== "object" || state === null) {
@@ -31,6 +32,130 @@ router.put("/", requireAuth, async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (err) {
     console.error("Put state error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// --- Field-scoped atomic updates (Phase 16a) ---
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+router.put("/foods/:date", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const date = req.params.date as string;
+    if (!DATE_RE.test(date)) { res.status(400).json({ error: "Invalid date" }); return; }
+    const valueJson = JSON.stringify(req.body.value ?? []);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{foods}', COALESCE(state->'foods', '{}'), true),
+        ARRAY['foods', ${date}],
+        ${valueJson}::jsonb
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put foods error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/exLog/:date", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const date = req.params.date as string;
+    if (!DATE_RE.test(date)) { res.status(400).json({ error: "Invalid date" }); return; }
+    const valueJson = JSON.stringify(req.body.value ?? {});
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{exLog}', COALESCE(state->'exLog', '{}'), true),
+        ARRAY['exLog', ${date}],
+        ${valueJson}::jsonb
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put exLog error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/water/:date", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const date = req.params.date as string;
+    if (!DATE_RE.test(date)) { res.status(400).json({ error: "Invalid date" }); return; }
+    const cupsJson = JSON.stringify(req.body.cups ?? 0);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(
+          jsonb_set(
+            jsonb_set(COALESCE(state, '{}')::jsonb, '{water}', COALESCE(state->'water', '{}'), true),
+            '{waterClicked}', COALESCE(state->'waterClicked', '{}'), true
+          ),
+          ARRAY['water', ${date}],
+          ${cupsJson}::jsonb
+        ),
+        ARRAY['waterClicked', ${date}],
+        'true'::jsonb
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put water error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/weight", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { date, weight } = req.body;
+    if (!date || typeof weight !== "number") { res.status(400).json({ error: "Invalid weight data" }); return; }
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        COALESCE(state, '{}')::jsonb,
+        '{weightLog}',
+        (
+          COALESCE(
+            (SELECT jsonb_agg(e) FROM jsonb_array_elements(COALESCE(state->'weightLog', '[]'::jsonb)) e WHERE e->>'date' != ${date}),
+            '[]'::jsonb
+          ) || jsonb_build_array(jsonb_build_object('date', ${date}::text, 'weight', ${weight}::numeric))
+        )
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put weight error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/sleep/:date", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const date = req.params.date as string;
+    if (!DATE_RE.test(date)) { res.status(400).json({ error: "Invalid date" }); return; }
+    const valueJson = JSON.stringify(req.body.value ?? {});
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{sleepLog}', COALESCE(state->'sleepLog', '{}'), true),
+        ARRAY['sleepLog', ${date}],
+        ${valueJson}::jsonb
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put sleep error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

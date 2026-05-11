@@ -99,6 +99,7 @@ async function loadState() {
 }
 
 async function saveStateNow() {
+  console.warn("[Forge] Full state PUT — prefer field-scoped saves");
   localStorage.setItem("forge_state_cache", JSON.stringify(STATE));
   const token = localStorage.getItem("forge_token");
   if (!token) return;
@@ -109,6 +110,22 @@ async function saveStateNow() {
       body: JSON.stringify({ state: STATE }),
     });
   } catch {}
+}
+
+async function saveFieldToServer(endpoint, body) {
+  const token = localStorage.getItem("forge_token");
+  if (!token) return;
+  try {
+    await fetch(endpoint, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify(body),
+    });
+  } catch {}
+}
+
+function updateLocalCache() {
+  localStorage.setItem("forge_state_cache", JSON.stringify(STATE));
 }
 
 function saveStateDebounced() {
@@ -191,7 +208,9 @@ function saveWeightEntry(kg){
   const log=getWeightLog();
   const idx=log.findIndex(e=>e.date===todayStr());
   if(idx>=0)log[idx].weight=kg; else log.push({date:todayStr(),weight:kg});
-  pSet('weightLog',log);
+  STATE.weightLog=log;
+  updateLocalCache();
+  saveFieldToServer('/api/state/weight',{date:todayStr(),weight:kg});
 }
 
 // ============================================================
@@ -214,7 +233,9 @@ function saveFoodEntry(entry,date=todayStr()){
   const all=pGet('foods',{});
   if(!all[date])all[date]=[];
   all[date].push(entry);
-  pSet('foods',all);
+  STATE.foods=all;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/foods/${date}`,{value:all[date]});
   if(!STATE.planStartDate){
     STATE.planStartDate=todayStr();
     pSet('planStartDate',todayStr());
@@ -223,7 +244,9 @@ function saveFoodEntry(entry,date=todayStr()){
 function deleteFoodEntry(idx,date=todayStr()){
   const all=pGet('foods',{});
   if(all[date])all[date].splice(idx,1);
-  pSet('foods',all);
+  STATE.foods=all;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/foods/${date}`,{value:all[date]||[]});
 }
 function getTodayTotals(){
   const foods=getFoods();
@@ -259,12 +282,16 @@ function getExLogForDate(date){return getExLog()[date]||{};}
 function saveExLog(data){
   const all=getExLog();
   all[todayStr()]=data;
-  pSet('exLog',all);
+  STATE.exLog=all;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/exLog/${todayStr()}`,{value:data});
 }
 function saveExLogForDate(date,data){
   const all=getExLog();
   all[date]=data;
-  pSet('exLog',all);
+  STATE.exLog=all;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/exLog/${date}`,{value:data});
 }
 
 function getBestLift(exId){
@@ -325,7 +352,13 @@ function saveMeasEntry(entry){
 // SLEEP
 // ============================================================
 function getSleepLog(){return pGet('sleepLog',{});}
-function saveSleepEntry(hours,quality){const l=getSleepLog();l[todayStr()]={hours,quality};pSet('sleepLog',l);}
+function saveSleepEntry(hours,quality){
+  const l=getSleepLog();
+  l[todayStr()]={hours,quality};
+  STATE.sleepLog=l;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/sleep/${todayStr()}`,{value:{hours,quality}});
+}
 function getAvgSleep(days=7){
   const l=getSleepLog();
   const dates=getLast7();
@@ -358,10 +391,12 @@ function getWater(){
 function saveWater(cups){
   const w=pGet('water',{});
   w[todayStr()]=cups;
-  pSet('water',w);
+  STATE.water=w;
   const wc=pGet('waterClicked',{});
   wc[todayStr()]=true;
-  pSet('waterClicked',wc);
+  STATE.waterClicked=wc;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/water/${todayStr()}`,{cups});
 }
 
 // ============================================================
