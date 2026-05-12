@@ -62,6 +62,7 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
 - 16c: Source tagging (manual/withings/oura) — manual entries protected from sync overwrite
 - 16d: Network-first service worker for HTML/JS — deploys reflect on next page load
 - 16e: Fix friend onboarding — set planStartDate + trainingStartDate on signup + migrate existing users
+- 18: Granular meal logging — per-ingredient checkboxes, supplement tracking (supplementLog), expandable grouped food log, structured meal plan format (ingredients/supplements arrays)
 
 ## Skipped/deferred
 - Photos to R2 (entire feature removed in Phase 12)
@@ -90,7 +91,8 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
    - PUT /api/reminders — updates reminders array
    - POST /api/coaching-reports — pushes weekly review
 3. Sunday cron task in Cowork does the weekly review automatically
-4. Field-scoped state endpoints (used by frontend, not Cowork):
+4. Meal plan format: meals[] with structured ingredients[] and supplements[] arrays (see memory/meal-plan-format.md for spec)
+5. Field-scoped state endpoints (used by frontend, not Cowork):
    - PUT /api/state/foods/:date, /api/state/exLog/:date, /api/state/water/:date
    - PUT /api/state/weight, /api/state/sleep/:date
 
