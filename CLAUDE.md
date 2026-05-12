@@ -63,6 +63,7 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
 - 16d: Network-first service worker for HTML/JS — deploys reflect on next page load
 - 16e: Fix friend onboarding — set planStartDate + trainingStartDate on signup + migrate existing users
 - 18: Granular meal logging — per-ingredient checkboxes, supplement tracking (supplementLog), expandable grouped food log, structured meal plan format (ingredients/supplements arrays)
+- 19: Standalone supplements tracker — state.supplements[] CRUD, Today page checklist, Coach page 7-day heatmap + 30-day adherence, More page management, meal modal integration via mealId, 21:00 missed-supplements cron push
 
 ## Skipped/deferred
 - Photos to R2 (entire feature removed in Phase 12)
