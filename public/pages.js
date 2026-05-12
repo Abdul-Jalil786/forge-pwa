@@ -224,6 +224,8 @@ function renderToday(){
     </div>
     `:''}
 
+    ${renderSupplementsToday()}
+
     <div class="sec-label">Streaks</div>
     <div class="sg sg3">
       <div class="sb lime"><div class="l">Gym</div><div class="v">${gymStreak}<span class="u">days</span></div></div>
@@ -234,6 +236,42 @@ function renderToday(){
 
   if(window._todayTimer)clearTimeout(window._todayTimer);
   window._todayTimer=setTimeout(()=>{ if(document.getElementById('page-today').classList.contains('active'))renderToday(); },60000);
+}
+
+function renderSupplementsToday(){
+  const supps=getSupplements();
+  if(!supps.length)return '';
+  const today=todayStr();
+  const log=getSupplementLog(today);
+  const taken=supps.filter(s=>log[s.id]===true).length;
+  const adh=getSupplementAdherence(7);
+  const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
+  return `
+    <div class="sec-label" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Supplements Today</span>
+      <span style="font-size:11px;color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;">${taken}/${supps.length} taken</span>
+    </div>
+    <div class="card" style="margin-bottom:10px;border-color:var(--orange);background:linear-gradient(135deg,rgba(255,85,0,.03),transparent);">
+      ${supps.map(s=>{
+        const on=log[s.id]===true;
+        return `<div onclick="toggleSuppToday('${s.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;min-height:44px;">
+          <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--lime)':'var(--border)'};background:${on?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:600;color:${on?'var(--text)':'var(--text2)'};">${s.name}</div>
+            <div style="font-size:11px;color:var(--text3);">${s.dose}</div>
+          </div>
+          ${s.time?`<div style="font-size:11px;font-family:monospace;color:var(--text3);flex-shrink:0;">${s.time}</div>`:''}
+        </div>`;
+      }).join('')}
+      <div onclick="nav('coach')" style="padding:8px 0 2px;cursor:pointer;font-size:11px;color:var(--text3);">Adherence this week: ${adh.pct}% · <span style="color:var(--orange);">view details</span></div>
+    </div>`;
+}
+
+function toggleSuppToday(suppId){
+  const today=todayStr();
+  const log=getSupplementLog(today);
+  setSupplementTaken(today,suppId,!log[suppId]);
+  renderToday();
 }
 
 // ============================================================
@@ -1048,13 +1086,57 @@ function renderBody(){
   `;
 }
 
+function renderSupplementsCoach(){
+  const supps=getSupplements();
+  if(!supps.length)return '';
+  const log=pGet('supplementLog',{});
+  // 7-day heatmap
+  const last7=[];
+  for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);last7.push(_ukDate(d));}
+  const dayLabels=last7.map(d=>{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-GB',{weekday:'narrow'});});
+  const heatmap=supps.map(s=>{
+    const cells=last7.map(d=>{
+      const dayLog=log[d]||{};
+      return dayLog[s.id]===true?'taken':'missed';
+    });
+    return {name:s.name,cells};
+  });
+  // 30-day adherence
+  const adh30=getSupplementAdherence(30);
+  return `
+    <div class="sec-label">Supplements · 7 Day</div>
+    <div class="card" style="margin-bottom:10px;overflow-x:auto;">
+      <div style="display:grid;grid-template-columns:100px repeat(7,24px);gap:2px;align-items:center;min-width:280px;">
+        <div></div>${dayLabels.map(d=>`<div style="text-align:center;font-size:9px;color:var(--text3);font-weight:700;">${d}</div>`).join('')}
+        ${heatmap.map(row=>`
+          <div style="font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${row.name}</div>
+          ${row.cells.map(c=>`<div style="width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;background:${c==='taken'?'var(--lime)':'var(--s2)'};color:${c==='taken'?'var(--bg)':'var(--text3)'};">${c==='taken'?'&#10003;':'·'}</div>`).join('')}
+        `).join('')}
+      </div>
+    </div>
+    <div class="sec-label">Supplements · 30 Day</div>
+    <div class="card" style="margin-bottom:10px;">
+      ${supps.map(s=>{
+        const sid=adh30.byId[s.id];
+        const pct=sid?sid.pct:0;
+        return `<div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+            <span style="color:var(--text2);">${s.name}</span>
+            <span style="color:${pct>=80?'var(--lime)':pct>=50?'var(--orange)':'var(--red)'};font-weight:700;">${pct}%</span>
+          </div>
+          <div class="macro-bar"><div class="macro-fill" style="width:${pct}%;background:${pct>=80?'var(--lime)':pct>=50?'var(--orange)':'var(--red)'};"></div></div>
+        </div>`;
+      }).join('')}
+      <div style="font-size:11px;color:var(--text3);margin-top:4px;">Overall: ${adh30.pct}% · ${adh30.taken} taken · ${adh30.missed} missed</div>
+    </div>`;
+}
+
 // ============================================================
 // COACH PAGE (AI Analysis + Report Card + Supplements)
 // ============================================================
 function renderCoach(){
   const p=getActive(); if(!p)return;
   const report=getWeeklyReport();
-  const supps=getSupps();
 
   document.getElementById('page-coach').innerHTML=`
     <div class="pg-title" style="margin-bottom:14px;">Coach</div>
@@ -1083,6 +1165,8 @@ function renderCoach(){
       ${report.weightChange!==null?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text2);">Weight change this week: <strong style="color:${report.weightChange<=0?'var(--green)':'var(--red)'};">${report.weightChange>0?'+':''}${report.weightChange.toFixed(1)}kg</strong></div>`:''}
     </div>
     `):'<div class="card" style="text-align:center;color:var(--text3);font-size:13px;padding:20px;">Log data throughout the week to generate your report card</div>'}
+
+    ${renderSupplementsCoach()}
 
     <div class="sec-label">Coaching from Cowork</div>
     ${(STATE.coachingReports||[]).length===0?`
@@ -1117,25 +1201,6 @@ function renderCoach(){
       </div>
     </div>
 
-    <div class="sec-label">Supplements & Reminders</div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <div style="font-size:11px;color:var(--text2);">${supps.filter((_,i)=>isSuppDone(i)).length}/${supps.length} taken today</div>
-      <button class="btn btn-ghost btn-sm" onclick="openModal('modal-supp')">+ Add</button>
-    </div>
-    <div class="card">
-      ${supps.length===0?'<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Add supplements or medications to track daily</div>':
-        supps.map((s,i)=>`
-          <div class="supp-item">
-            <div class="supp-check${isSuppDone(i)?' done':''}" onclick="toggleSupp(${i})">
-              ${isSuppDone(i)?'<svg width="11" height="11" fill="none" stroke="#000" stroke-width="3" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>':''}
-            </div>
-            <div class="supp-info">
-              <div class="supp-name">${s.name}</div>
-              <div class="supp-time">${s.dose} · ${s.time}</div>
-            </div>
-            <button class="supp-del" onclick="deleteSupp(${i})">×</button>
-          </div>`).join('')}
-    </div>
   `;
 
   isReminderEnabled().then(on=>{
@@ -1258,6 +1323,24 @@ function renderMore(){
       <div id="withings-controls" style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-lime btn-sm" style="flex:1;min-width:140px;" onclick="connectWithings()">Connect Withings</button>
       </div>
+    </div>
+
+    <div class="sec-label">Manage Supplements</div>
+    <div class="card" style="margin-bottom:10px;">
+      ${(()=>{
+        const supps=getSupplements();
+        if(!supps.length) return '<div style="text-align:center;color:var(--text3);padding:16px 0;font-size:13px;">No supplements configured yet</div>';
+        return supps.map(s=>`
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;">${s.name} <span style="font-size:11px;color:var(--text3);font-weight:400;">${s.dose}</span></div>
+              <div style="font-size:10px;color:var(--text3);">${s.time?s.time+' · ':''}${s.mealId?'Linked: '+s.mealId:'No meal link'}${s.notes?' · '+s.notes:''}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px;" onclick="openEditSupplement('${s.id}')">Edit</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px;color:var(--red);border-color:var(--red);" onclick="confirmDeleteSupplement('${s.id}','${s.name.replace(/'/g,"\\'")}')">Del</button>
+          </div>`).join('');
+      })()}
+      <button class="btn btn-lime btn-sm" style="width:100%;margin-top:10px;" onclick="openAddSupplement()">+ Add Supplement</button>
     </div>
 
     <div class="sec-label">Calorie Stage Guide</div>

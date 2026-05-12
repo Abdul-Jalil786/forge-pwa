@@ -181,19 +181,62 @@ function saveSwim(){
   renderBody(); renderToday();
 }
 
-// ---- SUPPLEMENTS ----
-function saveSupp(){
+// ---- SUPPLEMENTS (Phase 19) ----
+function _populateSuppMealDropdown(){
+  const sel=document.getElementById('msupp-meal');
+  if(!sel)return;
+  const meals=(STATE.mealPlan&&STATE.mealPlan.meals)||[];
+  sel.innerHTML='<option value="">No linked meal</option>'+meals.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+}
+
+function openAddSupplement(){
+  document.getElementById('supp-modal-title').textContent='Add Supplement';
+  ['msupp-name','msupp-dose','msupp-time','msupp-notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  document.getElementById('msupp-edit-id').value='';
+  _populateSuppMealDropdown();
+  document.getElementById('msupp-meal').value='';
+  openModal('modal-supp');
+}
+
+function openEditSupplement(id){
+  const s=getSupplements().find(x=>x.id===id);
+  if(!s)return;
+  document.getElementById('supp-modal-title').textContent='Edit Supplement';
+  document.getElementById('msupp-name').value=s.name;
+  document.getElementById('msupp-dose').value=s.dose||'';
+  document.getElementById('msupp-time').value=s.time||'';
+  document.getElementById('msupp-notes').value=s.notes||'';
+  document.getElementById('msupp-edit-id').value=id;
+  _populateSuppMealDropdown();
+  document.getElementById('msupp-meal').value=s.mealId||'';
+  openModal('modal-supp');
+}
+
+function saveSuppNew(){
   const name=document.getElementById('msupp-name').value.trim();
   const dose=document.getElementById('msupp-dose').value.trim();
   const time=document.getElementById('msupp-time').value.trim();
+  const mealId=document.getElementById('msupp-meal').value;
+  const notes=document.getElementById('msupp-notes').value.trim();
   if(!name){showToast('Enter supplement name');return;}
-  const supps=getSupps(); supps.push({name,dose,time}); pSet('supps',supps);
+  const editId=document.getElementById('msupp-edit-id').value;
+  if(editId){
+    updateSupplement(editId,{name,dose,time,mealId,notes});
+    showToast(`${name} updated ✓`);
+  } else {
+    addSupplement({name,dose,time,mealId,notes});
+    showToast(`${name} added ✓`);
+  }
   closeModal('modal-supp');
-  showToast(`${name} added ✓`);
-  renderCoach();
+  renderMore();renderToday();
 }
-function deleteSupp(i){const s=getSupps();s.splice(i,1);pSet('supps',s);renderCoach();}
-function toggleSupp(i){toggleSuppDone(i);renderCoach();}
+
+function confirmDeleteSupplement(id,name){
+  if(!confirm(`Delete ${name}? Historical adherence data is preserved.`))return;
+  deleteSupplement(id);
+  showToast(`${name} deleted`);
+  renderMore();renderToday();
+}
 
 // ---- WATER ----
 function setWater(cups){saveWater(cups);renderMore();renderToday();showToast(`${cups} cups 💧`);}
@@ -478,7 +521,7 @@ function editProfile(){
 
 function confirmReset(){
   if(confirm('Delete ALL data for this profile? This cannot be undone.')){
-    ['weightLog','foods','stepsLog','exLog','measLog','sleepLog','swimLog','supps','suppDone','water','foodTemplates'].forEach(k=>{
+    ['weightLog','foods','stepsLog','exLog','measLog','sleepLog','swimLog','supps','suppDone','water','foodTemplates','supplements','supplementLog'].forEach(k=>{
       STATE[k] = Array.isArray(STATE[k]) ? [] : {};
     });
     saveStateNow();
@@ -524,6 +567,23 @@ async function init(){
     if(!STATE.trainingStartDate) STATE.trainingStartDate = earliest;
     saveStateNow();
   }
+  // Phase 19: pre-populate supplements for Jay if empty
+  if(STATE.profile && !STATE.supplements){
+    if(STATE.profile.email==='jay@afjltd.co.uk' || (STATE.profile.name && STATE.profile.name.toLowerCase().startsWith('jay'))){
+      STATE.supplements=[
+        {id:'vit-d',name:'Vitamin D',dose:'4000 IU',time:'12:00',mealId:'breakfast',notes:''},
+        {id:'omega-3',name:'Omega 3',dose:'2 caps',time:'12:00',mealId:'breakfast',notes:''},
+        {id:'metformin-am',name:'Metformin',dose:'1000mg',time:'12:00',mealId:'breakfast',notes:'With first meal'},
+        {id:'statin-pm',name:'Statin',dose:'20mg',time:'17:50',mealId:'last-meal',notes:'With last meal'},
+        {id:'creatine',name:'Creatine',dose:'5g',time:'17:15',mealId:'post-workout-shake',notes:'In post-workout shake'},
+      ];
+      saveStateNow();
+    } else {
+      STATE.supplements=[];
+      saveStateNow();
+    }
+  }
+
   if(STATE.profile && STATE.profile.name){
     document.getElementById('onboarding').style.display='none';
     document.getElementById('app').style.display='flex';

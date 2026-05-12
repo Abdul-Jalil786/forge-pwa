@@ -485,11 +485,14 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
 
 <div class="modal-bg" id="modal-supp">
   <div class="modal">
-    <div class="modal-hdr"><div class="modal-title">Add Supplement</div><button class="modal-close" onclick="closeModal('modal-supp')">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title" id="supp-modal-title">Add Supplement</div><button class="modal-close" onclick="closeModal('modal-supp')">&#10005;</button></div>
     <input class="inp" id="msupp-name" placeholder="Name (e.g. Creatine, Vitamin D)" style="margin-bottom:8px">
     <input class="inp" id="msupp-dose" placeholder="Dose (e.g. 5g, 1 capsule)" style="margin-bottom:8px">
-    <input class="inp" id="msupp-time" placeholder="Time (e.g. Morning, Pre-workout)" style="margin-bottom:12px">
-    <button class="btn btn-lime btn-full" onclick="saveSupp()">ADD</button>
+    <input class="inp" id="msupp-time" type="time" placeholder="Time (HH:MM)" style="margin-bottom:8px">
+    <select class="inp" id="msupp-meal" style="margin-bottom:8px"><option value="">No linked meal</option></select>
+    <input class="inp" id="msupp-notes" placeholder="Notes (optional)" style="margin-bottom:12px">
+    <input type="hidden" id="msupp-edit-id" value="">
+    <button class="btn btn-lime btn-full" onclick="saveSuppNew()">SAVE</button>
   </div>
 </div>
 

@@ -210,6 +210,31 @@ export function startCron() {
     }
   }, { timezone: "Europe/London" });
 
+  // Daily 21:00 UK — missed supplements check
+  cron.schedule("0 21 * * *", async () => {
+    console.log("Running daily supplement adherence check...");
+    try {
+      const today = ukToday();
+      const users = await prisma.user.findMany();
+      for (const user of users) {
+        const state: any = user.state || {};
+        const supplements = state.supplements || [];
+        if (supplements.length === 0) continue;
+        const suppLog = (state.supplementLog || {})[today] || {};
+        const missed = supplements.filter((s: any) => suppLog[s.id] !== true).length;
+        if (missed >= 2) {
+          await sendPushToUser(user.id, {
+            title: "Supplements missed today",
+            body: `${missed} supplements missed today \u2014 open Forge to log if you took them.`
+          });
+        }
+      }
+      console.log("Supplement adherence check complete");
+    } catch (err) {
+      console.error("Supplement adherence check error:", err);
+    }
+  }, { timezone: "Europe/London" });
+
   // Sunday 21:00 UK — weekly numbers preview (lighter than Cowork's full Sunday report)
   cron.schedule("0 21 * * 0", async () => {
     console.log("Running Sunday weekly summary...");

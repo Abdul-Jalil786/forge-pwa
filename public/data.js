@@ -419,6 +419,13 @@ function getMealIngredients(meal){
 }
 
 function getMealSupplements(meal){
+  // Phase 19: prefer state.supplements filtered by mealId
+  const supps=getSupplements();
+  if(supps.length>0){
+    const linked=supps.filter(s=>s.mealId===meal.id);
+    if(linked.length>0)return linked;
+  }
+  // Legacy fallback: parse from meal data
   if(Array.isArray(meal.supplements))return meal.supplements;
   const match=/(?:·\s*)?Take with:\s*([^·]+?)(?:\.|$)/i.exec(meal.ingredients||'');
   if(!match)return[];
@@ -430,7 +437,62 @@ function setSupplementTaken(date,suppId,taken){
   const log=pGet('supplementLog',{});
   if(!log[date])log[date]={};
   log[date][suppId]=taken;
-  pSet('supplementLog',log);
+  STATE.supplementLog=log;
+  updateLocalCache();
+  saveStateDebounced();
+}
+
+// ============================================================
+// SUPPLEMENTS (Phase 19)
+// ============================================================
+function getSupplements(){return pGet('supplements',[])||[];}
+
+function addSupplement({name,dose,time,mealId,notes}){
+  const supps=getSupplements();
+  let id=_slugify(name);
+  if(supps.some(s=>s.id===id)){
+    let n=2;while(supps.some(s=>s.id===id+'-'+n))n++;
+    id=id+'-'+n;
+  }
+  supps.push({id,name,dose:dose||'',time:time||'',mealId:mealId||'',notes:notes||''});
+  pSet('supplements',supps);
+  return id;
+}
+
+function updateSupplement(id,patch){
+  const supps=getSupplements();
+  const idx=supps.findIndex(s=>s.id===id);
+  if(idx<0)return;
+  Object.assign(supps[idx],patch);
+  pSet('supplements',supps);
+}
+
+function deleteSupplement(id){
+  const supps=getSupplements().filter(s=>s.id!==id);
+  pSet('supplements',supps);
+}
+
+function getSupplementAdherence(days){
+  const supps=getSupplements();
+  const log=pGet('supplementLog',{});
+  const byDay=[];
+  const byId={};
+  supps.forEach(s=>{byId[s.id]={taken:0,total:0,pct:0};});
+  for(let i=days-1;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const date=_ukDate(d);
+    const dayLog=log[date]||{};
+    let taken=0;
+    supps.forEach(s=>{
+      const t=dayLog[s.id]===true;
+      if(t)taken++;
+      if(byId[s.id]){byId[s.id].total++;if(t)byId[s.id].taken++;}
+    });
+    byDay.push({date,taken,total:supps.length,pct:supps.length?Math.round((taken/supps.length)*100):0});
+  }
+  let totalTaken=0,totalPossible=0;
+  Object.values(byId).forEach(v=>{totalTaken+=v.taken;totalPossible+=v.total;v.pct=v.total?Math.round((v.taken/v.total)*100):0;});
+  return{taken:totalTaken,missed:totalPossible-totalTaken,pct:totalPossible?Math.round((totalTaken/totalPossible)*100):0,byDay,byId};
 }
 
 // ============================================================
