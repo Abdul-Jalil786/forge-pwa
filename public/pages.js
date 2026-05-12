@@ -273,6 +273,19 @@ function renderFood(){
   const fatTarget=p.fatTarget||Math.round((calTarget*0.28)/9);
   const templates=getTemplates();
 
+  // Group foods by mealId for display
+  const foodGroups=[];
+  const seenMeals={};
+  foods.forEach((f,i)=>{
+    if(f.mealId){
+      if(!seenMeals[f.mealId]){seenMeals[f.mealId]={mealName:f.mealName||f.name,entries:[],indices:[]};foodGroups.push({type:'meal',group:seenMeals[f.mealId]});}
+      seenMeals[f.mealId].entries.push(f);
+      seenMeals[f.mealId].indices.push(i);
+    } else {
+      foodGroups.push({type:'single',food:f,index:i});
+    }
+  });
+
   document.getElementById('page-food').innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div class="pg-title">Food</div>
@@ -320,13 +333,29 @@ function renderFood(){
     <div class="sec-label">${isToday?"Today's Log":"Food Log"}</div>
     <div class="card">
       ${foods.length===0?`<div style="text-align:center;color:var(--text3);padding:20px 0;font-size:13px;">Nothing logged ${isToday?'yet':'on this day'}</div>`:
-        foods.map((f,i)=>`
-          <div class="food-row">
-            <div class="food-time">${f.time}</div>
-            <div class="food-name">${f.name}</div>
-            <div class="food-right"><div class="food-cals">${f.cals} kcal</div><div class="food-p">${f.protein||0}g protein</div></div>
-            ${isToday?`<button class="del-btn" onclick="delFood(${i})">×</button>`:`<button class="del-btn" onclick="delFoodOnDate(${i},'${viewDate}')" title="Delete from this past day">×</button>`}
-          </div>`).join('')}
+        foodGroups.map(item=>{
+          if(item.type==='single'){
+            const f=item.food,idx=item.index;
+            return`<div class="food-row">
+              <div class="food-time">${f.time}</div>
+              <div class="food-name">${f.name}</div>
+              <div class="food-right"><div class="food-cals">${f.cals} kcal</div><div class="food-p">${f.protein||0}g protein</div></div>
+              ${isToday?`<button class="del-btn" onclick="delFood(${idx})">×</button>`:`<button class="del-btn" onclick="delFoodOnDate(${idx},'${viewDate}')" title="Delete from this past day">×</button>`}
+            </div>`;
+          }
+          const g=item.group;
+          const tc=g.entries.reduce((s,f)=>s+(f.cals||0),0);
+          const tp=g.entries.reduce((s,f)=>s+(f.protein||0),0);
+          return`<div class="food-row" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'" style="cursor:pointer;">
+            <div class="food-time">${g.entries[0]?.time||''}</div>
+            <div class="food-name" style="font-weight:600;">${g.mealName} <span style="font-size:10px;color:var(--text3);">▸ ${g.entries.length} items</span></div>
+            <div class="food-right"><div class="food-cals">${tc} kcal</div><div class="food-p">${tp}g P</div></div>
+          </div><div style="display:none;">${g.entries.map((f,j)=>`<div class="food-row" style="padding-left:24px;background:var(--s2);">
+              <div class="food-name" style="font-size:12px;color:var(--text2);">${f.name}</div>
+              <div class="food-right"><div class="food-cals" style="font-size:11px;">${f.cals} kcal</div><div class="food-p" style="font-size:10px;">${f.protein||0}g P</div></div>
+              ${isToday?`<button class="del-btn" onclick="event.stopPropagation();delFood(${g.indices[j]})">×</button>`:''}
+            </div>`).join('')}</div>`;
+        }).join('')}
     </div>
 
     ${isToday && templates.length>0?`
@@ -376,78 +405,177 @@ function renderTodaysPlan(){
   const plan=STATE.mealPlan;
   if(!plan||!plan.meals||!plan.meals.length)return '';
   const todayFoods=getFoods();
-  const loggedNames=new Set(todayFoods.map(f=>f.name));
   const totalCals=plan.meals.reduce((s,m)=>s+(m.cals||0),0);
   const totalP=plan.meals.reduce((s,m)=>s+(m.protein||0),0);
+  const suppLog=getSupplementLog(todayStr());
   return `
     <div class="sec-label">Today's Plan${plan.name?' — '+plan.name:''}</div>
     <div class="card" style="margin-bottom:10px;border-color:var(--lime);background:linear-gradient(135deg,rgba(200,255,0,.04),transparent);">
       <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${plan.meals.length} meals · ${totalCals} kcal · ${totalP}g protein · tap a meal for details</div>
       ${plan.meals.map(m=>{
-        const logged=loggedNames.has(m.name);
+        const ings=getMealIngredients(m);
+        const supps=getMealSupplements(m);
+        const granular=todayFoods.filter(f=>f.mealId===m.id);
+        const legacy=todayFoods.find(f=>f.name===m.name&&!f.mealId);
+        let logStatus,loggedCount;
+        const total=ings.length;
+        if(granular.length>0){
+          const ln=new Set(granular.map(f=>f.name));
+          loggedCount=ings.filter(ing=>ln.has(ing.name)).length;
+          logStatus=loggedCount===total?'full':loggedCount>0?'partial':'none';
+        } else if(legacy){logStatus='full';loggedCount=total;} else {logStatus='none';loggedCount=0;}
+        const suppTotal=supps.length;
+        const suppDone=supps.filter(s=>suppLog[s.id]===true).length;
+        const suppBadge=suppTotal>0&&suppDone>0?` <span style="font-size:10px;color:var(--orange);">💊 ${suppDone}/${suppTotal}</span>`:'';
+        const isLogged=logStatus==='full';
+        const isPartial=logStatus==='partial';
         return `<div style="display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--border);">
           <div onclick="openMealDetail('${m.id}')" style="flex:1;min-width:0;cursor:pointer;">
             <div style="display:flex;align-items:baseline;gap:8px;">
               <div style="font-size:11px;color:var(--text3);font-weight:700;">${m.time||''}</div>
-              <div style="font-weight:600;font-size:14px;${logged?'color:var(--text3);text-decoration:line-through;':''}">${m.name}</div>
+              <div style="font-weight:600;font-size:14px;${isLogged?'color:var(--text3);text-decoration:line-through;':''}">${m.name}${suppBadge}</div>
             </div>
-            <div style="font-size:11px;color:var(--text2);margin-top:3px;">${m.cals||0} kcal · ${m.protein||0}g P · ${m.carbs||0}g C · ${m.fat||0}g F</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px;">${m.cals||0} kcal · ${m.protein||0}g P · ${m.carbs||0}g C · ${m.fat||0}g F${isPartial?` · <span style="color:var(--orange);">${loggedCount} of ${total} logged</span>`:''}</div>
           </div>
-          <button class="btn ${logged?'btn-ghost':'btn-lime'} btn-sm" style="font-size:11px;padding:8px 14px;flex-shrink:0;" onclick="logPlannedMeal('${m.id}')">${logged?'✓':'+ Log'}</button>
+          <button class="btn ${isLogged?'btn-ghost':isPartial?'btn-ghost':'btn-lime'} btn-sm" style="font-size:11px;padding:8px 14px;flex-shrink:0;${isPartial?'color:var(--orange);border-color:var(--orange);':''}" onclick="openMealDetail('${m.id}')">${isLogged?'✓':isPartial?'◐':'+ Log'}</button>
         </div>`;
       }).join('')}
     </div>
   `;
 }
 
+let _mds=null; // meal detail state
+
 function openMealDetail(mealId){
   const plan=STATE.mealPlan;
   if(!plan)return;
   const m=plan.meals.find(x=>x.id===mealId);
   if(!m)return;
+  const ingredients=getMealIngredients(m);
+  const supplements=getMealSupplements(m);
   const todayFoods=getFoods();
-  const logged=todayFoods.some(f=>f.name===m.name);
-
-  // Parse "Take with:" if present in ingredients
-  let mainIngredients=m.ingredients||'';
-  let takeWith='';
-  const takeWithMatch=/(?:· )?Take with:\s*([^·]+?)(?:\.|$)/i.exec(mainIngredients);
-  if(takeWithMatch){
-    takeWith=takeWithMatch[1].trim();
-    mainIngredients=mainIngredients.replace(takeWithMatch[0],'').trim();
+  const isStringFormat=!Array.isArray(m.ingredients);
+  const granular=todayFoods.filter(f=>f.mealId===m.id);
+  const legacy=todayFoods.find(f=>f.name===m.name&&!f.mealId);
+  const suppLog=getSupplementLog(todayStr());
+  let ingChecked,suppChecked;
+  if(granular.length>0){
+    const ln=new Set(granular.map(f=>f.name));
+    ingChecked=ingredients.map(ing=>ln.has(ing.name));
+    suppChecked=supplements.map(s=>suppLog[s.id]===true);
+  } else if(legacy){
+    ingChecked=ingredients.map(()=>true);
+    suppChecked=supplements.map(s=>suppLog[s.id]!==false);
+  } else {
+    ingChecked=ingredients.map(()=>true);
+    suppChecked=supplements.map(()=>true);
   }
-  // Split ingredients by · for bullet display
-  const bullets=mainIngredients.split('·').map(s=>s.trim()).filter(s=>s.length);
+  _mds={mealId:m.id,meal:m,ingredients,supplements,ingChecked,suppChecked,isStringFormat,
+    ingInit:[...ingChecked],suppInit:[...suppChecked]};
+  _renderMealDetail();
+  openModal('modal-meal-detail');
+}
 
+function _getMealLogStatus(){
+  if(!_mds)return'none';
+  const foods=getFoods();
+  const g=foods.filter(f=>f.mealId===_mds.mealId);
+  const l=foods.find(f=>f.name===_mds.meal.name&&!f.mealId);
+  if(g.length>0){
+    const ln=new Set(g.map(f=>f.name));
+    const c=_mds.ingredients.filter(ing=>ln.has(ing.name)).length;
+    return c===_mds.ingredients.length?'full':c>0?'partial':'none';
+  }
+  return l?'full':'none';
+}
+
+function toggleMealIngredient(i){_mds.ingChecked[i]=!_mds.ingChecked[i];_renderMealDetail();}
+function toggleMealSupplement(i){_mds.suppChecked[i]=!_mds.suppChecked[i];_renderMealDetail();}
+
+function _renderMealDetail(){
+  const s=_mds;if(!s)return;
+  const m=s.meal;
+  let cals=0,protein=0,carbs=0,fat=0;
+  s.ingredients.forEach((ing,i)=>{if(s.ingChecked[i]){cals+=ing.cals||0;protein+=ing.protein||0;carbs+=ing.carbs||0;fat+=ing.fat||0;}});
+  const logStatus=_getMealLogStatus();
+  const changed=s.ingChecked.some((c,i)=>c!==s.ingInit[i])||s.suppChecked.some((c,i)=>c!==s.suppInit[i]);
+  let btnText,btnClass;
+  if(logStatus==='none'){btnText='LOG SELECTED';btnClass='btn-lime';}
+  else if(logStatus==='full'&&!changed){btnText='✓ LOGGED · TAP TO UNLOG';btnClass='btn-ghost';}
+  else if(changed){btnText='SAVE CHANGES';btnClass='btn-lime';}
+  else{btnText='◐ EDIT LOGGED MEAL';btnClass='btn-lime';}
+  const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
   document.getElementById('md-title').textContent=`${m.time||''} · ${m.name}`;
   document.getElementById('md-body').innerHTML=`
     <div style="background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;">
       <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Macros</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center;">
-        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--lime);">${m.cals||0}</div><div style="font-size:9px;color:var(--text3);">KCAL</div></div>
-        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--orange);">${m.protein||0}g</div><div style="font-size:9px;color:var(--text3);">PROTEIN</div></div>
-        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--blue);">${m.carbs||0}g</div><div style="font-size:9px;color:var(--text3);">CARBS</div></div>
-        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--purple);">${m.fat||0}g</div><div style="font-size:9px;color:var(--text3);">FAT</div></div>
+        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--lime);">${cals}</div><div style="font-size:9px;color:var(--text3);">KCAL</div></div>
+        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--orange);">${protein}g</div><div style="font-size:9px;color:var(--text3);">PROTEIN</div></div>
+        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--blue);">${carbs}g</div><div style="font-size:9px;color:var(--text3);">CARBS</div></div>
+        <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--purple);">${fat}g</div><div style="font-size:9px;color:var(--text3);">FAT</div></div>
       </div>
     </div>
-    ${bullets.length?`
     <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Ingredients</div>
-    <ul style="list-style:none;padding:0;margin:0 0 16px;">
-      ${bullets.map(b=>`<li style="font-size:13px;color:var(--text);line-height:1.6;padding:6px 0 6px 18px;position:relative;border-bottom:1px solid var(--border);">
-        <span style="position:absolute;left:0;color:var(--lime);">•</span>${b}
-      </li>`).join('')}
-    </ul>`:''}
-    ${takeWith?`
+    <div style="margin-bottom:16px;">
+      ${s.ingredients.map((ing,i)=>{
+        const on=s.ingChecked[i];
+        return`<div onclick="toggleMealIngredient(${i})" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;min-height:44px;">
+          <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--lime)':'var(--border)'};background:${on?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
+          <div style="flex:1;font-size:13px;color:${on?'var(--text)':'var(--text3)'};">${ing.name}</div>
+          <div style="font-size:11px;color:var(--text3);flex-shrink:0;">${ing.cals} kcal · ${ing.protein}g P</div>
+        </div>`;}).join('')}
+    </div>
+    ${s.supplements.length?`
     <div style="background:rgba(255,85,0,.08);border:1px solid rgba(255,85,0,.25);border-radius:10px;padding:10px 12px;margin-bottom:16px;">
-      <div style="font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">💊 Take with</div>
-      <div style="font-size:13px;color:var(--text);">${takeWith}</div>
+      <div style="font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">💊 Take with</div>
+      ${s.supplements.map((supp,i)=>{
+        const on=s.suppChecked[i];
+        return`<div onclick="toggleMealSupplement(${i})" style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer;min-height:44px;${i<s.supplements.length-1?'border-bottom:1px solid rgba(255,85,0,.15);':''}">
+          <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--orange)':'var(--border)'};background:${on?'var(--orange)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
+          <div style="flex:1;font-size:13px;color:${on?'var(--text)':'var(--text3)'};">${supp.name}${supp.dose?' · '+supp.dose:''}</div>
+        </div>`;}).join('')}
     </div>`:''}
-    ${logged?
-      `<button class="btn btn-ghost btn-full" onclick="logPlannedMeal('${m.id}');closeModal('modal-meal-detail');">✓ Logged · Tap to unlog</button>`:
-      `<button class="btn btn-lime btn-full" onclick="logPlannedMeal('${m.id}');closeModal('modal-meal-detail');">+ LOG THIS MEAL</button>`
-    }
+    ${s.isStringFormat?`<div style="font-size:11px;color:var(--text3);margin-bottom:14px;padding:8px 10px;background:var(--s2);border-radius:8px;">ⓘ Per-ingredient macros are estimated (divided equally). More accurate breakdown after Sunday's plan refresh.</div>`:''}
+    <button class="btn ${btnClass} btn-full" onclick="logMealFromModal()">${btnText}</button>
   `;
-  openModal('modal-meal-detail');
+}
+
+function logMealFromModal(){
+  const s=_mds;if(!s)return;
+  const m=s.meal;
+  const today=todayStr();
+  const logStatus=_getMealLogStatus();
+  const changed=s.ingChecked.some((c,i)=>c!==s.ingInit[i])||s.suppChecked.some((c,i)=>c!==s.suppInit[i]);
+  // Remove existing entries for this meal
+  const foods=getFoods();
+  const filtered=foods.filter(f=>!(f.mealId===m.id||(f.name===m.name&&!f.mealId)));
+  const all=pGet('foods',{});
+  all[today]=filtered;
+  STATE.foods=all;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/foods/${today}`,{value:filtered});
+  // If fully logged and no changes → pure unlog
+  if(logStatus==='full'&&!changed){
+    s.supplements.forEach(supp=>setSupplementTaken(today,supp.id,false));
+    closeModal('modal-meal-detail');
+    renderFood();renderToday();
+    showToast(`${m.name} unlogged`);
+    return;
+  }
+  // Log checked ingredients
+  s.ingredients.forEach((ing,i)=>{
+    if(s.ingChecked[i]){
+      saveFoodEntry({name:ing.name,cals:ing.cals||0,protein:ing.protein||0,carbs:ing.carbs||0,fat:ing.fat||0,
+        time:m.time||fmtNow(),mealId:m.id,mealName:m.name});
+    }
+  });
+  // Update supplements
+  s.supplements.forEach((supp,i)=>setSupplementTaken(today,supp.id,s.suppChecked[i]));
+  closeModal('modal-meal-detail');
+  renderFood();renderToday();
+  const n=s.ingChecked.filter(c=>c).length;
+  showToast(`${m.name} — ${n}/${s.ingredients.length} logged ✓`);
 }
 
 function delFood(i){deleteFoodEntry(i);renderFood();renderToday();showToast('Removed');}

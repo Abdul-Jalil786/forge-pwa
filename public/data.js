@@ -71,6 +71,7 @@ let STATE = {
   planStartDate: null,
   trainingStartDate: null,
   waterClicked: {},
+  supplementLog: {},
 };
 let saveStateTimeout = null;
 
@@ -400,6 +401,36 @@ function saveWater(cups){
   STATE.waterClicked=wc;
   updateLocalCache();
   saveFieldToServer(`/api/state/water/${todayStr()}`,{cups});
+}
+
+// ============================================================
+// MEAL HELPERS (Phase 18)
+// ============================================================
+function _slugify(s){return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
+
+function getMealIngredients(meal){
+  if(Array.isArray(meal.ingredients))return meal.ingredients;
+  let str=meal.ingredients||'';
+  str=str.replace(/(?:·\s*)?Take with:\s*[^·]+?(?:\.|$)/i,'').trim();
+  const names=str.split('·').map(s=>s.trim()).filter(s=>s.length);
+  if(!names.length)return[{name:meal.name,cals:meal.cals||0,protein:meal.protein||0,carbs:meal.carbs||0,fat:meal.fat||0}];
+  const n=names.length;
+  return names.map(name=>({name,cals:Math.round((meal.cals||0)/n),protein:Math.round((meal.protein||0)/n),carbs:Math.round((meal.carbs||0)/n),fat:Math.round((meal.fat||0)/n)}));
+}
+
+function getMealSupplements(meal){
+  if(Array.isArray(meal.supplements))return meal.supplements;
+  const match=/(?:·\s*)?Take with:\s*([^·]+?)(?:\.|$)/i.exec(meal.ingredients||'');
+  if(!match)return[];
+  return match[1].split(',').map(s=>s.trim()).filter(s=>s.length).map(s=>({id:_slugify(s),name:s,dose:''}));
+}
+
+function getSupplementLog(date){return(pGet('supplementLog',{})[date])||{};}
+function setSupplementTaken(date,suppId,taken){
+  const log=pGet('supplementLog',{});
+  if(!log[date])log[date]={};
+  log[date][suppId]=taken;
+  pSet('supplementLog',log);
 }
 
 // ============================================================

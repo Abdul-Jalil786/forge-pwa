@@ -133,27 +133,7 @@ function saveFood(){
 }
 
 function logPlannedMeal(mealId){
-  const plan=STATE.mealPlan;
-  if(!plan)return;
-  const meal=plan.meals.find(m=>m.id===mealId);
-  if(!meal){showToast('Meal not found');return;}
-  const todayFoods=getFoods();
-  const existing=todayFoods.findIndex(f=>f.name===meal.name);
-  if(existing>=0){
-    deleteFoodEntry(existing);
-    showToast(`${meal.name} unlogged`);
-  } else {
-    saveFoodEntry({
-      name:meal.name,
-      cals:meal.cals||0,
-      protein:meal.protein||0,
-      carbs:meal.carbs||0,
-      fat:meal.fat||0,
-      time:meal.time||fmtNow()
-    });
-    showToast(`${meal.name} logged ✓`);
-  }
-  renderFood(); renderToday();
+  openMealDetail(mealId);
 }
 
 // ---- MEASUREMENTS ----
