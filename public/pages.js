@@ -585,35 +585,41 @@ function logMealFromModal(){
   const today=todayStr();
   const logStatus=_getMealLogStatus();
   const changed=s.ingChecked.some((c,i)=>c!==s.ingInit[i])||s.suppChecked.some((c,i)=>c!==s.suppInit[i]);
-  // Remove existing entries for this meal
+  // Build final foods array for today: existing entries minus this meal's, plus ticked ingredients
   const foods=getFoods();
   const filtered=foods.filter(f=>!(f.mealId===m.id||(f.name===m.name&&!f.mealId)));
+  const newEntries=[];
+  s.ingredients.forEach((ing,i)=>{
+    if(s.ingChecked[i]){
+      newEntries.push({
+        name:ing.name,cals:ing.cals||0,protein:ing.protein||0,carbs:ing.carbs||0,fat:ing.fat||0,
+        time:m.time||fmtNow(),mealId:m.id,mealName:m.name
+      });
+    }
+  });
+  const finalFoods=[...filtered,...newEntries];
+
+  // Single atomic write — local + server
   const all=pGet('foods',{});
-  all[today]=filtered;
+  all[today]=finalFoods;
   STATE.foods=all;
   updateLocalCache();
-  saveFieldToServer(`/api/state/foods/${today}`,{value:filtered});
-  // If fully logged and no changes → pure unlog
-  if(logStatus==='full'&&!changed){
-    s.supplements.forEach(supp=>setSupplementTaken(today,supp.id,false));
+  saveFieldToServer(`/api/state/foods/${today}`,{value:finalFoods});
+
+  // Supplements (separate endpoint, no race)
+  s.supplements.forEach((supp,i)=>setSupplementTaken(today,supp.id,s.suppChecked[i]));
+
+  // If user just unticked everything, treat as full unlog
+  if(newEntries.length===0&&logStatus==='full'&&!changed){
     closeModal('modal-meal-detail');
     renderFood();renderToday();
     showToast(`${m.name} unlogged`);
     return;
   }
-  // Log checked ingredients
-  s.ingredients.forEach((ing,i)=>{
-    if(s.ingChecked[i]){
-      saveFoodEntry({name:ing.name,cals:ing.cals||0,protein:ing.protein||0,carbs:ing.carbs||0,fat:ing.fat||0,
-        time:m.time||fmtNow(),mealId:m.id,mealName:m.name});
-    }
-  });
-  // Update supplements
-  s.supplements.forEach((supp,i)=>setSupplementTaken(today,supp.id,s.suppChecked[i]));
+
   closeModal('modal-meal-detail');
   renderFood();renderToday();
-  const n=s.ingChecked.filter(c=>c).length;
-  showToast(`${m.name} — ${n}/${s.ingredients.length} logged ✓`);
+  showToast(`${m.name} ${newEntries.length} of ${s.ingredients.length} logged`);
 }
 
 function delFood(i){deleteFoodEntry(i);renderFood();renderToday();showToast('Removed');}
