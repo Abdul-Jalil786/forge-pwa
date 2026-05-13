@@ -67,6 +67,9 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
 - 19: Standalone supplements tracker — state.supplements[] CRUD, Today page checklist, Coach page 7-day heatmap + 30-day adherence, More page management, meal modal integration via mealId, 21:00 missed-supplements cron push
 - 20: Time-based exercise tracking — isometric holds (plank, side plank, dead hang, wall sit, hollow hold, l-sit) track {seconds, done} instead of {weight, reps}, live count-up timer in guided workout mode, "Could you have held longer?" effort prompt (easy/hard/maybe), seconds-progression (+5s on easy/maybe), PB = longest single hold, one-shot migration of historical data, isTimeBased() helper with keyword fallback
 - 21: Oura sleep sync fix — three changes: (a) relaxed type filter so late_nap/rest entries 5+ hours count as main sleep, fixes daytime-shifted patterns where Oura mis-classifies long sleeps; (b) extended query end_date by 1 day to handle Oura's day-attribution boundary for daytime sleep; (c) removed aggressive auto-delete of stale entries — Oura updates if new data, otherwise leaves existing data alone
+- 22: Progress dashboard on Track page — 4 metric cards (weight, BF, lean mass, visceral fat) with progress bars, sparklines, 14-day avg rates, projected goal date, LBM drop alert, /api/export includes computed progress
+- 22a: Fix progress profile baseline for Jay — progressMigrationApplied guard, server-side migration on startup
+- 22b: Linear regression goal projections — calcRate() using least-squares regression on all entries since start, getProjections() projects weight + BF goal dates separately with binding constraint, 5th GOAL DATE card with date range + confidence level (high 14+d / medium 7-13d / low <7d) + elapsed progress bar, export endpoint includes full projections for Cowork
 
 ## Skipped/deferred
 - Photos to R2 (entire feature removed in Phase 12)
