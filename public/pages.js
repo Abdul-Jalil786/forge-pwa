@@ -671,37 +671,48 @@ function renderTrack(){
   const foodStreak=calcStreak('food');
 
   // Progress dashboard
+  const _v=v=>v!=null?v:'—';
+  const wEntries=getJourneyEntries('weight');
+  const bEntries=getJourneyEntries('bf');
+  const lEntries=getJourneyEntries('lbm');
+  const vEntries=getJourneyEntries('visceral');
+  const hasEnoughW=wEntries.length>=14;
+  const hasEnoughB=bEntries.length>=14;
+  const hasEnoughL=lEntries.length>=14;
+  const hasEnoughV=vEntries.length>=14;
+  const startLabel=p.startDate?fmtDate(p.startDate):'start';
+
   const wPct=p.startWeight&&p.targetWeight?((p.startWeight-cw)/(p.startWeight-p.targetWeight))*100:0;
   const wRate=get14DayAvgRate('weight');
-  const wLost=p.startWeight?Math.max(0,p.startWeight-cw).toFixed(1):'?';
-  const wToGo=p.targetWeight?Math.max(0,cw-p.targetWeight).toFixed(1):'?';
+  const wLost=p.startWeight?Math.max(0,p.startWeight-cw).toFixed(1):'—';
+  const wToGo=p.targetWeight?Math.max(0,cw-p.targetWeight).toFixed(1):'—';
   const wGoal=getProjectedGoalDate();
-  const wGoalStr=wGoal?`Goal date: ${wGoal}`:'Stalled — no projection';
-  const wSpark=spark(getJourneyEntries('weight').slice(-14).map(e=>e.weight),'var(--lime)');
+  const wGoalStr=wGoal?`Goal date: ${wGoal}`:hasEnoughW?'Stalled — no projection':'Insufficient data — need 14+ days';
+  const wSpark=spark(wEntries.slice(-14).map(e=>e.weight),'var(--lime)');
 
-  const bPct=p.startBF&&p.targetBF?((p.startBF-cbf)/(p.startBF-p.targetBF))*100:0;
+  const bPct=p.startBF&&p.targetBF&&cbf?((p.startBF-cbf)/(p.startBF-p.targetBF))*100:0;
   const bRate=get14DayAvgRate('bf');
-  const bDown=p.startBF&&cbf?Math.abs(p.startBF-cbf).toFixed(1):'?';
-  const bSpark=spark(getJourneyEntries('bf').slice(-14).map(e=>e.bf),'var(--orange)');
+  const bCaption=hasEnoughB?(p.startBF&&cbf?`Down ${Math.abs(p.startBF-cbf).toFixed(1)}% from start`:`Tracking from ${startLabel}`):`Tracking from ${startLabel}`;
+  const bSpark=spark(bEntries.slice(-14).map(e=>e.bf),'var(--orange)');
 
   const lPct=p.startLBM&&clbm?(clbm/p.startLBM)*100:100;
   const lRate=get14DayAvgRate('lbm');
-  const lChange=p.startLBM&&clbm?(clbm-p.startLBM).toFixed(1):'?';
-  const lSpark=spark(getJourneyEntries('lbm').slice(-14).map(e=>e.lbm),'var(--blue)');
+  const lCaption=hasEnoughL?(p.startLBM&&clbm?`Change: ${(clbm-p.startLBM)>0?'+':''}${(clbm-p.startLBM).toFixed(1)}kg from start`:`Tracking from ${startLabel}`):`Tracking from ${startLabel}`;
+  const lSpark=spark(lEntries.slice(-14).map(e=>e.lbm),'var(--blue)');
   const lAlert=getLBMDropAlert()?`<div style="background:rgba(255,85,0,.08);border:1px solid rgba(255,85,0,.2);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:11px;color:var(--orange);font-weight:600;">⚠ Lean dropping faster than target — review protein and training intensity</div>`:'';
 
   const vPct=svf!=null&&p.targetVisceralFat!=null&&cvf!=null?((svf-cvf)/(svf-p.targetVisceralFat))*100:0;
   const vRate=get14DayAvgRate('visceral');
-  const vDown=svf!=null&&cvf!=null?Math.abs(svf-cvf).toFixed(1):'?';
-  const vSpark=spark(getJourneyEntries('visceral').slice(-14).map(e=>e.visceralFat),'var(--purple)');
+  const vCaption=hasEnoughV?(svf!=null&&cvf!=null?`Down ${Math.abs(svf-cvf).toFixed(1)} from start`:`Tracking from ${startLabel}`):`Tracking from ${startLabel}`;
+  const vSpark=spark(vEntries.slice(-14).map(e=>e.visceralFat),'var(--purple)');
 
   document.getElementById('page-track').innerHTML=`
     <div class="pg-title" style="margin-bottom:14px;">Progress</div>
 
-    ${_progressCard('Weight',`${p.startWeight||'?'}kg → ${p.targetWeight||'?'}kg`,cw,'kg',wPct,'var(--lime)',wRate,' kg',`Lost ${wLost}kg · ${wToGo}kg to go · ${wGoalStr}`,wSpark)}
-    ${_progressCard('Body Fat',`${p.startBF||'?'}% → ${p.targetBF||'?'}%`,cbf,'%',bPct,'var(--orange)',bRate,'%',`Down ${bDown}% from start`,bSpark)}
-    ${_progressCard('Lean Mass',`current — target: hold`,clbm,'kg',lPct,'var(--blue)',lRate,' kg',`Change: ${lChange>0?'+':''}${lChange}kg from start`,lSpark,lAlert)}
-    ${cvf!=null||svf!=null?_progressCard('Visceral Fat',`current → target: <${p.targetVisceralFat||'?'}`,cvf,'',vPct,'var(--purple)',vRate,'',`Down ${vDown} from start`,vSpark):''}
+    ${_progressCard('Weight',`${_v(p.startWeight)}kg → ${_v(p.targetWeight)}kg`,cw,'kg',wPct,'var(--lime)',hasEnoughW?wRate:null,' kg',`Lost ${wLost}kg · ${wToGo}kg to go · ${wGoalStr}`,wSpark)}
+    ${_progressCard('Body Fat',`${_v(p.startBF)}% → ${_v(p.targetBF)}%`,cbf,'%',bPct,'var(--orange)',hasEnoughB?bRate:null,'%',bCaption,bSpark)}
+    ${_progressCard('Lean Mass',`current — target: hold ${_v(p.targetLBM)}kg`,clbm,'kg',lPct,'var(--blue)',hasEnoughL?lRate:null,' kg',lCaption,lSpark,lAlert)}
+    ${cvf!=null||svf!=null?_progressCard('Visceral Fat',`current → target: ${_v(p.targetVisceralFat)} or less`,cvf,'',vPct,'var(--purple)',hasEnoughV?vRate:null,'',vCaption,vSpark):''}
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
       <div class="sec-label" style="margin-bottom:0;">Weight History</div>

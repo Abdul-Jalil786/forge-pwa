@@ -584,8 +584,8 @@ async function init(){
     }
   }
 
-  // Phase 22: populate progress baseline for Jay
-  if(STATE.profile && !STATE.profile.startDate){
+  // Phase 22a: populate progress baseline for Jay (client-side fallback)
+  if(STATE.profile && !STATE.profile.progressMigrationApplied){
     if(STATE.profile.email==='jay@afjltd.co.uk' || (STATE.profile.name && STATE.profile.name.toLowerCase().startsWith('jay'))){
       STATE.profile.startDate='2026-05-11';
       STATE.profile.startWeight=113.5;
@@ -595,6 +595,7 @@ async function init(){
       STATE.profile.targetBF=15;
       STATE.profile.targetLBM=Math.round(90*(1-15/100)*100)/100;
       STATE.profile.targetVisceralFat=10;
+      STATE.profile.progressMigrationApplied=true;
       saveStateNow();
     }
   }

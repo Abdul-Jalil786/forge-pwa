@@ -96,9 +96,43 @@ app.get("*", (_req, res) => {
 
 import { startCron } from "./cron";
 
+// Phase 22a: one-shot progress baseline migration for Jay
+async function migrateJayProgress() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.profile?.progressMigrationApplied) return;
+    if (!state.profile) state.profile = {};
+    const bc: any = state.bodyComp || {};
+    const vfDates = Object.keys(bc).filter(d => bc[d]?.visceralFat != null && d >= "2026-05-11").sort();
+    const startVF = vfDates.length ? bc[vfDates[0]].visceralFat : null;
+    // If no visceral on/after start, use latest + 0.1
+    const allVF = Object.keys(bc).filter(d => bc[d]?.visceralFat != null).sort();
+    const fallbackVF = allVF.length ? bc[allVF[allVF.length - 1]].visceralFat + 0.1 : null;
+
+    state.profile.startDate = "2026-05-11";
+    state.profile.startWeight = 113.5;
+    state.profile.startBF = 32.1;
+    state.profile.startLBM = Math.round(113.5 * (1 - 32.1 / 100) * 100) / 100;
+    state.profile.startVisceralFat = startVF ?? fallbackVF;
+    state.profile.targetWeight = 90;
+    state.profile.targetBF = 15;
+    state.profile.targetLBM = Math.round(90 * (1 - 15 / 100) * 100) / 100;
+    state.profile.targetVisceralFat = 10;
+    state.profile.progressMigrationApplied = true;
+
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay progress baseline applied");
+  } catch (err) {
+    console.error("[migration] Jay progress baseline failed:", err);
+  }
+}
+
 const server = app.listen(PORT, () => {
   console.log(`Forge server running on port ${PORT}`);
   startCron();
+  migrateJayProgress();
 });
 
 const shutdown = async (signal: string) => {
