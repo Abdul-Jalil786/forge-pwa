@@ -635,11 +635,34 @@ function addFromTemplate(i){
 // ============================================================
 // TRACK PAGE (Weight + Steps + Streaks + Calendar)
 // ============================================================
+function _progressCard(label,subtitle,current,unit,pct,color,rate,rateUnit,caption,sparkSvg,extra){
+  pct=Math.max(0,Math.min(100,Math.round(pct)));
+  return `<div class="card" style="margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">${label}</div>
+        ${subtitle?`<div style="font-size:10px;color:var(--text2);">${subtitle}</div>`:''}
+      </div>
+      <div>${sparkSvg}</div>
+    </div>
+    <div style="font-family:'Archivo Black',sans-serif;font-size:34px;color:${color};letter-spacing:-2px;line-height:1;margin-bottom:8px;">${current!=null?current:'—'}<span style="font-size:16px;">${unit}</span></div>
+    <div class="pb-wrap" style="margin-bottom:6px;">
+      <div class="pb-head"><span class="pb-lbl"></span><span class="pb-pct">${pct}%</span></div>
+      <div class="pb" style="height:8px;"><div class="pb-fill" style="width:${pct}%;background:${color};"></div></div>
+    </div>
+    <div style="font-size:11px;color:var(--text2);line-height:1.5;">${rate!=null?`14-day avg: ${rate>0?'+':''}${rate}${rateUnit}/wk · `:''}${caption}</div>
+    ${extra||''}
+  </div>`;
+}
+
 function renderTrack(){
   const p=getActive(); if(!p)return;
   const wl=getWeightLog();
   const cw=getCurrentWeight();
-  const pct=Math.max(0,Math.min(100,Math.round(((p.startWeight-cw)/(p.startWeight-p.targetWeight))*100)));
+  const cbf=getCurrentBf();
+  const clbm=getCurrentLBM();
+  const cvf=getCurrentVisceralFat();
+  const svf=getStartVisceralFat();
   const stepsLog=getStepsLog();
   const last7=getLast7();
   const weekSteps=last7.map(d=>({date:d,steps:stepsLog[d]||0}));
@@ -647,34 +670,43 @@ function renderTrack(){
   const gymStreak=calcStreak('gym');
   const foodStreak=calcStreak('food');
 
+  // Progress dashboard
+  const wPct=p.startWeight&&p.targetWeight?((p.startWeight-cw)/(p.startWeight-p.targetWeight))*100:0;
+  const wRate=get14DayAvgRate('weight');
+  const wLost=p.startWeight?Math.max(0,p.startWeight-cw).toFixed(1):'?';
+  const wToGo=p.targetWeight?Math.max(0,cw-p.targetWeight).toFixed(1):'?';
+  const wGoal=getProjectedGoalDate();
+  const wGoalStr=wGoal?`Goal date: ${wGoal}`:'Stalled — no projection';
+  const wSpark=spark(getJourneyEntries('weight').slice(-14).map(e=>e.weight),'var(--lime)');
+
+  const bPct=p.startBF&&p.targetBF?((p.startBF-cbf)/(p.startBF-p.targetBF))*100:0;
+  const bRate=get14DayAvgRate('bf');
+  const bDown=p.startBF&&cbf?Math.abs(p.startBF-cbf).toFixed(1):'?';
+  const bSpark=spark(getJourneyEntries('bf').slice(-14).map(e=>e.bf),'var(--orange)');
+
+  const lPct=p.startLBM&&clbm?(clbm/p.startLBM)*100:100;
+  const lRate=get14DayAvgRate('lbm');
+  const lChange=p.startLBM&&clbm?(clbm-p.startLBM).toFixed(1):'?';
+  const lSpark=spark(getJourneyEntries('lbm').slice(-14).map(e=>e.lbm),'var(--blue)');
+  const lAlert=getLBMDropAlert()?`<div style="background:rgba(255,85,0,.08);border:1px solid rgba(255,85,0,.2);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:11px;color:var(--orange);font-weight:600;">⚠ Lean dropping faster than target — review protein and training intensity</div>`:'';
+
+  const vPct=svf!=null&&p.targetVisceralFat!=null&&cvf!=null?((svf-cvf)/(svf-p.targetVisceralFat))*100:0;
+  const vRate=get14DayAvgRate('visceral');
+  const vDown=svf!=null&&cvf!=null?Math.abs(svf-cvf).toFixed(1):'?';
+  const vSpark=spark(getJourneyEntries('visceral').slice(-14).map(e=>e.visceralFat),'var(--purple)');
+
   document.getElementById('page-track').innerHTML=`
     <div class="pg-title" style="margin-bottom:14px;">Progress</div>
 
-    <div class="card hi">
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-        <div>
-          <div style="font-size:10px;color:var(--text2);">CURRENT</div>
-          <div style="font-family:'Archivo Black',sans-serif;font-size:44px;color:var(--lime);letter-spacing:-3px;">${cw}<span style="font-size:20px;">kg</span></div>
-        </div>
-        <div style="text-align:right;">
-          <button class="btn btn-lime btn-sm" onclick="openModal('modal-weight')">+ Log</button>
-          <div style="font-size:10px;color:var(--text2);margin-top:8px;">Started ${p.startWeight}kg</div>
-          <div style="font-size:10px;color:var(--text2);">Target ${p.targetWeight}kg</div>
-        </div>
-      </div>
-      <div class="pb-wrap" style="margin-bottom:0;">
-        <div class="pb-head"><span class="pb-lbl">Journey Progress</span><span class="pb-pct">${pct}%</span></div>
-        <div class="pb"><div class="pb-fill" style="width:${pct}%"></div></div>
-      </div>
-    </div>
+    ${_progressCard('Weight',`${p.startWeight||'?'}kg → ${p.targetWeight||'?'}kg`,cw,'kg',wPct,'var(--lime)',wRate,' kg',`Lost ${wLost}kg · ${wToGo}kg to go · ${wGoalStr}`,wSpark)}
+    ${_progressCard('Body Fat',`${p.startBF||'?'}% → ${p.targetBF||'?'}%`,cbf,'%',bPct,'var(--orange)',bRate,'%',`Down ${bDown}% from start`,bSpark)}
+    ${_progressCard('Lean Mass',`current — target: hold`,clbm,'kg',lPct,'var(--blue)',lRate,' kg',`Change: ${lChange>0?'+':''}${lChange}kg from start`,lSpark,lAlert)}
+    ${cvf!=null||svf!=null?_progressCard('Visceral Fat',`current → target: <${p.targetVisceralFat||'?'}`,cvf,'',vPct,'var(--purple)',vRate,'',`Down ${vDown} from start`,vSpark):''}
 
-    <div class="sg sg3">
-      <div class="sb green"><div class="l">Lost</div><div class="v">${Math.max(0,p.startWeight-cw).toFixed(1)}<span class="u">kg</span></div></div>
-      <div class="sb orange"><div class="l">To Go</div><div class="v">${Math.max(0,cw-p.targetWeight).toFixed(1)}<span class="u">kg</span></div></div>
-      <div class="sb blue"><div class="l">Entries</div><div class="v">${wl.length}</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div class="sec-label" style="margin-bottom:0;">Weight History</div>
+      <button class="btn btn-lime btn-sm" onclick="openModal('modal-weight')">+ Log</button>
     </div>
-
-    <div class="sec-label">Weight History</div>
     <div class="card">
       ${wl.length===0?'<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">No entries yet</div>':
         [...wl].reverse().slice(0,12).map((e,i,arr)=>{

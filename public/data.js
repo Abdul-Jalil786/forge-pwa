@@ -517,6 +517,99 @@ function getSupplementAdherence(days){
 }
 
 // ============================================================
+// PROGRESS HELPERS (Phase 22)
+// ============================================================
+function getCurrentLBM(){
+  const w=getCurrentWeight();
+  const bf=getCurrentBf();
+  if(!w||!bf)return null;
+  return Math.round(w*(1-bf/100)*100)/100;
+}
+
+function getJourneyEntries(metric){
+  const start=getActive()?.startDate;
+  if(metric==='weight'){
+    const wl=getWeightLog();
+    return start?wl.filter(e=>e.date>=start):wl;
+  }
+  if(metric==='bf'){
+    const bl=getBfLog();
+    return start?bl.filter(e=>e.date>=start):bl;
+  }
+  if(metric==='lbm'){
+    const wl=getJourneyEntries('weight');
+    const bl=getBfLog();
+    return wl.map(we=>{
+      const bfe=bl.filter(b=>b.date<=we.date).pop();
+      if(!bfe)return null;
+      return{date:we.date,lbm:Math.round(we.weight*(1-bfe.bf/100)*100)/100};
+    }).filter(Boolean);
+  }
+  if(metric==='visceral'){
+    const bc=pGet('bodyComp',{});
+    const entries=Object.entries(bc).filter(([d,v])=>v.visceralFat!=null&&(!start||d>=start)).map(([d,v])=>({date:d,visceralFat:v.visceralFat})).sort((a,b)=>a.date.localeCompare(b.date));
+    return entries;
+  }
+  return[];
+}
+
+function get14DayAvgRate(metric){
+  const entries=getJourneyEntries(metric);
+  if(entries.length<7)return 0;
+  const last14=entries.slice(-14);
+  if(last14.length<2)return 0;
+  const val=e=>metric==='weight'?e.weight:metric==='bf'?e.bf:metric==='lbm'?e.lbm:e.visceralFat;
+  const first=val(last14[0]),last=val(last14[last14.length-1]);
+  const d0=new Date(last14[0].date+'T12:00:00'),d1=new Date(last14[last14.length-1].date+'T12:00:00');
+  const weeks=Math.max(0.5,(d1-d0)/604800000);
+  return Math.round(((last-first)/weeks)*100)/100;
+}
+
+function getProjectedGoalDate(){
+  const p=getActive();if(!p||!p.targetWeight)return null;
+  const cw=getCurrentWeight();
+  const rate=get14DayAvgRate('weight');
+  if(rate>=0)return null; // not losing
+  const kgToGo=cw-p.targetWeight;
+  if(kgToGo<=0)return'Reached!';
+  const weeksLeft=kgToGo/Math.abs(rate);
+  const goal=new Date();goal.setDate(goal.getDate()+Math.round(weeksLeft*7));
+  return goal.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+}
+
+function getLBMDropAlert(){
+  const rate=get14DayAvgRate('lbm');
+  return rate<-0.05;
+}
+
+function getCurrentVisceralFat(){
+  const bc=pGet('bodyComp',{});
+  const dates=Object.keys(bc).filter(d=>bc[d].visceralFat!=null).sort();
+  if(!dates.length)return null;
+  return bc[dates[dates.length-1]].visceralFat;
+}
+
+function getStartVisceralFat(){
+  const p=getActive();
+  const start=p?.startDate;
+  const bc=pGet('bodyComp',{});
+  const dates=Object.keys(bc).filter(d=>bc[d].visceralFat!=null&&(!start||d>=start)).sort();
+  if(!dates.length)return null;
+  return bc[dates[0]].visceralFat;
+}
+
+function getProgressSummary(){
+  const p=getActive();if(!p)return null;
+  const cw=getCurrentWeight(),cbf=getCurrentBf(),clbm=getCurrentLBM(),cvf=getCurrentVisceralFat();
+  return{
+    weight:{current:cw,start:p.startWeight,target:p.targetWeight,rate:get14DayAvgRate('weight'),projectedGoal:getProjectedGoalDate()},
+    bf:{current:cbf,start:p.startBF,target:p.targetBF,rate:get14DayAvgRate('bf')},
+    lbm:{current:clbm,start:p.startLBM,target:p.targetLBM,rate:get14DayAvgRate('lbm'),alert:getLBMDropAlert()},
+    visceral:{current:cvf,start:getStartVisceralFat(),target:p.targetVisceralFat,rate:get14DayAvgRate('visceral')},
+  };
+}
+
+// ============================================================
 // STREAKS
 // ============================================================
 function calcStreak(type){
