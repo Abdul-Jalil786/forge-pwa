@@ -62,9 +62,13 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     // Oura type values: "long_sleep" = main overnight, "sleep" = main sleep, "late_nap" = nap, "rest" = quiet rest, "deleted" = ignored
     const durationByDay: Record<string, number> = {};
     for (const e of sleepDetail.data || []) {
-      if (e.type === "late_nap" || e.type === "rest" || e.type === "deleted") continue;
+      if (e.type === "deleted") continue;
       const seconds = e.total_sleep_duration || 0;
-      if (seconds < 10800) continue; // Skip anything under 3 hours (probably a nap mis-categorised)
+      // Always allow long_sleep and sleep through (subject to duration floor below)
+      // For late_nap and rest types, require 5+ hours (18000s) — catches daytime-shifted main sleep
+      if ((e.type === "late_nap" || e.type === "rest") && seconds < 18000) continue;
+      // Drop anything under 3 hours regardless (clearly a nap)
+      if (seconds < 10800) continue;
       const day = e.day;
       durationByDay[day] = (durationByDay[day] || 0) + seconds;
     }
@@ -84,11 +88,9 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
         const hours = Math.round((durationByDay[day] / 3600) * 10) / 10;
         sleepLog[day] = { hours, quality: scoreByDay[day] ? mapSleepQuality(scoreByDay[day]) : 3, source: "oura" };
         updated++;
-      } else if (sleepLog[day]) {
-        // No valid main-sleep for this day in Oura — remove any stale (possibly nap-only) entry
-        delete sleepLog[day];
-        updated++;
       }
+      // No-data branch removed — never delete existing entries on a sync that doesn't return that day.
+      // Stale-data risk is much smaller than data-loss risk from aggressive deletion.
     }
 
     // Steps + calories from daily activity
