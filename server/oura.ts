@@ -47,6 +47,11 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       ouraGet(token, "workout", params),
     ]);
 
+    console.log(`[oura-debug] user ${userId} — raw sleep entries from API:`);
+    for (const e of sleepDetail.data || []) {
+      console.log(`  day=${e.day} type=${e.type} duration=${e.total_sleep_duration}s (${Math.round((e.total_sleep_duration||0)/3600*10)/10}h) bedtime_start=${e.bedtime_start} bedtime_end=${e.bedtime_end}`);
+    }
+
     const sleepLog = state.sleepLog || {};
     const stepsLog = state.stepsLog || {};
     const recovery = state.recovery || {};
@@ -72,6 +77,8 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       const day = e.day;
       durationByDay[day] = (durationByDay[day] || 0) + seconds;
     }
+    console.log(`[oura-debug] user ${userId} — after filtering, durationByDay:`, JSON.stringify(durationByDay));
+
     // Build list of all days in the lookback window
     const allDays: string[] = [];
     const cursor = new Date(start);
