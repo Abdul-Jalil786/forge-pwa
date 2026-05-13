@@ -566,15 +566,61 @@ function get14DayAvgRate(metric){
 }
 
 function getProjectedGoalDate(){
-  const p=getActive();if(!p||!p.targetWeight)return null;
-  const cw=getCurrentWeight();
-  const rate=get14DayAvgRate('weight');
-  if(rate>=0)return null; // not losing
-  const kgToGo=cw-p.targetWeight;
-  if(kgToGo<=0)return'Reached!';
-  const weeksLeft=kgToGo/Math.abs(rate);
-  const goal=new Date();goal.setDate(goal.getDate()+Math.round(weeksLeft*7));
-  return goal.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  const proj=getProjections();
+  if(!proj||!proj.goalDate)return null;
+  return proj.goalDate.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+}
+
+function calcRate(entries,key){
+  if(entries.length<2)return 0;
+  const x0=new Date(entries[0].date+'T12:00:00').getTime();
+  const points=entries.map(e=>({x:(new Date(e.date+'T12:00:00').getTime()-x0)/(1000*86400),y:e[key]}));
+  const n=points.length;
+  const sumX=points.reduce((s,p)=>s+p.x,0);
+  const sumY=points.reduce((s,p)=>s+p.y,0);
+  const sumXY=points.reduce((s,p)=>s+p.x*p.y,0);
+  const sumXX=points.reduce((s,p)=>s+p.x*p.x,0);
+  const denom=n*sumXX-sumX*sumX;
+  if(denom===0)return 0;
+  const slope=(n*sumXY-sumX*sumY)/denom;
+  return Math.round(-slope*7*100)/100; // negative slope = losing → positive rate
+}
+
+function _addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
+function _addWeeks(d,n){return _addDays(d,n*7);}
+
+function getProjections(){
+  const p=getActive();
+  if(!p||!p.startDate)return null;
+  const wl=getWeightLog().filter(e=>e.date>=p.startDate).sort((a,b)=>a.date.localeCompare(b.date));
+  const bl=getBfLog().filter(e=>e.date>=p.startDate).sort((a,b)=>a.date.localeCompare(b.date));
+
+  const wRate=calcRate(wl,'weight');
+  const bRate=calcRate(bl,'bf');
+
+  const currentW=wl.length?wl[wl.length-1].weight:p.startWeight;
+  const currentBF=bl.length?bl[bl.length-1].bf:p.startBF;
+
+  const weeksToWeight=(wRate>0&&p.targetWeight&&currentW>p.targetWeight)?Math.ceil((currentW-p.targetWeight)/wRate):null;
+  const weeksToBF=(bRate>0&&p.targetBF&&currentBF>p.targetBF)?Math.ceil((currentBF-p.targetBF)/bRate):null;
+
+  const today=new Date();
+  const wDate=weeksToWeight?_addWeeks(today,weeksToWeight):null;
+  const bDate=weeksToBF?_addWeeks(today,weeksToBF):null;
+  const goalDate=wDate&&bDate?(wDate>bDate?wDate:bDate):(wDate||bDate);
+
+  const entries=Math.min(wl.length,bl.length);
+  const confidence=entries>=14?'high':entries>=7?'medium':'low';
+
+  let range=null;
+  if(goalDate){
+    const buffer=confidence==='high'?14:confidence==='medium'?42:84;
+    range={early:_addDays(goalDate,-buffer),late:_addDays(goalDate,buffer),point:goalDate,confidence};
+  }
+
+  const bindingMetric=wDate&&bDate?(wDate>=bDate?'weight':'bf'):(wDate?'weight':'bf');
+
+  return{weightRate:wRate,bfRate:bRate,weeksToWeight,weeksToBF,wDate,bDate,goalDate,range,confidence,bindingMetric};
 }
 
 function getLBMDropAlert(){
@@ -601,11 +647,13 @@ function getStartVisceralFat(){
 function getProgressSummary(){
   const p=getActive();if(!p)return null;
   const cw=getCurrentWeight(),cbf=getCurrentBf(),clbm=getCurrentLBM(),cvf=getCurrentVisceralFat();
+  const proj=getProjections();
   return{
     weight:{current:cw,start:p.startWeight,target:p.targetWeight,rate:get14DayAvgRate('weight'),projectedGoal:getProjectedGoalDate()},
     bf:{current:cbf,start:p.startBF,target:p.targetBF,rate:get14DayAvgRate('bf')},
     lbm:{current:clbm,start:p.startLBM,target:p.targetLBM,rate:get14DayAvgRate('lbm'),alert:getLBMDropAlert()},
     visceral:{current:cvf,start:getStartVisceralFat(),target:p.targetVisceralFat,rate:get14DayAvgRate('visceral')},
+    projections:proj,
   };
 }
 

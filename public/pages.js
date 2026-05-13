@@ -682,17 +682,20 @@ function renderTrack(){
   const hasEnoughV=vEntries.length>=14;
   const startLabel=p.startDate?fmtDate(p.startDate):'start';
 
+  const proj=getProjections();
+  const _fmtGoalD=d=>d?d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';
+
   const wPct=p.startWeight&&p.targetWeight?((p.startWeight-cw)/(p.startWeight-p.targetWeight))*100:0;
   const wRate=get14DayAvgRate('weight');
   const wLost=p.startWeight?Math.max(0,p.startWeight-cw).toFixed(1):'—';
   const wToGo=p.targetWeight?Math.max(0,cw-p.targetWeight).toFixed(1):'—';
-  const wGoal=getProjectedGoalDate();
-  const wGoalStr=wGoal?`Goal date: ${wGoal}`:hasEnoughW?'Stalled — no projection':'Insufficient data — need 14+ days';
+  const wGoalStr=proj&&proj.wDate?`Goal: ~${_fmtGoalD(proj.wDate)}`:(wEntries.length>=2?'Goal: Pending — need consistent loss trend':'Goal: Pending — need more entries');
   const wSpark=spark(wEntries.slice(-14).map(e=>e.weight),'var(--lime)');
 
   const bPct=p.startBF&&p.targetBF&&cbf?((p.startBF-cbf)/(p.startBF-p.targetBF))*100:0;
   const bRate=get14DayAvgRate('bf');
-  const bCaption=hasEnoughB?(p.startBF&&cbf?`Down ${Math.abs(p.startBF-cbf).toFixed(1)}% from start`:`Tracking from ${startLabel}`):`Tracking from ${startLabel}`;
+  const bGoalStr=proj&&proj.bDate?`Goal: ~${_fmtGoalD(proj.bDate)}`:(bEntries.length>=2?'Goal: Pending — need consistent loss trend':'Goal: Pending — need more entries');
+  const bCaption=hasEnoughB?(p.startBF&&cbf?`Down ${Math.abs(p.startBF-cbf).toFixed(1)}% from start · ${bGoalStr}`:`Tracking from ${startLabel} · ${bGoalStr}`):`Tracking from ${startLabel} · ${bGoalStr}`;
   const bSpark=spark(bEntries.slice(-14).map(e=>e.bf),'var(--orange)');
 
   const lPct=p.startLBM&&clbm?(clbm/p.startLBM)*100:100;
@@ -713,6 +716,39 @@ function renderTrack(){
     ${_progressCard('Body Fat',`${_v(p.startBF)}% → ${_v(p.targetBF)}%`,cbf,'%',bPct,'var(--orange)',hasEnoughB?bRate:null,'%',bCaption,bSpark)}
     ${_progressCard('Lean Mass',`current — target: hold ${_v(p.targetLBM)}kg`,clbm,'kg',lPct,'var(--blue)',hasEnoughL?lRate:null,' kg',lCaption,lSpark,lAlert)}
     ${cvf!=null||svf!=null?_progressCard('Visceral Fat',`current → target: ${_v(p.targetVisceralFat)} or less`,cvf,'',vPct,'var(--purple)',hasEnoughV?vRate:null,'',vCaption,vSpark):''}
+
+    ${(()=>{
+      if(!proj)return'<div class="card" style="margin-bottom:10px;"><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">GOAL DATE</div><div style="font-size:12px;color:var(--text2);padding:12px 0;">Pending — need profile targets set</div></div>';
+      if(!proj.goalDate){
+        const reason=(wEntries.length<2||bEntries.length<2)?'Pending — need more entries':'Pending — need consistent loss trend';
+        return'<div class="card" style="margin-bottom:10px;"><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">GOAL DATE</div><div style="font-size:12px;color:var(--text2);padding:12px 0;">'+reason+'</div></div>';
+      }
+      const confColor=proj.confidence==='high'?'#4caf50':proj.confidence==='medium'?'#ff9800':'#f44336';
+      const confLabel=proj.confidence.charAt(0).toUpperCase()+proj.confidence.slice(1);
+      const goalStr=_fmtGoalD(proj.goalDate);
+      const rangeStr=proj.range?`${_fmtGoalD(proj.range.early)} — ${_fmtGoalD(proj.range.late)}`:'';
+      const wLine=proj.wDate?`Weight target by: ~${_fmtGoalD(proj.wDate)}${proj.bindingMetric==='weight'?' (binding)':''}`:'Weight: pending';
+      const bLine=proj.bDate?`BF target by: ~${_fmtGoalD(proj.bDate)}${proj.bindingMetric==='bf'?' (binding)':''}`:'BF: pending';
+      const elapsed=p.startDate?Math.max(0,Math.round((new Date()-new Date(p.startDate+'T12:00:00'))/(7*86400000))):0;
+      const totalW=proj.goalDate?Math.max(1,Math.round((proj.goalDate-new Date(p.startDate+'T12:00:00'))/(7*86400000))):1;
+      const progPct=Math.min(100,Math.round((elapsed/totalW)*100));
+      return`<div class="card" style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+          <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">GOAL DATE</div>
+          <div style="font-size:10px;color:var(--text2);">${_v(p.targetWeight)}kg + ${_v(p.targetBF)}% body fat</div>
+        </div>
+        <div style="font-family:'Archivo Black',sans-serif;font-size:28px;color:var(--lime);letter-spacing:-1px;line-height:1;margin-bottom:6px;">${goalStr}</div>
+        <div class="pb-wrap" style="margin-bottom:6px;">
+          <div class="pb-head"><span class="pb-lbl">Elapsed</span><span class="pb-pct">${progPct}%</span></div>
+          <div class="pb" style="height:8px;"><div class="pb-fill" style="width:${progPct}%;background:var(--lime);"></div></div>
+        </div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.8;">
+          Range: ${rangeStr} <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${confColor};vertical-align:middle;margin-left:4px;"></span> <span style="font-size:10px;color:var(--text3);">${confLabel} confidence</span><br>
+          ${wLine}<br>
+          ${bLine}
+        </div>
+      </div>`;
+    })()}
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
       <div class="sec-label" style="margin-bottom:0;">Weight History</div>
