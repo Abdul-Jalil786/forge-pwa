@@ -16,7 +16,7 @@ const WORKOUTS = {
       {id:'u6',name:'Bicep Curl',sets:3,reps:'10–12',rest:60,muscle:'Biceps',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
       {id:'u7',name:'Tricep Pushdown',sets:3,reps:'10–12',rest:60,muscle:'Triceps',yt:'https://www.youtube.com/results?search_query=tricep+pushdown+form'},
       {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
-      {id:'u9',name:'Plank',sets:3,reps:'30–45s',rest:45,muscle:'Core',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
+      {id:'u9',name:'Plank',sets:3,reps:'30–45s',rest:45,muscle:'Core',metric:'time',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
     ]
   },
   lower: {
@@ -35,6 +35,19 @@ const WORKOUTS = {
     ]
   }
 };
+
+// Time-based exercise detection + formatting
+const _TIME_KEYWORDS=['plank','side-plank','side plank','dead-hang','dead hang','wall-sit','wall sit','hollow-hold','hollow hold','l-sit','l sit'];
+function isTimeBased(ex){
+  if(ex.metric==='time')return true;
+  const n=(ex.name||'').toLowerCase();
+  return _TIME_KEYWORDS.some(k=>n.includes(k));
+}
+function fmtSec(s){
+  s=Math.floor(s);
+  if(s<60)return s+'s';
+  return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+}
 
 // Training cycle — anchored to a start date
 // 4-day pattern: Day 0=Upper, Day 1=Rest, Day 2=Lower, Day 3=Rest
@@ -300,13 +313,21 @@ function saveExLogForDate(date,data){
 
 function getBestLift(exId){
   const log=getExLog();
+  const allEx=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises];
+  const exObj=allEx.find(e=>e.id===exId);
+  const timed=exObj&&isTimeBased(exObj);
   let best=null;
   Object.entries(log).forEach(([date,day])=>{
     const ex=day[exId];
     if(!ex?.sets)return;
     ex.sets.forEach(s=>{
-      const kg=parseFloat(s.kg);
-      if(kg&&(!best||kg>best.kg))best={kg,date};
+      if(timed){
+        const sec=parseFloat(s.seconds);
+        if(sec&&(!best||sec>best.seconds))best={seconds:sec,date};
+      }else{
+        const kg=parseFloat(s.kg);
+        if(kg&&(!best||kg>best.kg))best={kg,date};
+      }
     });
   });
   return best;
@@ -328,7 +349,7 @@ function getPreviousSessionData(beforeDate,sessionType){
   for(const date of dates){
     if(getSessionTypeForDate(date)!==sessionType)continue;
     const dayLog=exLog[date];
-    const hasData=Object.values(dayLog).some(e=>e.sets?.some(s=>s.kg||s.reps));
+    const hasData=Object.values(dayLog).some(e=>e.sets?.some(s=>s.kg||s.reps||s.seconds));
     if(hasData)return{date,log:dayLog};
   }
   return null;
@@ -557,6 +578,37 @@ function getWeeklyReport(){
   const isBaseline=!planStart||(Date.now()-planStart.getTime())<7*24*60*60*1000;
 
   return{stepsHit,proteinDays,gymDays,avgSleep,weightChange,scores,overall,isBaseline};
+}
+
+// Phase 20 migration: convert time-based exercise sets from {kg,reps} to {seconds}
+function runPhase20Migration(){
+  if(STATE.migrations?.phase20)return;
+  const allEx=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises];
+  const timeExIds=new Set(allEx.filter(e=>isTimeBased(e)).map(e=>e.id));
+  const log=getExLog();
+  let changed=false;
+  Object.keys(log).forEach(date=>{
+    const day=log[date];
+    Object.keys(day).forEach(exId=>{
+      if(!timeExIds.has(exId))return;
+      const entry=day[exId];
+      if(!entry.sets)return;
+      entry.sets.forEach(s=>{
+        if(s.seconds!==undefined)return; // already migrated
+        if(s.kg||s.reps){
+          s.seconds=parseFloat(s.kg)||parseInt(s.reps)||0;
+          delete s.kg;delete s.reps;
+          changed=true;
+        }
+      });
+    });
+  });
+  if(!STATE.migrations)STATE.migrations={};
+  STATE.migrations.phase20=true;
+  STATE.exLog=log;
+  updateLocalCache();
+  if(changed)saveStateNow();
+  else saveStateDebounced();
 }
 
 function grade(pct){

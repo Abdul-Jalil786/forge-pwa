@@ -584,6 +584,9 @@ async function init(){
     }
   }
 
+  // Phase 20: migrate time-based exercise sets
+  runPhase20Migration();
+
   if(STATE.profile && STATE.profile.name){
     document.getElementById('onboarding').style.display='none';
     document.getElementById('app').style.display='flex';

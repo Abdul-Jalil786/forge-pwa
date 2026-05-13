@@ -757,11 +757,14 @@ function renderLiftingRecords(){
   const allEx=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises];
   const records=allEx.map(ex=>{const b=getBestLift(ex.id);return{ex,best:b};}).filter(r=>r.best);
   if(records.length===0)return'<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Log sets in workouts to see personal bests</div>';
-  return records.map(r=>`
-    <div class="list-row">
+  return records.map(r=>{
+    const timed=isTimeBased(r.ex);
+    const val=timed?fmtSec(r.best.seconds):`${r.best.kg}kg`;
+    return `<div class="list-row">
       <div class="row-left"><div class="row-label">${r.ex.muscle}</div><div style="font-size:13px;font-weight:600;">${r.ex.name}</div></div>
-      <div style="text-align:right;"><div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--lime);">${r.best.kg}kg</div><div style="font-size:10px;color:var(--text2);">${fmtDate(r.best.date)}</div></div>
-    </div>`).join('');
+      <div style="text-align:right;"><div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--lime);">${val}</div><div style="font-size:10px;color:var(--text2);">${fmtDate(r.best.date)}</div></div>
+    </div>`;
+  }).join('');
 }
 
 function renderCalendar(){
@@ -897,11 +900,16 @@ function renderDayDetail(date){
       html+=`<div class="card" style="margin-bottom:10px;text-align:center;color:var(--orange);font-size:13px;padding:14px;">⚠️ ${w.name} scheduled but no session logged</div>`;
     }else{
       let totalVolume=0;
+      const efMap={easy:' 😌',solid:' 💪',tough:' 🔥',hard:' 🔥',maybe:' 🤔'};
       const setRows=doneEx.map(ex=>{
-        const sets=(sessionLog[ex.id].sets||[]).filter(s=>s.kg||s.reps);
-        const exVol=sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
+        const timed=isTimeBased(ex);
+        const sets=(sessionLog[ex.id].sets||[]).filter(s=>timed?s.seconds:(s.kg||s.reps));
+        const exVol=timed?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
         totalVolume+=exVol;
-        const summary=sets.map(s=>`${s.kg||'-'}×${s.reps||'-'}${s.effort?({easy:' 😌',solid:' 💪',tough:' 🔥'})[s.effort]:''}`).join(', ');
+        const exEffort=sessionLog[ex.id].effort;
+        const summary=timed
+          ?sets.map(s=>fmtSec(s.seconds)).join(', ')+(exEffort?efMap[exEffort]||'':'')
+          :sets.map(s=>`${s.kg||'-'}×${s.reps||'-'}${s.effort?(efMap[s.effort]||''):''}`).join(', ');
         return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
           <div style="font-weight:600;font-size:13px;">${ex.name}</div>
           <div style="font-size:11px;color:var(--text2);margin-top:2px;">${summary||'no sets logged'}</div>
