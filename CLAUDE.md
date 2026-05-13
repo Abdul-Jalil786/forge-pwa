@@ -65,6 +65,7 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
 - 18: Granular meal logging — per-ingredient checkboxes, supplement tracking (supplementLog), expandable grouped food log, structured meal plan format (ingredients/supplements arrays)
 - 19: Standalone supplements tracker — state.supplements[] CRUD, Today page checklist, Coach page 7-day heatmap + 30-day adherence, More page management, meal modal integration via mealId, 21:00 missed-supplements cron push
 - 20: Time-based exercise tracking — isometric holds (plank, side plank, dead hang, wall sit, hollow hold, l-sit) track {seconds, done} instead of {weight, reps}, live count-up timer in guided workout mode, "Could you have held longer?" effort prompt (easy/hard/maybe), seconds-progression (+5s on easy/maybe), PB = longest single hold, one-shot migration of historical data, isTimeBased() helper with keyword fallback
+- 21: Fix Oura sleep sync — relax type filter so late_nap/rest with 5+ hours counts as main sleep (fixes daytime-shifted 3am-1pm patterns), stop auto-deleting sleepLog entries when Oura returns no data for a day
 
 ## Skipped/deferred
 - Photos to R2 (entire feature removed in Phase 12)
