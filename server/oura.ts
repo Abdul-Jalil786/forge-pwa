@@ -35,7 +35,8 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
 
   const today = new Date();
   const start = new Date(); start.setDate(start.getDate() - 7);
-  const params = { start_date: ymd(start), end_date: ymd(today) };
+  const endQuery = new Date(); endQuery.setDate(endQuery.getDate() + 1); // include tomorrow in case Oura attributes daytime sleep there
+  const params = { start_date: ymd(start), end_date: ymd(endQuery) };
 
   let updated = 0;
   try {
@@ -47,6 +48,11 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       ouraGet(token, "workout", params),
     ]);
 
+    console.log(`[oura-debug] query params:`, JSON.stringify(params));
+    console.log(`[oura-debug] dailySleep summary entries:`);
+    for (const e of dailySleep.data || []) {
+      console.log(`  day=${e.day} score=${e.score}`);
+    }
     console.log(`[oura-debug] user ${userId} — raw sleep entries from API:`);
     for (const e of sleepDetail.data || []) {
       console.log(`  day=${e.day} type=${e.type} duration=${e.total_sleep_duration}s (${Math.round((e.total_sleep_duration||0)/3600*10)/10}h) bedtime_start=${e.bedtime_start} bedtime_end=${e.bedtime_end}`);
