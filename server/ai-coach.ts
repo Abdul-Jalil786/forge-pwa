@@ -263,3 +263,194 @@ export function hoursSinceLastReport(state: any): number {
   if (!last) return Infinity;
   return (Date.now() - new Date(last).getTime()) / 3600000;
 }
+
+export function hoursSinceLastPlanRegen(state: any): number {
+  const last = state.lastMealPlanRegenAt;
+  if (!last) return Infinity;
+  return (Date.now() - new Date(last).getTime()) / 3600000;
+}
+
+// --- Phase 26: meal plan generation ---
+
+const PLAN_SYSTEM_PROMPT = `You generate weekly meal plans for Forge users on a structured fat-loss / recomp plan.
+
+HARD RULES (violations = rejected by server):
+- Respect the user's exclusion list literally — if a food is excluded, do NOT include it in any form (e.g. excluded "beef" → no beef, no steak, no mince, no burger)
+- If the user notes say "low-GI", carbs MUST be low-GI only: oats, brown rice, sweet potato, lentils, beans, chickpeas, quinoa, wholegrain pasta, barley. NEVER white rice, white bread, sugar, fruit juice, regular potato, corn flakes
+- Items stay STABLE across the week — same ingredients each day (the user has a chef who batch-preps). Portions can vary by day, but the item list is constant
+- Hit the daily calorie + macro targets within ±150 kcal and ±15g per macro
+- Each ingredient MUST include exact macro estimates (cals, protein, carbs, fat)
+- Ingredient macros MUST sum to the meal's totals within ±5 kcal / ±2g per macro
+
+STRUCTURE:
+- 5 meals across the eating window (default 12:00 to 18:00 UK)
+- Use stable kebab-case meal ids: breakfast, mid-meal, pre-workout, dinner, evening
+- Place supplements (from the user's supplement list) into the appropriate meals
+- Name meals descriptively: "Breakfast: Eggs & Oats", "Pre-workout: Chicken & Sweet Potato", etc.
+
+Aim for variety in textures/flavors across the 5 meals while keeping items stable through the week. Use foods the user has logged before when possible — they evidently like them.`;
+
+export interface GeneratedMealPlan {
+  name: string;
+  meals: Array<{
+    id: string;
+    name: string;
+    time: string;
+    cals: number; protein: number; carbs: number; fat: number;
+    ingredients: Array<{ name: string; cals: number; protein: number; carbs: number; fat: number }>;
+    supplements?: Array<{ id: string; name: string; dose?: string }>;
+  }>;
+}
+
+export function validateMealPlanAgainstExclusions(plan: any, excluded: string[]): { ok: boolean; error?: string } {
+  if (!plan || typeof plan !== "object") return { ok: false, error: "plan must be an object" };
+  if (!Array.isArray(plan.meals) || plan.meals.length === 0) return { ok: false, error: "plan.meals must be a non-empty array" };
+  const exLower = (excluded || []).map((e) => String(e).toLowerCase().trim()).filter(Boolean);
+  for (const m of plan.meals) {
+    if (!Array.isArray(m.ingredients)) return { ok: false, error: `meal "${m.name || m.id}" missing ingredients[]` };
+    for (const ing of m.ingredients) {
+      const name = String(ing.name || "").toLowerCase();
+      for (const ex of exLower) {
+        if (name.includes(ex)) return { ok: false, error: `excluded food "${ex}" appears in ingredient "${ing.name}"` };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+function buildPlanContext(state: any): string {
+  const profile = state.profile || {};
+  const macros = profile.macros || {};
+  const prefs = profile.foodPrefs || {};
+  const supps = state.supps || [];
+  const cutoff14 = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(d); })();
+
+  // Recent intake patterns — what does the user actually eat?
+  const ingredientFreq: Record<string, number> = {};
+  for (const date of Object.keys(state.foods || {}).sort()) {
+    if (date < cutoff14) continue;
+    for (const f of (state.foods[date] || [])) {
+      const key = String(f.name || "").trim();
+      if (key) ingredientFreq[key] = (ingredientFreq[key] || 0) + 1;
+    }
+  }
+  const topFoods = Object.entries(ingredientFreq).sort((a, b) => b[1] - a[1]).slice(0, 20);
+
+  const lines: string[] = [];
+  lines.push("USER PROFILE:");
+  lines.push(`  Daily target: gym day=${profile.calsGym ?? "?"}kcal, rest day=${profile.calsRest ?? "?"}kcal`);
+  lines.push(`  Macros (daily): P=${macros.protein ?? "?"}g, C=${macros.carbs ?? "?"}g, F=${macros.fat ?? "?"}g`);
+  lines.push(`  Eating window: ${profile.eatingWindow || "12:00 to 18:00 UK"}`);
+  lines.push("");
+  lines.push("FOOD PREFERENCES:");
+  const excl = prefs.excluded || [];
+  lines.push(`  EXCLUDED (do NOT include any of these): ${excl.length ? excl.join(", ") : "(none specified)"}`);
+  lines.push(`  Notes from user: ${prefs.notes || "(none)"}`);
+  lines.push("");
+  lines.push("SUPPLEMENTS (place in appropriate meals):");
+  if (supps.length === 0) lines.push("  (none configured)");
+  else for (const s of supps) lines.push(`  - ${s.id}: ${s.name}${s.dose ? ` (${s.dose})` : ""}${s.time ? ` @ ${s.time}` : ""}${s.mealId ? ` [linked to ${s.mealId}]` : ""}`);
+  lines.push("");
+  lines.push("FOODS THE USER ACTUALLY EATS (last 14 days, by frequency — reuse where possible):");
+  if (topFoods.length === 0) lines.push("  (no logged intake yet)");
+  else for (const [name, n] of topFoods) lines.push(`  ${n}× ${name}`);
+  lines.push("");
+  lines.push("CURRENT PLAN (for reference — keep what's working, change what isn't):");
+  const cur = state.mealPlan;
+  if (!cur) lines.push("  (no plan yet)");
+  else {
+    lines.push(`  Name: ${cur.name || "?"}`);
+    for (const m of (cur.meals || [])) {
+      lines.push(`  ${m.time || "?"} · ${m.name} · ${m.cals}kcal P${m.protein} C${m.carbs} F${m.fat}`);
+      for (const ing of (m.ingredients || [])) lines.push(`    - ${ing.name}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+export async function generateMealPlan(userId: string): Promise<GeneratedMealPlan> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  const encKey = state.coachingKey as string | undefined;
+  if (!encKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(encKey); }
+  catch { throw new Error("Failed to decrypt stored API key"); }
+
+  const context = buildPlanContext(state);
+  const client = new Anthropic({ apiKey });
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 8000,
+    system: PLAN_SYSTEM_PROMPT,
+    tools: [{
+      name: "submit_meal_plan",
+      description: "Submit the new weekly meal plan.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          name: { type: "string", description: "Short plan name, e.g. 'Cut V8 — Low GI Chicken/Plant'" },
+          meals: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string", description: "Stable kebab-case id: breakfast, mid-meal, pre-workout, dinner, evening" },
+                name: { type: "string" },
+                time: { type: "string", description: "HH:MM 24h, within user's eating window" },
+                cals: { type: "number" }, protein: { type: "number" }, carbs: { type: "number" }, fat: { type: "number" },
+                ingredients: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
+                      cals: { type: "number" }, protein: { type: "number" }, carbs: { type: "number" }, fat: { type: "number" },
+                    },
+                    required: ["name", "cals", "protein", "carbs", "fat"],
+                  },
+                },
+                supplements: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string" }, name: { type: "string" }, dose: { type: "string" },
+                    },
+                    required: ["id", "name"],
+                  },
+                },
+              },
+              required: ["id", "name", "time", "cals", "protein", "carbs", "fat", "ingredients"],
+            },
+          },
+        },
+        required: ["name", "meals"],
+      },
+    }],
+    tool_choice: { type: "tool", name: "submit_meal_plan" },
+    messages: [{ role: "user", content: `Generate a new weekly meal plan based on this profile and recent intake.\n\n${context}` }],
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === "tool_use") as any;
+  if (!toolBlock) throw new Error("Model did not return a structured plan");
+  const plan = toolBlock.input as GeneratedMealPlan;
+
+  const excluded = (state.profile?.foodPrefs?.excluded) || [];
+  const v = validateMealPlanAgainstExclusions(plan, excluded);
+  if (!v.ok) throw new Error("Generated plan failed validation: " + v.error);
+
+  return plan;
+}
+
+export async function saveMealPlan(userId: string, plan: GeneratedMealPlan): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  state.mealPlan = plan;
+  state.lastMealPlanRegenAt = new Date().toISOString();
+  await prisma.user.update({ where: { id: userId }, data: { state } });
+}

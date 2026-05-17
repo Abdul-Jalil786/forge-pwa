@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { requireAuth } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
-import { generateWeeklyReport, saveReport, hoursSinceLastReport } from "./ai-coach";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen } from "./ai-coach";
 
 const router = Router();
 
@@ -99,6 +99,25 @@ router.post("/generate-now", requireAuth, async (req: Request, res: Response) =>
   } catch (err: any) {
     console.error("Coach generate-now error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to generate report" });
+  }
+});
+
+router.post("/regenerate-plan", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
+    const hrs = hoursSinceLastPlanRegen(st);
+    if (hrs < 1) {
+      res.status(429).json({ error: `Plan was just regenerated ${Math.round(hrs * 60)} min ago. Try again later.` });
+      return;
+    }
+    const plan = await generateMealPlan(req.userId as string);
+    await saveMealPlan(req.userId as string, plan);
+    res.json({ success: true, meals: plan.meals.length, name: plan.name });
+  } catch (err: any) {
+    console.error("Regenerate plan error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to regenerate plan" });
   }
 });
 

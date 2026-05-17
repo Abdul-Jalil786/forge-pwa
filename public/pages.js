@@ -375,8 +375,8 @@ function renderFood(){
           if(item.type==='single'){
             const f=item.food,idx=item.index;
             return`<div class="food-row">
-              <div class="food-time">${f.time}</div>
-              <div class="food-name">${f.name}</div>
+              <div class="food-time">${_foodDisplayTime(f)}</div>
+              <div class="food-name">${f.name}${_qtyBadge(f)}</div>
               <div class="food-right"><div class="food-cals">${f.cals} kcal</div><div class="food-p">${f.protein||0}g protein</div></div>
               ${isToday?`<button class="del-btn" onclick="delFood(${idx})">×</button>`:`<button class="del-btn" onclick="delFoodOnDate(${idx},'${viewDate}')" title="Delete from this past day">×</button>`}
             </div>`;
@@ -385,11 +385,11 @@ function renderFood(){
           const tc=g.entries.reduce((s,f)=>s+(f.cals||0),0);
           const tp=g.entries.reduce((s,f)=>s+(f.protein||0),0);
           return`<div class="food-row" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'" style="cursor:pointer;">
-            <div class="food-time">${g.entries[0]?.time||''}</div>
+            <div class="food-time">${_foodDisplayTime(g.entries[0])}</div>
             <div class="food-name" style="font-weight:600;">${g.mealName} <span style="font-size:10px;color:var(--text3);">▸ ${g.entries.length} items</span></div>
             <div class="food-right"><div class="food-cals">${tc} kcal</div><div class="food-p">${tp}g P</div></div>
           </div><div style="display:none;">${g.entries.map((f,j)=>`<div class="food-row" style="padding-left:24px;background:var(--s2);">
-              <div class="food-name" style="font-size:12px;color:var(--text2);">${f.name}</div>
+              <div class="food-name" style="font-size:12px;color:var(--text2);">${f.name}${_qtyBadge(f)}</div>
               <div class="food-right"><div class="food-cals" style="font-size:11px;">${f.cals} kcal</div><div class="food-p" style="font-size:10px;">${f.protein||0}g P</div></div>
               ${isToday?`<button class="del-btn" onclick="event.stopPropagation();delFood(${g.indices[j]})">×</button>`:''}
             </div>`).join('')}</div>`;
@@ -441,7 +441,13 @@ function renderFoodTemplatesModal(){
 
 function renderTodaysPlan(){
   const plan=STATE.mealPlan;
-  if(!plan||!plan.meals||!plan.meals.length)return '';
+  if(!plan||!plan.meals||!plan.meals.length){
+    return `<div class="sec-label">Today's Plan</div>
+      <div class="card" style="margin-bottom:10px;text-align:center;color:var(--text3);font-size:13px;padding:20px;">
+        No meal plan yet.
+        <button class="btn btn-lime btn-sm" style="display:block;width:100%;margin-top:12px;" onclick="regeneratePlanNow()">Generate plan with AI Coach</button>
+      </div>`;
+  }
   const todayFoods=getFoods();
   const totalCals=plan.meals.reduce((s,m)=>s+(m.cals||0),0);
   const totalP=plan.meals.reduce((s,m)=>s+(m.protein||0),0);
@@ -479,10 +485,47 @@ function renderTodaysPlan(){
         </div>`;
       }).join('')}
     </div>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:14px;font-size:11px;color:var(--text3);" onclick="regeneratePlanNow()">↻ Regenerate plan with AI Coach</button>
   `;
 }
 
 let _mds=null; // meal detail state
+
+// Phase 25: time formatting + quantity badge helpers
+function _foodDisplayTime(f){
+  if(f && f.loggedAt){
+    try{
+      const d=new Date(f.loggedAt);
+      const hh=String(d.getHours()).padStart(2,'0');
+      const mm=String(d.getMinutes()).padStart(2,'0');
+      return `${hh}:${mm}`;
+    }catch{}
+  }
+  return f?.time||'';
+}
+function _qtyBadge(f){
+  if(!f||f.quantity==null||Math.abs(f.quantity-1)<0.01)return '';
+  return ` <span style="font-size:10px;color:var(--orange);font-weight:600;">(${_fmtQty(f.quantity)})</span>`;
+}
+
+// Phase 25: portion-based meal detail (replaces checkbox model)
+const PORTION_OPTIONS = [
+  {qty:0,    label:'✕'},
+  {qty:0.5,  label:'½'},
+  {qty:1,    label:'1×'},
+  {qty:1.5,  label:'1½'},
+  {qty:2,    label:'2×'},
+];
+function _fmtQty(q){
+  if(q===0)return'skipped';
+  if(q===0.5)return'½';
+  if(q===0.25)return'¼';
+  if(q===0.75)return'¾';
+  if(q===1)return '1×';
+  if(q===1.5)return'1½';
+  if(q===2)return '2×';
+  return q+'×';
+}
 
 function openMealDetail(mealId){
   const plan=STATE.mealPlan;
@@ -496,20 +539,23 @@ function openMealDetail(mealId){
   const granular=todayFoods.filter(f=>f.mealId===m.id);
   const legacy=todayFoods.find(f=>f.name===m.name&&!f.mealId);
   const suppLog=getSupplementLog(todayStr());
-  let ingChecked,suppChecked;
+  let ingQty,suppChecked;
   if(granular.length>0){
-    const ln=new Set(granular.map(f=>f.name));
-    ingChecked=ingredients.map(ing=>ln.has(ing.name));
+    const byName=new Map(granular.map(f=>[f.name,f]));
+    ingQty=ingredients.map(ing=>{
+      const entry=byName.get(ing.name);
+      return entry ? (typeof entry.quantity==='number'?entry.quantity:1) : 0;
+    });
     suppChecked=supplements.map(s=>suppLog[s.id]===true);
   } else if(legacy){
-    ingChecked=ingredients.map(()=>true);
+    ingQty=ingredients.map(()=>1);
     suppChecked=supplements.map(s=>suppLog[s.id]!==false);
   } else {
-    ingChecked=ingredients.map(()=>true);
+    ingQty=ingredients.map(()=>1);
     suppChecked=supplements.map(()=>true);
   }
-  _mds={mealId:m.id,meal:m,ingredients,supplements,ingChecked,suppChecked,isStringFormat,
-    ingInit:[...ingChecked],suppInit:[...suppChecked]};
+  _mds={mealId:m.id,meal:m,ingredients,supplements,ingQty,suppChecked,isStringFormat,
+    ingInit:[...ingQty],suppInit:[...suppChecked]};
   _renderMealDetail();
   openModal('modal-meal-detail');
 }
@@ -527,26 +573,35 @@ function _getMealLogStatus(){
   return l?'full':'none';
 }
 
-function toggleMealIngredient(i){_mds.ingChecked[i]=!_mds.ingChecked[i];_renderMealDetail();}
+function setMealIngQty(i,q){_mds.ingQty[i]=q;_renderMealDetail();}
 function toggleMealSupplement(i){_mds.suppChecked[i]=!_mds.suppChecked[i];_renderMealDetail();}
 
 function _renderMealDetail(){
   const s=_mds;if(!s)return;
   const m=s.meal;
   let cals=0,protein=0,carbs=0,fat=0;
-  s.ingredients.forEach((ing,i)=>{if(s.ingChecked[i]){cals+=ing.cals||0;protein+=ing.protein||0;carbs+=ing.carbs||0;fat+=ing.fat||0;}});
+  s.ingredients.forEach((ing,i)=>{
+    const q=s.ingQty[i]||0;
+    if(q>0){
+      cals   += (ing.cals   ||0)*q;
+      protein+= (ing.protein||0)*q;
+      carbs  += (ing.carbs  ||0)*q;
+      fat    += (ing.fat    ||0)*q;
+    }
+  });
+  cals=Math.round(cals);protein=Math.round(protein);carbs=Math.round(carbs);fat=Math.round(fat);
   const logStatus=_getMealLogStatus();
-  const changed=s.ingChecked.some((c,i)=>c!==s.ingInit[i])||s.suppChecked.some((c,i)=>c!==s.suppInit[i]);
+  const changed=s.ingQty.some((q,i)=>q!==s.ingInit[i])||s.suppChecked.some((c,i)=>c!==s.suppInit[i]);
+  const anyEaten=s.ingQty.some(q=>q>0);
   let btnText,btnClass;
-  if(logStatus==='none'){btnText='LOG SELECTED';btnClass='btn-lime';}
-  else if(logStatus==='full'&&!changed){btnText='✓ LOGGED · TAP TO UNLOG';btnClass='btn-ghost';}
+  if(logStatus==='none'){btnText=anyEaten?'LOG MEAL':'NOTHING SELECTED';btnClass=anyEaten?'btn-lime':'btn-ghost';}
+  else if(!anyEaten){btnText='UNLOG MEAL';btnClass='btn-ghost';}
   else if(changed){btnText='SAVE CHANGES';btnClass='btn-lime';}
-  else{btnText='◐ EDIT LOGGED MEAL';btnClass='btn-lime';}
-  const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
+  else{btnText='✓ LOGGED · TAP INGREDIENTS TO EDIT';btnClass='btn-ghost';}
   document.getElementById('md-title').textContent=`${m.time||''} · ${m.name}`;
   document.getElementById('md-body').innerHTML=`
     <div style="background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;">
-      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Macros</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Macros (as selected)</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center;">
         <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--lime);">${cals}</div><div style="font-size:9px;color:var(--text3);">KCAL</div></div>
         <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--orange);">${protein}g</div><div style="font-size:9px;color:var(--text3);">PROTEIN</div></div>
@@ -554,14 +609,24 @@ function _renderMealDetail(){
         <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--purple);">${fat}g</div><div style="font-size:9px;color:var(--text3);">FAT</div></div>
       </div>
     </div>
-    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Ingredients</div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Ingredients — tap a portion</div>
     <div style="margin-bottom:16px;">
       ${s.ingredients.map((ing,i)=>{
-        const on=s.ingChecked[i];
-        return`<div onclick="toggleMealIngredient(${i})" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;min-height:44px;">
-          <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--lime)':'var(--border)'};background:${on?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
-          <div style="flex:1;font-size:13px;color:${on?'var(--text)':'var(--text3)'};">${ing.name}</div>
-          <div style="font-size:11px;color:var(--text3);flex-shrink:0;">${ing.cals} kcal · ${ing.protein}g P</div>
+        const q=s.ingQty[i]||0;
+        const dim=q===0;
+        const ingCals=Math.round((ing.cals||0)*q);
+        const ingP=Math.round((ing.protein||0)*q);
+        return`<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px;">
+            <div style="flex:1;font-size:13px;color:${dim?'var(--text3)':'var(--text)'};${dim?'text-decoration:line-through;':''}">${ing.name}</div>
+            <div style="font-size:11px;color:var(--text3);flex-shrink:0;">${dim?'—':`${ingCals} kcal · ${ingP}g P`}</div>
+          </div>
+          <div style="display:flex;gap:4px;">
+            ${PORTION_OPTIONS.map(opt=>{
+              const active=Math.abs((q||0)-opt.qty)<0.01;
+              return `<button onclick="setMealIngQty(${i},${opt.qty})" style="flex:1;padding:8px 0;border-radius:6px;border:1px solid ${active?'var(--lime)':'var(--border)'};background:${active?'var(--lime)':'transparent'};color:${active?'var(--bg)':'var(--text2)'};font-weight:${active?'700':'500'};font-size:13px;cursor:pointer;">${opt.label}</button>`;
+            }).join('')}
+          </div>
         </div>`;}).join('')}
     </div>
     ${s.supplements.length?`
@@ -583,17 +648,25 @@ function logMealFromModal(){
   const s=_mds;if(!s)return;
   const m=s.meal;
   const today=todayStr();
-  const logStatus=_getMealLogStatus();
-  const changed=s.ingChecked.some((c,i)=>c!==s.ingInit[i])||s.suppChecked.some((c,i)=>c!==s.suppInit[i]);
-  // Build final foods array for today: existing entries minus this meal's, plus ticked ingredients
+  const nowIso=new Date().toISOString();
+  // Build final foods array for today: existing entries minus this meal's, plus entries for ingredients with qty > 0
   const foods=getFoods();
   const filtered=foods.filter(f=>!(f.mealId===m.id||(f.name===m.name&&!f.mealId)));
   const newEntries=[];
   s.ingredients.forEach((ing,i)=>{
-    if(s.ingChecked[i]){
+    const q=s.ingQty[i]||0;
+    if(q>0){
       newEntries.push({
-        name:ing.name,cals:ing.cals||0,protein:ing.protein||0,carbs:ing.carbs||0,fat:ing.fat||0,
-        time:m.time||fmtNow(),mealId:m.id,mealName:m.name
+        name:ing.name,
+        cals   :Math.round((ing.cals   ||0)*q),
+        protein:Math.round((ing.protein||0)*q),
+        carbs  :Math.round((ing.carbs  ||0)*q),
+        fat    :Math.round((ing.fat    ||0)*q),
+        time:m.time||fmtNow(),
+        mealId:m.id,
+        mealName:m.name,
+        quantity:q,
+        loggedAt:nowIso,
       });
     }
   });
@@ -609,17 +682,15 @@ function logMealFromModal(){
   // Supplements (separate endpoint, no race)
   s.supplements.forEach((supp,i)=>setSupplementTaken(today,supp.id,s.suppChecked[i]));
 
-  // If user just unticked everything, treat as full unlog
-  if(newEntries.length===0&&logStatus==='full'&&!changed){
-    closeModal('modal-meal-detail');
-    renderFood();renderToday();
-    showToast(`${m.name} unlogged`);
-    return;
-  }
-
   closeModal('modal-meal-detail');
   renderFood();renderToday();
-  showToast(`${m.name} ${newEntries.length} of ${s.ingredients.length} logged`);
+  if(newEntries.length===0){
+    showToast(`${m.name} unlogged`);
+  } else if(newEntries.length<s.ingredients.length){
+    showToast(`${m.name} · ${newEntries.length}/${s.ingredients.length} logged`);
+  } else {
+    showToast(`${m.name} logged ✓`);
+  }
 }
 
 function delFood(i){deleteFoodEntry(i);renderFood();renderToday();showToast('Removed');}
@@ -1019,8 +1090,8 @@ function renderDayDetail(date){
         <div><strong style="color:var(--lime);">${foodTotals.cals}</strong> kcal · <strong style="color:var(--orange);">${foodTotals.protein}g</strong> P · <strong style="color:var(--blue);">${foodTotals.carbs}g</strong> C · <strong style="color:var(--purple);">${foodTotals.fat}g</strong> F</div>
       </div>
       ${foods.map(f=>`<div class="food-row">
-        <div class="food-time">${f.time||''}</div>
-        <div class="food-name">${f.name}</div>
+        <div class="food-time">${_foodDisplayTime(f)}</div>
+        <div class="food-name">${f.name}${_qtyBadge(f)}</div>
         <div class="food-right"><div class="food-cals">${f.cals} kcal</div><div class="food-p">${f.protein||0}g P</div></div>
       </div>`).join('')}
     </div>`;
@@ -1435,6 +1506,28 @@ function renderMore(){
       <div id="coach-controls"></div>
     </div>
 
+    <div class="sec-label">Food Preferences</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        Tell the AI Coach what you don't eat. Used when generating your weekly meal plan and suggesting swaps.
+      </div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Excluded foods</div>
+      <div id="food-prefs-excluded" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;min-height:32px;"></div>
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <input id="food-prefs-add-input" type="text" placeholder="e.g. beef, mushrooms" maxlength="60" style="flex:1;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addFoodPrefExcluded();}" />
+        <button class="btn btn-lime btn-sm" style="padding:8px 14px;" onclick="addFoodPrefExcluded()">Add</button>
+      </div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Notes for the AI</div>
+      <textarea id="food-prefs-notes" maxlength="2000" rows="3" placeholder="e.g. low-GI carbs only, chicken yes, eggs yes, prefer stable items for personal chef" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:14px;"></textarea>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Plan refresh</div>
+      <select id="food-prefs-cadence" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;margin-bottom:14px;">
+        <option value="weekly-sunday">Every Sunday morning</option>
+        <option value="biweekly">Every other Sunday</option>
+        <option value="manual">Only when I tap regenerate</option>
+      </select>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="saveFoodPrefs()">Save Preferences</button>
+    </div>
+
     <div class="sec-label">Cowork Access Token (legacy)</div>
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
@@ -1503,6 +1596,7 @@ function renderMore(){
   loadOuraStatus();
   loadWithingsStatus();
   loadCoachKeyStatus();
+  loadFoodPrefsUI();
 
   loadAccessTokens().then(tokens=>{
     const el=document.getElementById('token-list');

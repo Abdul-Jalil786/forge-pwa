@@ -138,6 +138,40 @@ router.put("/weight", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// Phase 24: food preferences (subfield of profile)
+router.put("/profile/food-prefs", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { excluded, notes, refreshCadence } = req.body || {};
+    if (!Array.isArray(excluded)) { res.status(400).json({ error: "excluded must be an array" }); return; }
+    if (excluded.some((e) => typeof e !== "string" || e.length > 60)) { res.status(400).json({ error: "excluded items must be strings <= 60 chars" }); return; }
+    if (excluded.length > 50) { res.status(400).json({ error: "max 50 excluded items" }); return; }
+    if (notes != null && (typeof notes !== "string" || notes.length > 2000)) { res.status(400).json({ error: "notes must be a string <= 2000 chars" }); return; }
+    const validCadences = ["weekly-sunday", "biweekly", "manual"];
+    if (refreshCadence != null && !validCadences.includes(refreshCadence)) { res.status(400).json({ error: "invalid refreshCadence" }); return; }
+    const valueJson = JSON.stringify({
+      excluded: excluded.map((s: string) => s.trim().toLowerCase()).filter(Boolean),
+      notes: typeof notes === "string" ? notes : "",
+      refreshCadence: refreshCadence || "weekly-sunday",
+      updatedAt: new Date().toISOString(),
+    });
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+        '{profile,foodPrefs}',
+        ${valueJson}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put food-prefs error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.put("/sleep/:date", requireAuth, async (req: Request, res: Response) => {
   try {
     const date = req.params.date as string;

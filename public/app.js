@@ -242,6 +242,82 @@ function confirmDeleteSupplement(id,name){
 function setWater(cups){saveWater(cups);renderMore();renderToday();showToast(`${cups} cups 💧`);}
 function resetWater(){saveWater(0);renderMore();renderToday();}
 
+// ---- FOOD PREFERENCES (Phase 24) ----
+function _foodPrefs(){
+  return (STATE.profile && STATE.profile.foodPrefs) || { excluded: [], notes: '', refreshCadence: 'weekly-sunday' };
+}
+
+function _renderFoodPrefsChips(){
+  const list = _foodPrefs().excluded || [];
+  const wrap = document.getElementById('food-prefs-excluded');
+  if(!wrap)return;
+  if(list.length === 0){
+    wrap.innerHTML = '<div style="font-size:11px;color:var(--text3);">No exclusions yet</div>';
+    return;
+  }
+  wrap.innerHTML = list.map((item,i)=>`
+    <div style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;font-size:11px;">
+      <span>${_esc(item)}</span>
+      <span onclick="removeFoodPrefExcluded(${i})" style="cursor:pointer;color:var(--text3);font-size:14px;line-height:1;padding:0 2px;" title="Remove">×</span>
+    </div>`).join('');
+}
+
+function loadFoodPrefsUI(){
+  const prefs = _foodPrefs();
+  _renderFoodPrefsChips();
+  const notes = document.getElementById('food-prefs-notes');
+  if(notes) notes.value = prefs.notes || '';
+  const cad = document.getElementById('food-prefs-cadence');
+  if(cad) cad.value = prefs.refreshCadence || 'weekly-sunday';
+}
+
+function addFoodPrefExcluded(){
+  const input = document.getElementById('food-prefs-add-input');
+  if(!input)return;
+  const val = input.value.trim().toLowerCase();
+  if(!val)return;
+  const prefs = _foodPrefs();
+  const list = [...(prefs.excluded||[])];
+  if(list.includes(val)){showToast('Already excluded');return;}
+  if(list.length >= 50){showToast('Max 50 exclusions');return;}
+  list.push(val);
+  if(!STATE.profile) STATE.profile = {};
+  STATE.profile.foodPrefs = { ...prefs, excluded: list };
+  input.value = '';
+  _renderFoodPrefsChips();
+}
+
+function removeFoodPrefExcluded(i){
+  const prefs = _foodPrefs();
+  const list = [...(prefs.excluded||[])];
+  list.splice(i, 1);
+  if(!STATE.profile) STATE.profile = {};
+  STATE.profile.foodPrefs = { ...prefs, excluded: list };
+  _renderFoodPrefsChips();
+}
+
+async function saveFoodPrefs(){
+  const notes = (document.getElementById('food-prefs-notes')?.value || '').slice(0, 2000);
+  const cad = document.getElementById('food-prefs-cadence')?.value || 'weekly-sunday';
+  const prefs = _foodPrefs();
+  const body = { excluded: prefs.excluded || [], notes, refreshCadence: cad };
+  const jwt = localStorage.getItem('forge_token');
+  try{
+    const res = await fetch('/api/state/profile/food-prefs', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
+      body: JSON.stringify(body),
+    });
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Save failed');}
+    if(!STATE.profile) STATE.profile = {};
+    STATE.profile.foodPrefs = { ...body, updatedAt: new Date().toISOString() };
+    updateLocalCache();
+    showToast('Preferences saved ✓');
+  }catch(e){
+    showToast(e.message || 'Failed to save');
+  }
+}
+
 // ---- AI COACH (BYOK) ----
 function _esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
@@ -312,6 +388,20 @@ async function testCoachKey(){
     if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Test failed');}
     showToast('Key works ✓');
   }catch(e){showToast(e.message||'Key test failed');}
+}
+
+async function regeneratePlanNow(){
+  if(!confirm('Regenerate your meal plan with AI Coach? Costs ~$0.50–$1 of your Anthropic credit. Respects your Food Preferences.'))return;
+  const jwt=localStorage.getItem('forge_token');
+  showToast('Generating plan… (20-40s)');
+  try{
+    const res=await fetch('/api/coach/regenerate-plan',{method:'POST',headers:{Authorization:'Bearer '+jwt}});
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Generation failed');}
+    const data=await res.json();
+    showToast(`Plan: ${data.name} · ${data.meals} meals ✓`);
+    await loadState();
+    if(typeof renderFood==='function') renderFood();
+  }catch(e){showToast(e.message||'Failed to generate plan');}
 }
 
 async function generateCoachReportNow(){

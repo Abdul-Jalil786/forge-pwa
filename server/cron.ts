@@ -3,7 +3,7 @@ import webpush from "web-push";
 import prisma from "./db";
 import { syncOuraForAllUsers } from "./oura";
 import { syncWithingsForAllUsers } from "./withings";
-import { generateWeeklyReport, saveReport, hoursSinceLastReport } from "./ai-coach";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen } from "./ai-coach";
 
 function ukToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -308,6 +308,26 @@ export function startCron() {
           console.log(`[coach] Report generated for ${user.email}`);
         } catch (e: any) {
           console.error(`[coach] Failed for ${user.email}:`, e?.message || e);
+        }
+
+        // Phase 26: meal plan regen based on user's cadence
+        const cadence = state.profile?.foodPrefs?.refreshCadence || "weekly-sunday";
+        const planHrs = hoursSinceLastPlanRegen(state);
+        const shouldRegen =
+          (cadence === "weekly-sunday" && planHrs >= 24 * 6) ||
+          (cadence === "biweekly" && planHrs >= 24 * 13);
+        if (shouldRegen) {
+          try {
+            const plan = await generateMealPlan(user.id);
+            await saveMealPlan(user.id, plan);
+            await sendPushToUser(user.id, {
+              title: "🍽️ New meal plan",
+              body: `${plan.name} · ${plan.meals.length} meals · open Forge to view`,
+            });
+            console.log(`[coach] Plan regenerated for ${user.email}`);
+          } catch (e: any) {
+            console.error(`[coach] Plan regen failed for ${user.email}:`, e?.message || e);
+          }
         }
       }
       console.log("Sunday coaching reports complete");
