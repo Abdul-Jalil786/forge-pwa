@@ -173,6 +173,90 @@ router.put("/meal-plan", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// Phase 27: personal demographics (subfield of profile)
+router.put("/profile/personal", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { age, heightCm, sex, ethnicity, activityLevel } = req.body || {};
+    const out: any = {};
+    if (age != null) {
+      if (typeof age !== "number" || age < 10 || age > 120) { res.status(400).json({ error: "age must be 10-120" }); return; }
+      out.age = Math.round(age);
+    }
+    if (heightCm != null) {
+      if (typeof heightCm !== "number" || heightCm < 100 || heightCm > 250) { res.status(400).json({ error: "heightCm must be 100-250" }); return; }
+      out.heightCm = Math.round(heightCm);
+    }
+    if (sex != null) {
+      if (!["male", "female", "other"].includes(sex)) { res.status(400).json({ error: "sex must be male|female|other" }); return; }
+      out.sex = sex;
+    }
+    if (ethnicity != null) {
+      const valid = ["south-asian", "white", "black", "east-asian", "mixed", "other", "prefer-not-to-say"];
+      if (!valid.includes(ethnicity)) { res.status(400).json({ error: "invalid ethnicity" }); return; }
+      out.ethnicity = ethnicity;
+    }
+    if (activityLevel != null) {
+      const valid = ["sedentary", "light", "moderate", "very-active"];
+      if (!valid.includes(activityLevel)) { res.status(400).json({ error: "invalid activityLevel" }); return; }
+      out.activityLevel = activityLevel;
+    }
+    out.updatedAt = new Date().toISOString();
+    const valueJson = JSON.stringify(out);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+        '{profile,personal}',
+        ${valueJson}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put personal error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Phase 27: medications (subfield of profile)
+router.put("/profile/medications", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { medications } = req.body || {};
+    if (!Array.isArray(medications)) { res.status(400).json({ error: "medications must be an array" }); return; }
+    if (medications.length > 30) { res.status(400).json({ error: "max 30 medications" }); return; }
+    const clean = medications.map((m: any) => {
+      if (!m || typeof m !== "object") return null;
+      const name = String(m.name || "").trim().slice(0, 120);
+      if (!name) return null;
+      return {
+        id: String(m.id || "").trim().slice(0, 80) || ("med_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
+        name,
+        dose: String(m.dose || "").trim().slice(0, 60),
+        schedule: String(m.schedule || "").trim().slice(0, 120),
+        notes: String(m.notes || "").trim().slice(0, 400),
+      };
+    }).filter(Boolean);
+    const valueJson = JSON.stringify(clean);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+        '{profile,medications}',
+        ${valueJson}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true, count: clean.length });
+  } catch (err) {
+    console.error("Put medications error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 24: food preferences (subfield of profile)
 router.put("/profile/food-prefs", requireAuth, async (req: Request, res: Response) => {
   try {

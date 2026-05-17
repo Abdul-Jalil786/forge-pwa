@@ -26,12 +26,27 @@ function summarizeFoodDay(items: any[]): { kcal: number; p: number; c: number; f
   return { kcal: Math.round(kcal), p: Math.round(p), c: Math.round(c), f: Math.round(f) };
 }
 
+// Phase 27: Mifflin-St Jeor BMR + activity factor estimate
+function estimateTDEE(personal: any, currentWeightKg: number | null): { bmr: number; tdee: number } | null {
+  if (!personal || !personal.age || !personal.heightCm || !personal.sex || !currentWeightKg) return null;
+  const w = currentWeightKg, h = personal.heightCm, a = personal.age;
+  // Mifflin-St Jeor
+  const bmr = personal.sex === "female"
+    ? 10 * w + 6.25 * h - 5 * a - 161
+    : 10 * w + 6.25 * h - 5 * a + 5; // 'male' and 'other' default to male formula
+  const af = { sedentary: 1.2, light: 1.375, moderate: 1.55, "very-active": 1.725 }[personal.activityLevel as string] || 1.375;
+  return { bmr: Math.round(bmr), tdee: Math.round(bmr * af) };
+}
+
 function buildContext(state: any): string {
   const today = ukToday();
   const cutoff14 = daysAgoUK(14);
   const cutoff7 = daysAgoUK(7);
   const profile = state.profile || {};
   const macros = profile.macros || {};
+  const personal = profile.personal || {};
+  const meds = Array.isArray(profile.medications) ? profile.medications : [];
+  const recovery = state.recovery || {};
 
   const wl = (state.weightLog || []).filter((e: any) => e.date >= cutoff14);
   const bl = (state.bfLog || []).filter((e: any) => e.date >= cutoff14);
@@ -86,11 +101,24 @@ function buildContext(state: any): string {
     suppAdherence.push({ date: d, taken, of: supps.length });
   }
 
+  const currentWeight = wl.length ? wl[wl.length - 1].weight : profile.startWeight;
+  const tdee = estimateTDEE(personal, currentWeight);
+
   const lines: string[] = [];
   lines.push(`Today (UK): ${today}`);
   lines.push("");
-  lines.push("PROFILE:");
-  lines.push(`  Goal: ${profile.startWeight ?? "?"}kg @ ${profile.startBF ?? "?"}% BF → ${profile.targetWeight ?? "?"}kg @ ${profile.targetBF ?? "?"}% BF`);
+  lines.push("DEMOGRAPHICS:");
+  lines.push(`  Age: ${personal.age ?? "(not set)"} · Height: ${personal.heightCm ?? "?"}cm · Sex (for BMR): ${personal.sex ?? "(not set)"} · Ethnicity: ${personal.ethnicity ?? "(not set)"}`);
+  lines.push(`  Activity outside gym: ${personal.activityLevel ?? "(not set)"}`);
+  if (tdee) lines.push(`  Estimated BMR: ${tdee.bmr} kcal · TDEE (Mifflin-St Jeor × activity factor, excludes training): ${tdee.tdee} kcal/day`);
+  else lines.push(`  TDEE estimate unavailable (demographics incomplete — coach should flag this if accuracy matters)`);
+  lines.push("");
+  lines.push("MEDICATIONS (factor these into interpretation):");
+  if (meds.length === 0) lines.push("  (none recorded)");
+  else for (const m of meds) lines.push(`  - ${m.name}${m.dose ? ` ${m.dose}` : ""}${m.schedule ? ` · ${m.schedule}` : ""}${m.notes ? ` · ${m.notes}` : ""}`);
+  lines.push("");
+  lines.push("PLAN PROFILE:");
+  lines.push(`  Goal: ${profile.startWeight ?? "?"}kg @ ${profile.startBF ?? "?"}% BF → ${profile.targetWeight ?? "?"}kg @ ${profile.targetBF ?? "?"}% BF (LBM target ${profile.targetLBM ?? "?"}kg, visceral target ${profile.targetVisceralFat ?? "?"})`);
   lines.push(`  Plan start: ${profile.startDate || profile.planStartDate || "?"}`);
   lines.push(`  Daily targets: gym=${profile.calsGym ?? "?"}kcal, rest=${profile.calsRest ?? "?"}kcal`);
   lines.push(`  Macros: P=${macros.protein ?? "?"}g, C=${macros.carbs ?? "?"}g, F=${macros.fat ?? "?"}g`);
@@ -123,6 +151,22 @@ function buildContext(state: any): string {
   else for (const s of sleepDays) lines.push(`  ${s.date}: ${s.hours != null ? `${s.hours}h` : "?"}${s.score != null ? ` score=${s.score}` : ""}`);
   lines.push("");
 
+  lines.push("RECOVERY (Oura last 7d, scores 0-100; rising HRV + falling RHR = recovering well):");
+  let anyRec = false;
+  for (let i = 6; i >= 0; i--) {
+    const d = daysAgoUK(i);
+    const r = recovery[d];
+    if (!r) continue;
+    anyRec = true;
+    const parts = [];
+    if (r.readiness != null) parts.push(`readiness=${r.readiness}`);
+    if (r.hrv != null) parts.push(`hrv=${r.hrv}`);
+    if (r.restingHR != null) parts.push(`rhr=${r.restingHR}`);
+    lines.push(`  ${d}: ${parts.join(" · ") || "(no data)"}`);
+  }
+  if (!anyRec) lines.push("  (no Oura recovery data)");
+  lines.push("");
+
   lines.push("SUPPLEMENT ADHERENCE (last 7d, taken/total):");
   for (const a of suppAdherence) lines.push(`  ${a.date}: ${a.taken}/${a.of}`);
 
@@ -131,18 +175,29 @@ function buildContext(state: any): string {
 
 const SYSTEM_PROMPT = `You are Forge's weekly coach. You write concise, specific, actionable weekly reviews for a user on a structured fat-loss / recomp plan.
 
-Forge is a personal fitness tracker. The user logs weight, body fat, food (per ingredient), training (per set), sleep, and supplements. You see the last 7-14 days of their data.
+Forge is a personal fitness tracker. The user logs weight, body fat, food (per ingredient with portions), training (per set), sleep, and supplements. Oura provides recovery (readiness, HRV, RHR). You see the last 7-14 days of their data plus demographics, medications, and a Mifflin-St Jeor TDEE estimate.
 
-Your output goes into two places:
-1. A markdown REPORT — what happened, what's working, what to change. Under 350 words. Use ## section headings: "This week", "What's working", "What to fix", "Next week focus". Reference actual numbers from the data. Be direct — the user wants a coach, not a chatbot.
-2. Optional SUGGESTIONS — concrete changes the user can apply with one tap. Only suggest changes that are clearly supported by the data (e.g. 7-day food intake consistently 200kcal over target → suggest dropping calories). If the plan is on track, output an empty suggestions array.
+HOW TO REASON ABOUT THE DATA:
+- Compare actual intake to the TDEE estimate (not just the stated calorie target). If TDEE is unavailable due to incomplete demographics, flag it once and prompt the user to fill in age/height/sex/activity.
+- Factor in MEDICATIONS when interpreting trends. Critical:
+  - GLP-1 agonists (Mounjaro/tirzepatide, Ozempic/Wegovy/semaglutide) suppress appetite and produce non-linear weight loss curves with plateaus. Don't credit "great adherence" for week-1 rapid loss or panic about week-3 plateau — that's the drug. Dose escalations cause re-acceleration.
+  - Statins can cause muscle soreness/weakness — factor into training feedback.
+  - Metformin can cause GI side effects and slight weight neutrality. Affects carb tolerance.
+  - Insulin / glucose-affecting meds change carb timing recommendations.
+- Use Oura recovery (HRV, readiness, RHR) to detect overtraining or stress weeks before the user feels it. Falling HRV + rising RHR over 3+ days = recover/deload signal.
+- Ethnicity context (if provided): South Asian users have lower healthy visceral fat thresholds (>7 = elevated risk vs >10 for European baseline).
+- The training split (Upper/Rest/Lower/Rest) is fixed. Don't suggest splitting changes unless data shows clear under-recovery.
+
+OUTPUT FORMAT:
+1. A markdown REPORT under 400 words. Sections: ## This week, ## What's working, ## What to fix, ## Next week focus. Reference actual numbers and call out medication / recovery context when relevant.
+2. Optional SUGGESTIONS — concrete one-tap changes. Only when clearly supported by data. If on track, output empty array.
 
 Suggestion types:
-- "macros": adjust daily calorie/macro targets. Payload must include exactly these keys (omit any you don't want to change): calsGym, calsRest, protein, carbs, fat. Only suggest if weekly average rate is off target by >0.2kg/wk or food intake is consistently mismatched.
-- "reminders": add/change a reminder. Payload: { action: "add" | "remove", reminder: { time: "HH:MM", text: string, days?: number[] } }. Use sparingly.
-- "note": a directional nudge that doesn't change app state (e.g. "consider a deload week", "drop alcohol Friday"). Payload: {}.
+- "macros": adjust daily calorie/macro targets. Payload keys (any subset): calsGym, calsRest, protein, carbs, fat. Only suggest if weekly average rate is off target by >0.2kg/wk AND it isn't explained by medication timing.
+- "reminders": add/change a reminder. Payload: { action: "add" | "remove", reminder: { time: "HH:MM", text: string, days?: number[] } }.
+- "note": directional nudge that doesn't change app state. Payload: {}.
 
-Be specific with rationale — cite the data. Don't recommend changes "just to look busy". A report with zero suggestions is fine.`;
+Be direct. Cite the data. The user wants a coach, not a chatbot.`;
 
 interface Suggestion {
   id: string;

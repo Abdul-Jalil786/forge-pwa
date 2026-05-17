@@ -528,6 +528,25 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
   </div>
 </div>
 
+<div class="modal-bg" id="modal-med-edit">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="med-title">Medication</div>
+      <button class="modal-close" onclick="closeModal('modal-med-edit')">✕</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Name</div>
+    <input id="med-name" type="text" maxlength="120" placeholder="e.g. Mounjaro" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;" />
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Dose</div>
+    <input id="med-dose" type="text" maxlength="60" placeholder="e.g. 5mg" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;" />
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Schedule</div>
+    <input id="med-schedule" type="text" maxlength="120" placeholder="e.g. Wednesday 18:00 weekly" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;" />
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Notes (for the AI)</div>
+    <textarea id="med-notes" rows="3" maxlength="400" placeholder="e.g. GLP-1 — expect appetite suppression, irregular weight curve. On dose since Mar 2026." style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:14px;"></textarea>
+    <button class="btn btn-lime btn-full" style="margin-bottom:8px;" onclick="saveMedication()">Save</button>
+    <button id="med-delete-btn" class="btn btn-ghost btn-full" style="color:var(--red);border-color:var(--red);display:none;" onclick="deleteMedication()">Delete</button>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-ing-edit">
   <div class="modal">
     <div class="modal-hdr">

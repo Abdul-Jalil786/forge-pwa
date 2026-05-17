@@ -1514,6 +1514,65 @@ function renderMore(){
       <div id="coach-controls"></div>
     </div>
 
+    <div class="sec-label">Personal Profile (for the AI Coach)</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        The AI Coach uses this to compute your actual TDEE and tailor advice. Especially important if you're on medications that affect appetite or weight (e.g. GLP-1).
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Age</div>
+          <input id="pp-age" type="number" min="10" max="120" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Height (cm)</div>
+          <input id="pp-height" type="number" min="100" max="250" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Sex (for BMR)</div>
+          <select id="pp-sex" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
+            <option value="">—</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Activity (outside gym)</div>
+          <select id="pp-activity" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
+            <option value="">—</option>
+            <option value="sedentary">Sedentary (desk job)</option>
+            <option value="light">Light (some walking)</option>
+            <option value="moderate">Moderate (active job)</option>
+            <option value="very-active">Very active (manual)</option>
+          </select>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Ethnicity (optional, for visceral fat threshold context)</div>
+      <select id="pp-ethnicity" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;margin-bottom:14px;">
+        <option value="">—</option>
+        <option value="south-asian">South Asian</option>
+        <option value="white">White</option>
+        <option value="black">Black</option>
+        <option value="east-asian">East Asian</option>
+        <option value="mixed">Mixed</option>
+        <option value="other">Other</option>
+        <option value="prefer-not-to-say">Prefer not to say</option>
+      </select>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="savePersonalProfile()">Save Personal Profile</button>
+    </div>
+
+    <div class="sec-label">Medications</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        Tell the AI Coach what you're on. GLP-1 meds (Mounjaro, Ozempic, Wegovy) change weight-loss interpretation significantly. Statins, metformin, insulin etc. also relevant.
+      </div>
+      <div id="meds-list" style="margin-bottom:10px;"></div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openMedEdit(null)">+ Add Medication</button>
+    </div>
+
     <div class="sec-label">Food Preferences</div>
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
@@ -1605,6 +1664,8 @@ function renderMore(){
   loadWithingsStatus();
   loadCoachKeyStatus();
   loadFoodPrefsUI();
+  loadPersonalProfileUI();
+  renderMedsList();
 
   loadAccessTokens().then(tokens=>{
     const el=document.getElementById('token-list');

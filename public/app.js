@@ -242,6 +242,146 @@ function confirmDeleteSupplement(id,name){
 function setWater(cups){saveWater(cups);renderMore();renderToday();showToast(`${cups} cups 💧`);}
 function resetWater(){saveWater(0);renderMore();renderToday();}
 
+// ---- PERSONAL PROFILE (Phase 27) ----
+function _personal(){
+  return (STATE.profile && STATE.profile.personal) || {};
+}
+
+function loadPersonalProfileUI(){
+  const p = _personal();
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v != null ? v : ''; };
+  set('pp-age', p.age);
+  set('pp-height', p.heightCm);
+  set('pp-sex', p.sex || '');
+  set('pp-activity', p.activityLevel || '');
+  set('pp-ethnicity', p.ethnicity || '');
+}
+
+async function savePersonalProfile(){
+  const ageVal = parseInt(document.getElementById('pp-age').value, 10);
+  const heightVal = parseInt(document.getElementById('pp-height').value, 10);
+  const sex = document.getElementById('pp-sex').value;
+  const activityLevel = document.getElementById('pp-activity').value;
+  const ethnicity = document.getElementById('pp-ethnicity').value;
+  const body = {};
+  if (!isNaN(ageVal)) body.age = ageVal;
+  if (!isNaN(heightVal)) body.heightCm = heightVal;
+  if (sex) body.sex = sex;
+  if (activityLevel) body.activityLevel = activityLevel;
+  if (ethnicity) body.ethnicity = ethnicity;
+  const jwt = localStorage.getItem('forge_token');
+  try {
+    const res = await fetch('/api/state/profile/personal', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Save failed'); }
+    if (!STATE.profile) STATE.profile = {};
+    STATE.profile.personal = { ...body, updatedAt: new Date().toISOString() };
+    updateLocalCache();
+    showToast('Personal profile saved ✓');
+  } catch (e) {
+    showToast(e.message || 'Failed to save');
+  }
+}
+
+// ---- MEDICATIONS (Phase 27) ----
+let _medEdit = null; // { idx: number | null }
+
+function _meds(){
+  return (STATE.profile && Array.isArray(STATE.profile.medications)) ? STATE.profile.medications : [];
+}
+
+function renderMedsList(){
+  const meds = _meds();
+  const el = document.getElementById('meds-list');
+  if (!el) return;
+  if (meds.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px 0;">No medications recorded</div>';
+    return;
+  }
+  el.innerHTML = meds.map((m, i) => `
+    <div onclick="openMedEdit(${i})" style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:var(--text);">${_esc(m.name)}${m.dose ? ` <span style="font-size:11px;color:var(--text3);font-weight:400;">${_esc(m.dose)}</span>` : ''}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${_esc(m.schedule || '—')}</div>
+        ${m.notes ? `<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4;">${_esc(m.notes.slice(0,80))}${m.notes.length > 80 ? '…' : ''}</div>` : ''}
+      </div>
+      <div style="font-size:11px;color:var(--text3);">✏️</div>
+    </div>
+  `).join('');
+}
+
+function openMedEdit(idx) {
+  _medEdit = { idx };
+  const m = idx === null ? { name: '', dose: '', schedule: '', notes: '' } : (_meds()[idx] || {});
+  document.getElementById('med-title').textContent = idx === null ? 'Add Medication' : 'Edit Medication';
+  document.getElementById('med-name').value = m.name || '';
+  document.getElementById('med-dose').value = m.dose || '';
+  document.getElementById('med-schedule').value = m.schedule || '';
+  document.getElementById('med-notes').value = m.notes || '';
+  document.getElementById('med-delete-btn').style.display = idx === null ? 'none' : 'block';
+  openModal('modal-med-edit');
+}
+
+async function _saveMedsToServer(meds) {
+  const jwt = localStorage.getItem('forge_token');
+  const res = await fetch('/api/state/profile/medications', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
+    body: JSON.stringify({ medications: meds }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Save failed'); }
+}
+
+async function saveMedication() {
+  if (!_medEdit) return;
+  const name = document.getElementById('med-name').value.trim();
+  if (!name) { showToast('Name required'); return; }
+  const updated = {
+    id: _medEdit.idx !== null ? (_meds()[_medEdit.idx]?.id || ('med_' + Date.now())) : ('med_' + Date.now()),
+    name,
+    dose: document.getElementById('med-dose').value.trim(),
+    schedule: document.getElementById('med-schedule').value.trim(),
+    notes: document.getElementById('med-notes').value.trim(),
+  };
+  const meds = [..._meds()];
+  if (_medEdit.idx === null) meds.push(updated);
+  else meds[_medEdit.idx] = updated;
+  try {
+    await _saveMedsToServer(meds);
+    if (!STATE.profile) STATE.profile = {};
+    STATE.profile.medications = meds;
+    updateLocalCache();
+    showToast(_medEdit.idx === null ? 'Added ✓' : 'Saved ✓');
+    closeModal('modal-med-edit');
+    _medEdit = null;
+    renderMedsList();
+  } catch (e) {
+    showToast(e.message || 'Save failed');
+  }
+}
+
+async function deleteMedication() {
+  if (!_medEdit || _medEdit.idx === null) return;
+  if (!confirm('Remove this medication?')) return;
+  const meds = [..._meds()];
+  meds.splice(_medEdit.idx, 1);
+  try {
+    await _saveMedsToServer(meds);
+    if (!STATE.profile) STATE.profile = {};
+    STATE.profile.medications = meds;
+    updateLocalCache();
+    showToast('Removed');
+    closeModal('modal-med-edit');
+    _medEdit = null;
+    renderMedsList();
+  } catch (e) {
+    showToast(e.message || 'Delete failed');
+  }
+}
+
 // ---- FOOD PREFERENCES (Phase 24) ----
 function _foodPrefs(){
   return (STATE.profile && STATE.profile.foodPrefs) || { excluded: [], notes: '', refreshCadence: 'weekly-sunday' };
