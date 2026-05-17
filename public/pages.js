@@ -598,6 +598,7 @@ function _renderMealDetail(){
   else if(!anyEaten){btnText='UNLOG MEAL';btnClass='btn-ghost';}
   else if(changed){btnText='SAVE CHANGES';btnClass='btn-lime';}
   else{btnText='✓ LOGGED · TAP INGREDIENTS TO EDIT';btnClass='btn-ghost';}
+  const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
   document.getElementById('md-title').textContent=`${m.time||''} · ${m.name}`;
   document.getElementById('md-body').innerHTML=`
     <div style="background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;">
