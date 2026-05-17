@@ -81,6 +81,7 @@ function buildContext(state: any): string {
   const macros = profile.macros || {};
   const personal = profile.personal || {};
   const meds = Array.isArray(profile.medications) ? profile.medications : [];
+  const bloodMarkers = Array.isArray(profile.bloodMarkers) ? profile.bloodMarkers : [];
   const recovery = state.recovery || {};
   const stepsLog = state.stepsLog || {};
   const calorieLog = state.calorieLog || {};
@@ -164,6 +165,35 @@ function buildContext(state: any): string {
   if (meds.length === 0) lines.push("  (none recorded)");
   else for (const m of meds) lines.push(`  - ${m.name}${m.dose ? ` ${m.dose}` : ""}${m.schedule ? ` · ${m.schedule}` : ""}${m.notes ? ` · ${m.notes}` : ""}`);
   lines.push("");
+
+  // Phase 29a: blood markers — clinical context for every coaching decision
+  if (bloodMarkers.length > 0) {
+    const latestDate = bloodMarkers.reduce((d: string, m: any) => m.date && m.date > d ? m.date : d, "");
+    lines.push(`BLOOD MARKERS (most recent panel: ${latestDate || "unknown date"}):`);
+    const flagged: any[] = [];
+    const inRange: any[] = [];
+    for (const m of bloodMarkers) {
+      const v = m.value;
+      if (v == null) continue;
+      let status = "in range";
+      if (m.refLow != null && v < m.refLow) status = "BELOW range";
+      else if (m.refHigh != null && v > m.refHigh) status = "ABOVE range";
+      if (status === "in range") inRange.push(m);
+      else flagged.push({ ...m, status });
+    }
+    if (flagged.length > 0) {
+      lines.push("  OUT OF RANGE (factor these into every recommendation):");
+      for (const m of flagged) {
+        const refStr = m.refLow != null && m.refHigh != null ? `${m.refLow}-${m.refHigh}` : m.refLow != null ? `>${m.refLow}` : m.refHigh != null ? `<${m.refHigh}` : "?";
+        lines.push(`    - ${m.name}: ${m.value}${m.unit ? ` ${m.unit}` : ""} [${m.status}, ref ${refStr}]${m.notes ? ` — ${m.notes}` : ""}`);
+      }
+    }
+    if (inRange.length > 0) {
+      const names = inRange.slice(0, 30).map((m: any) => `${m.name} ${m.value}${m.unit ? m.unit : ""}`).join(", ");
+      lines.push(`  IN RANGE: ${names}${inRange.length > 30 ? `, +${inRange.length - 30} more` : ""}`);
+    }
+    lines.push("");
+  }
   lines.push("PLAN PROFILE:");
   lines.push(`  Goal: ${profile.startWeight ?? "?"}kg @ ${profile.startBF ?? "?"}% BF → ${profile.targetWeight ?? "?"}kg @ ${profile.targetBF ?? "?"}% BF (LBM target ${profile.targetLBM ?? "?"}kg, visceral target ${profile.targetVisceralFat ?? "?"})`);
   lines.push(`  Plan start: ${profile.startDate || profile.planStartDate || "?"}`);
@@ -366,6 +396,18 @@ INTERPRETATION RULES:
 - Effort tags: >50% easy + no tough = sandbagging (push harder). >40% tough = under-recovery or weights too high.
 - Meal plan adherence: <70% on multiple days = the plan doesn't fit life, not a discipline problem. Suggest a swap, not a guilt trip.
 - MEMORY: reference what you said in previous reports. If you suggested a change 2-4 weeks ago and the user applied it, explicitly evaluate whether it worked. If they dismissed it, don't suggest it again unless data has changed materially. DO NOT repeat advice from prior reports without acknowledging the prior recommendation.
+- BLOOD MARKERS (use the latest panel as clinical ground truth):
+  - HbA1c > 48 = pre-diabetic, > 48-58 = newly diagnosed type 2, > 58 = established diabetes. If HbA1c is diabetic-range, LOW-GI carbs are NON-NEGOTIABLE — frame it as essential, not a preference. Recommend re-test in 3 months. Acknowledge GLP-1 and Metformin are working together to bring this down.
+  - ALT > 56 IU/L = elevated liver enzyme; commonly fatty liver / metabolic strain. Coach should expect ALT to drop as body fat falls. Recommend keeping alcohol minimal and re-check at next panel. Don't suggest extra protein supplements (whey/casein) at very high doses — let dietary protein lead.
+  - Testosterone < 12 nmol/L (or below user's age-adjusted optimal) = sub-optimal. Coach should emphasize: protect LBM (do not lose it), prioritize sleep quality (Oura deep > 60 min target), maintain resistance training intensity. Lower T makes muscle preservation harder, so the LBM-watch rule applies double.
+  - SHBG low = insulin resistance pattern, reinforces low-GI guidance.
+  - Vitamin D < 50 nmol/L = insufficient. If user takes 4000 IU and still under 50, recommend 5000 IU until > 75 (with safety caveat to check with GP).
+  - HDL < 1.0 mmol/L = low; usually rises with cardio + body comp improvement.
+  - Triglycerides > 1.7 mmol/L = elevated; carb intake and alcohol-sensitive.
+  - hsCRP > 1 mg/L = low-grade inflammation; chronic if persistent. Recommend re-check in 3 months and flag persistently > 3 as worth GP discussion.
+  - Ferritin > 30 ng/mL = adequate iron; > 200 with elevated CRP = possible inflammation, not iron overload.
+  - Always cite the date of the panel ("from your 08/05/2026 panel: ..."). If the panel is > 6 months old, recommend a re-test.
+  - NEVER make a definitive medical diagnosis. Frame everything as "consistent with X, recommend GP discussion" not "you have X".
 - MEDICATIONS (factor every week):
   - GLP-1 agonists (Mounjaro / Ozempic / Wegovy / semaglutide / tirzepatide): non-linear weight curves, plateau-then-re-accelerate on dose escalations. Injection-day weight differs systematically from mid-cycle. Don't credit week 1 or panic week 3.
   - Statins: muscle soreness common — factor into training feedback before suggesting volume bumps.

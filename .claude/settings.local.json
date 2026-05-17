@@ -26,7 +26,14 @@
       "Bash(cp \"C:/Users/abdul/Projects/forge-pwa/icon-512.png\" public/icon-512.png)",
       "Bash(cp \"C:/Users/abdul/Projects/forge-pwa/apple-touch-icon-180.png\" public/apple-touch-icon-180.png)",
       "Bash(rm \"C:/Users/abdul/Projects/forge-pwa/icon-192.png\" \"C:/Users/abdul/Projects/forge-pwa/icon-512.png\" \"C:/Users/abdul/Projects/forge-pwa/apple-touch-icon-180.png\")",
-      "Read(//c/Users/abdul/Projects/forge-pwa/**)"
+      "Read(//c/Users/abdul/Projects/forge-pwa/**)",
+      "Bash(where qpdf *)",
+      "Bash(where python *)",
+      "Bash(where pdftotext *)",
+      "Bash(python -c \"import pypdf; print\\('have pypdf', pypdf.__version__\\)\")",
+      "Bash(python -m pip install pypdf)",
+      "Bash(python -m pip install cryptography)",
+      "Bash(python -c ' *)"
     ]
   }
 }

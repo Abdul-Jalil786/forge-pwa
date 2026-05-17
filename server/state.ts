@@ -220,6 +220,51 @@ router.put("/profile/personal", requireAuth, async (req: Request, res: Response)
   }
 });
 
+// Phase 29a: blood markers (subfield of profile)
+router.put("/profile/blood-markers", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { bloodMarkers } = req.body || {};
+    if (!Array.isArray(bloodMarkers)) { res.status(400).json({ error: "bloodMarkers must be an array" }); return; }
+    if (bloodMarkers.length > 100) { res.status(400).json({ error: "max 100 markers" }); return; }
+    const clean = bloodMarkers.map((m: any) => {
+      if (!m || typeof m !== "object") return null;
+      const name = String(m.name || "").trim().slice(0, 120);
+      if (!name) return null;
+      const value = typeof m.value === "number" ? m.value : (m.value != null ? Number(m.value) : null);
+      if (value != null && !Number.isFinite(value)) return null;
+      const refLow = typeof m.refLow === "number" ? m.refLow : (m.refLow != null ? Number(m.refLow) : null);
+      const refHigh = typeof m.refHigh === "number" ? m.refHigh : (m.refHigh != null ? Number(m.refHigh) : null);
+      return {
+        id: String(m.id || "").trim().slice(0, 80) || ("blm_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
+        name,
+        value,
+        unit: String(m.unit || "").trim().slice(0, 30),
+        refLow: refLow != null && Number.isFinite(refLow) ? refLow : null,
+        refHigh: refHigh != null && Number.isFinite(refHigh) ? refHigh : null,
+        date: String(m.date || "").trim().slice(0, 10),
+        category: String(m.category || "").trim().slice(0, 40),
+        notes: String(m.notes || "").trim().slice(0, 400),
+      };
+    }).filter(Boolean);
+    const valueJson = JSON.stringify(clean);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+        '{profile,bloodMarkers}',
+        ${valueJson}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true, count: clean.length });
+  } catch (err) {
+    console.error("Put blood-markers error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 27: medications (subfield of profile)
 router.put("/profile/medications", requireAuth, async (req: Request, res: Response) => {
   try {

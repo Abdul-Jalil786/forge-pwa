@@ -1622,6 +1622,16 @@ function renderMore(){
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openMedEdit(null)">+ Add Medication</button>
     </div>
 
+    <div class="sec-label">Blood Markers</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        Latest blood panel results. The AI Coach uses out-of-range markers to ground its advice (e.g. HbA1c diabetic-range = low-GI is non-negotiable).
+        <span id="blm-panel-date" style="display:block;font-size:11px;color:var(--text3);margin-top:6px;"></span>
+      </div>
+      <div id="blm-list" style="margin-bottom:10px;"></div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openBloodMarkerEdit(null)">+ Add Marker</button>
+    </div>
+
     <div class="sec-label">Food Preferences</div>
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
@@ -1715,6 +1725,7 @@ function renderMore(){
   loadFoodPrefsUI();
   loadPersonalProfileUI();
   renderMedsList();
+  renderBloodMarkersList();
 
   loadAccessTokens().then(tokens=>{
     const el=document.getElementById('token-list');

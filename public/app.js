@@ -286,6 +286,162 @@ async function savePersonalProfile(){
   }
 }
 
+// ---- BLOOD MARKERS (Phase 29a) ----
+let _blmEdit = null;
+
+function _bloodMarkers(){
+  return (STATE.profile && Array.isArray(STATE.profile.bloodMarkers)) ? STATE.profile.bloodMarkers : [];
+}
+
+function _markerStatus(m){
+  if(m.value == null) return 'unknown';
+  if(m.refLow != null && m.value < m.refLow) return 'below';
+  if(m.refHigh != null && m.value > m.refHigh) return 'above';
+  return 'in-range';
+}
+
+function _markerColor(status){
+  if(status === 'in-range') return 'var(--green)';
+  if(status === 'below' || status === 'above') return 'var(--orange)';
+  return 'var(--text3)';
+}
+
+function renderBloodMarkersList(){
+  const markers = _bloodMarkers();
+  const el = document.getElementById('blm-list');
+  const dateEl = document.getElementById('blm-panel-date');
+  if(!el) return;
+  if(markers.length === 0){
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px 0;">No blood markers recorded</div>';
+    if(dateEl) dateEl.textContent = '';
+    return;
+  }
+  // Find latest panel date for header
+  const latestDate = markers.reduce((d, m) => m.date && m.date > d ? m.date : d, '');
+  if(dateEl && latestDate){
+    const formatted = new Date(latestDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    dateEl.textContent = `Latest panel: ${formatted}`;
+  }
+  // Group by category, out-of-range first within each
+  const byCategory = {};
+  for(const m of markers){
+    const cat = m.category || 'other';
+    if(!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push({ ...m, _status: _markerStatus(m) });
+  }
+  const catOrder = ['diabetes', 'liver', 'hormones', 'cholesterol', 'vitamins', 'inflammation', 'kidney', 'thyroid', 'iron', 'fbc', 'prostate', 'gout', 'other'];
+  const sortedCats = Object.keys(byCategory).sort((a, b) => {
+    const ai = catOrder.indexOf(a), bi = catOrder.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  el.innerHTML = sortedCats.map(cat => {
+    const items = byCategory[cat].sort((a, b) => {
+      if(a._status !== 'in-range' && b._status === 'in-range') return -1;
+      if(a._status === 'in-range' && b._status !== 'in-range') return 1;
+      return 0;
+    });
+    return `
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:10px 0 6px;">${cat}</div>
+      ${items.map((m, idx) => {
+        const i = markers.findIndex(x => x.id === m.id);
+        const c = _markerColor(m._status);
+        const refStr = m.refLow != null && m.refHigh != null ? `${m.refLow}–${m.refHigh}` : m.refLow != null ? `>${m.refLow}` : m.refHigh != null ? `<${m.refHigh}` : '';
+        return `<div onclick="openBloodMarkerEdit(${i})" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${c};border-radius:6px;margin-bottom:4px;cursor:pointer;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:600;color:var(--text);">${_esc(m.name)}</div>
+            ${refStr ? `<div style="font-size:10px;color:var(--text3);margin-top:1px;">ref ${refStr}${m.unit ? ' ' + _esc(m.unit) : ''}</div>` : ''}
+          </div>
+          <div style="text-align:right;">
+            <div style="font-family:'Archivo Black',sans-serif;font-size:13px;color:${c};">${m.value != null ? m.value : '—'}${m.unit ? ` <span style="font-size:10px;color:var(--text3);font-family:inherit;font-weight:400;">${_esc(m.unit)}</span>` : ''}</div>
+            ${m._status !== 'in-range' && m._status !== 'unknown' ? `<div style="font-size:9px;color:${c};text-transform:uppercase;letter-spacing:1px;font-weight:700;">${m._status}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    `;
+  }).join('');
+}
+
+function openBloodMarkerEdit(idx){
+  _blmEdit = { idx };
+  const m = idx === null ? { name: '', value: '', unit: '', refLow: '', refHigh: '', date: new Date().toISOString().slice(0,10), category: '', notes: '' } : (_bloodMarkers()[idx] || {});
+  document.getElementById('blm-title').textContent = idx === null ? 'Add Blood Marker' : 'Edit Blood Marker';
+  document.getElementById('blm-name').value = m.name || '';
+  document.getElementById('blm-value').value = m.value != null ? m.value : '';
+  document.getElementById('blm-unit').value = m.unit || '';
+  document.getElementById('blm-reflow').value = m.refLow != null ? m.refLow : '';
+  document.getElementById('blm-refhigh').value = m.refHigh != null ? m.refHigh : '';
+  document.getElementById('blm-date').value = m.date || new Date().toISOString().slice(0,10);
+  document.getElementById('blm-category').value = m.category || '';
+  document.getElementById('blm-notes').value = m.notes || '';
+  document.getElementById('blm-delete-btn').style.display = idx === null ? 'none' : 'block';
+  openModal('modal-blm-edit');
+}
+
+async function _saveBloodMarkersToServer(markers){
+  const jwt = localStorage.getItem('forge_token');
+  const res = await fetch('/api/state/profile/blood-markers', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
+    body: JSON.stringify({ bloodMarkers: markers }),
+  });
+  if(!res.ok){ const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Save failed'); }
+}
+
+async function saveBloodMarker(){
+  if(!_blmEdit) return;
+  const name = document.getElementById('blm-name').value.trim();
+  if(!name){ showToast('Name required'); return; }
+  const valueRaw = document.getElementById('blm-value').value.trim();
+  const value = valueRaw === '' ? null : Number(valueRaw);
+  if(value != null && !Number.isFinite(value)){ showToast('Value must be a number'); return; }
+  const refLowRaw = document.getElementById('blm-reflow').value.trim();
+  const refHighRaw = document.getElementById('blm-refhigh').value.trim();
+  const refLow = refLowRaw === '' ? null : Number(refLowRaw);
+  const refHigh = refHighRaw === '' ? null : Number(refHighRaw);
+  const updated = {
+    id: _blmEdit.idx !== null ? (_bloodMarkers()[_blmEdit.idx]?.id || ('blm_' + Date.now())) : ('blm_' + Date.now()),
+    name,
+    value,
+    unit: document.getElementById('blm-unit').value.trim(),
+    refLow: refLow != null && Number.isFinite(refLow) ? refLow : null,
+    refHigh: refHigh != null && Number.isFinite(refHigh) ? refHigh : null,
+    date: document.getElementById('blm-date').value,
+    category: document.getElementById('blm-category').value,
+    notes: document.getElementById('blm-notes').value.trim(),
+  };
+  const markers = [..._bloodMarkers()];
+  if(_blmEdit.idx === null) markers.push(updated);
+  else markers[_blmEdit.idx] = updated;
+  try {
+    await _saveBloodMarkersToServer(markers);
+    if(!STATE.profile) STATE.profile = {};
+    STATE.profile.bloodMarkers = markers;
+    updateLocalCache();
+    showToast(_blmEdit.idx === null ? 'Marker added ✓' : 'Saved ✓');
+    closeModal('modal-blm-edit');
+    _blmEdit = null;
+    renderBloodMarkersList();
+  } catch(e){ showToast(e.message || 'Save failed'); }
+}
+
+async function deleteBloodMarker(){
+  if(!_blmEdit || _blmEdit.idx === null) return;
+  if(!confirm('Remove this marker?')) return;
+  const markers = [..._bloodMarkers()];
+  markers.splice(_blmEdit.idx, 1);
+  try {
+    await _saveBloodMarkersToServer(markers);
+    if(!STATE.profile) STATE.profile = {};
+    STATE.profile.bloodMarkers = markers;
+    updateLocalCache();
+    showToast('Removed');
+    closeModal('modal-blm-edit');
+    _blmEdit = null;
+    renderBloodMarkersList();
+  } catch(e){ showToast(e.message || 'Delete failed'); }
+}
+
 // ---- MEDICATIONS (Phase 27) ----
 let _medEdit = null; // { idx: number | null }
 
