@@ -42,19 +42,33 @@ function buildContext(state: any): string {
     foodDays.push({ date, ...summarizeFoodDay(state.foods[date]) });
   }
 
+  // exLog[date][exerciseId] = { done: bool, sets: [{kg, reps, seconds, done?}, ...] }
   const exerciseDays: any[] = [];
   for (const date of Object.keys(state.exLog || {}).sort()) {
     if (date < cutoff7) continue;
-    const exs = state.exLog[date];
-    const summary = Object.keys(exs || {}).map((exId) => {
-      const sets = exs[exId];
-      if (Array.isArray(sets)) {
-        const done = sets.filter((s: any) => s?.done).length;
-        return `${exId}:${done}/${sets.length}`;
+    const exs = state.exLog[date] || {};
+    const exercises = Object.values(exs) as any[];
+    if (exercises.length === 0) continue;
+    const doneExercises = exercises.filter((e) => e?.done).length;
+    let setsLogged = 0;
+    let totalVolume = 0;
+    let timedSeconds = 0;
+    for (const ex of exercises) {
+      const sets = Array.isArray(ex?.sets) ? ex.sets : [];
+      for (const s of sets) {
+        const kg = parseFloat(s?.kg) || 0;
+        const reps = parseInt(s?.reps, 10) || 0;
+        const sec = parseInt(s?.seconds, 10) || 0;
+        if (kg || reps || sec || s?.done) setsLogged++;
+        if (kg && reps) totalVolume += kg * reps;
+        if (sec) timedSeconds += sec;
       }
-      return null;
-    }).filter(Boolean).join(" ");
-    if (summary) exerciseDays.push({ date, summary });
+    }
+    if (doneExercises === 0 && setsLogged === 0) continue;
+    const parts = [`${doneExercises}/${exercises.length} exercises done`, `${setsLogged} sets`];
+    if (totalVolume > 0) parts.push(`${Math.round(totalVolume)}kg volume`);
+    if (timedSeconds > 0) parts.push(`${timedSeconds}s isometric`);
+    exerciseDays.push({ date, summary: parts.join(", ") });
   }
 
   const sleepDays = Object.keys(state.sleepLog || {}).filter((d) => d >= cutoff7).sort().map((d) => {
