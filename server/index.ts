@@ -211,11 +211,30 @@ async function seedJayMealPlan() {
   }
 }
 
+// Phase 29: fix Jay's visceral target — his current visceral (~6.3) is already in healthy range,
+// the previous target of 10 was regression-encouraging. Reset to a maintenance/improvement target of 6.
+async function fixJayVisceralTarget() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.profile?.visceralTargetFixedV1) return;
+    if (!state.profile) state.profile = {};
+    state.profile.targetVisceralFat = 6;
+    state.profile.visceralTargetFixedV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay visceral target reset to 6 (was 10, current ~6.3)");
+  } catch (err) {
+    console.error("[migration] Jay visceral target fix failed:", err);
+  }
+}
+
 const server = app.listen(PORT, () => {
   console.log(`Forge server running on port ${PORT}`);
   startCron();
   migrateJayProgress();
   seedJayMealPlan();
+  fixJayVisceralTarget();
 });
 
 const shutdown = async (signal: string) => {

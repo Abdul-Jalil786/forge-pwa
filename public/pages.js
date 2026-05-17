@@ -788,8 +788,57 @@ function renderTrack(){
   const vCaption=hasEnoughV?(svf!=null&&cvf!=null?`Down ${Math.abs(svf-cvf).toFixed(1)} from start`:`Tracking from ${startLabel}`):`Tracking from ${startLabel}`;
   const vSpark=spark(vEntries.slice(-14).map(e=>e.visceralFat),'var(--purple)');
 
+  // Phase 29: compute 7d/14d deltas for the trend card
+  const _atOrBefore = (entries, date) => {
+    const e = entries.filter(x => x.date <= date).sort((a, b) => b.date.localeCompare(a.date))[0];
+    return e || null;
+  };
+  const _fmt = (v, unit, dp) => v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(dp ?? 1)}${unit || ''}` : '—';
+  const _colorForLBMDelta = d => d == null ? 'var(--text3)' : d >= -0.1 ? 'var(--green)' : d >= -0.3 ? '#ffc107' : 'var(--red)';
+  const _colorForFatDelta = d => d == null ? 'var(--text3)' : d < 0 ? 'var(--green)' : d > 0 ? 'var(--red)' : 'var(--text2)';
+  const _trendRow = (label, cur, deltas, color) => {
+    const d7 = deltas[0], d14 = deltas[1];
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:0 0 78px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;">${label}</div>
+      <div style="flex:1;font-family:'Archivo Black',sans-serif;font-size:15px;color:var(--text);">${cur ?? '—'}</div>
+      <div style="text-align:right;font-size:11px;line-height:1.3;">
+        <div style="color:${color(d7)};font-weight:700;">${_fmt(d7, ' kg')} <span style="opacity:.6;font-weight:400;">7d</span></div>
+        <div style="color:${color(d14)};">${_fmt(d14, ' kg')} <span style="opacity:.6;">14d</span></div>
+      </div>
+    </div>`;
+  };
+  const wEntriesAll = getJourneyEntries('weight');
+  const bEntriesAll = getJourneyEntries('bf');
+  const lEntriesAll = getJourneyEntries('lbm');
+  const today = todayStr();
+  const d7 = (() => { const x = new Date(); x.setDate(x.getDate() - 7); return x.toISOString().slice(0,10); })();
+  const d14 = (() => { const x = new Date(); x.setDate(x.getDate() - 14); return x.toISOString().slice(0,10); })();
+  const cwNow = cw, cbfNow = cbf, clbmNow = clbm;
+  const cFatNow = (cwNow && cbfNow) ? Math.round(cwNow * (cbfNow / 100) * 100) / 100 : null;
+  const w7 = _atOrBefore(wEntriesAll, d7)?.weight, w14 = _atOrBefore(wEntriesAll, d14)?.weight;
+  const l7 = _atOrBefore(lEntriesAll, d7)?.lbm,    l14 = _atOrBefore(lEntriesAll, d14)?.lbm;
+  const wlogAt7 = _atOrBefore(wEntriesAll, d7);    const blogAt7  = _atOrBefore(bEntriesAll, d7);
+  const wlogAt14= _atOrBefore(wEntriesAll, d14);   const blogAt14 = _atOrBefore(bEntriesAll, d14);
+  const fat7  = (wlogAt7  && blogAt7)  ? Math.round(wlogAt7.weight  * (blogAt7.bf  / 100) * 100) / 100 : null;
+  const fat14 = (wlogAt14 && blogAt14) ? Math.round(wlogAt14.weight * (blogAt14.bf / 100) * 100) / 100 : null;
+  const wDelta7  = (cwNow != null && w7  != null) ? cwNow  - w7  : null;
+  const wDelta14 = (cwNow != null && w14 != null) ? cwNow  - w14 : null;
+  const fatDelta7  = (cFatNow != null && fat7  != null) ? cFatNow - fat7  : null;
+  const fatDelta14 = (cFatNow != null && fat14 != null) ? cFatNow - fat14 : null;
+  const lbmDelta7  = (clbmNow != null && l7  != null) ? clbmNow - l7  : null;
+  const lbmDelta14 = (clbmNow != null && l14 != null) ? clbmNow - l14 : null;
+  const trendCard = `<div class="card" style="margin-bottom:14px;border-color:var(--border2);">
+    <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Body Composition · This Week vs Last</div>
+    ${_trendRow('Weight',    cwNow != null ? cwNow + ' kg' : '—',    [wDelta7,   wDelta14],   _colorForFatDelta)}
+    ${_trendRow('Fat mass',  cFatNow != null ? cFatNow + ' kg' : '—',[fatDelta7, fatDelta14], _colorForFatDelta)}
+    ${_trendRow('Lean mass', clbmNow != null ? clbmNow + ' kg' : '—',[lbmDelta7, lbmDelta14], _colorForLBMDelta)}
+    <div style="font-size:10px;color:var(--text3);line-height:1.5;padding-top:10px;">Goal is fat loss with lean preserved. Green LBM = holding · amber = small drop · red = losing muscle (review protein / deficit / training).</div>
+  </div>`;
+
   document.getElementById('page-track').innerHTML=`
     <div class="pg-title" style="margin-bottom:14px;">Progress</div>
+
+    ${trendCard}
 
     ${_progressCard('Weight',`${_v(p.startWeight)}kg → ${_v(p.targetWeight)}kg`,cw,'kg',wPct,'var(--lime)',hasEnoughW?wRate:null,' kg',`Lost ${wLost}kg · ${wToGo}kg to go · ${wGoalStr}`,wSpark)}
     ${_progressCard('Body Fat',`${_v(p.startBF)}% → ${_v(p.targetBF)}%`,cbf,'%',bPct,'var(--orange)',hasEnoughB?bRate:null,'%',bCaption,bSpark)}

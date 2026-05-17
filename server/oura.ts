@@ -62,16 +62,20 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     // Sleep duration — only count main overnight sleep, skip naps/short rests
     // Oura type values: "long_sleep" = main overnight, "sleep" = main sleep, "late_nap" = nap, "rest" = quiet rest, "deleted" = ignored
     const durationByDay: Record<string, number> = {};
+    const stagesByDay: Record<string, { rem: number; deep: number; light: number; awake: number }> = {};
     for (const e of sleepDetail.data || []) {
       if (e.type === "deleted") continue;
       const seconds = e.total_sleep_duration || 0;
-      // Always allow long_sleep and sleep through (subject to duration floor below)
-      // For late_nap and rest types, require 5+ hours (18000s) — catches daytime-shifted main sleep
       if ((e.type === "late_nap" || e.type === "rest") && seconds < 18000) continue;
-      // Drop anything under 3 hours regardless (clearly a nap)
       if (seconds < 10800) continue;
       const day = e.day;
       durationByDay[day] = (durationByDay[day] || 0) + seconds;
+      // Phase 29: capture sleep stages
+      if (!stagesByDay[day]) stagesByDay[day] = { rem: 0, deep: 0, light: 0, awake: 0 };
+      stagesByDay[day].rem   += e.rem_sleep_duration   || 0;
+      stagesByDay[day].deep  += e.deep_sleep_duration  || 0;
+      stagesByDay[day].light += e.light_sleep_duration || 0;
+      stagesByDay[day].awake += e.awake_time           || 0;
     }
     // Build list of all days in the lookback window
     const allDays: string[] = [];
@@ -87,7 +91,14 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       if (sleepLog[day]?.source === "manual") continue;
       if (durationByDay[day]) {
         const hours = Math.round((durationByDay[day] / 3600) * 10) / 10;
-        sleepLog[day] = { hours, quality: scoreByDay[day] ? mapSleepQuality(scoreByDay[day]) : 3, source: "oura" };
+        const s = stagesByDay[day];
+        const stages = s ? {
+          remMin:   Math.round(s.rem   / 60),
+          deepMin:  Math.round(s.deep  / 60),
+          lightMin: Math.round(s.light / 60),
+          awakeMin: Math.round(s.awake / 60),
+        } : undefined;
+        sleepLog[day] = { hours, quality: scoreByDay[day] ? mapSleepQuality(scoreByDay[day]) : 3, source: "oura", ...(stages || {}) };
         updated++;
       }
       // No-data branch removed — never delete existing entries on a sync that doesn't return that day.

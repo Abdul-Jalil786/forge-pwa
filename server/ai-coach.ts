@@ -38,6 +38,41 @@ function estimateTDEE(personal: any, currentWeightKg: number | null): { bmr: num
   return { bmr: Math.round(bmr), tdee: Math.round(bmr * af) };
 }
 
+// Phase 29: body comp helpers
+function latestBodyComp(state: any): { weight: number | null; bf: number | null; lbm: number | null; fatMass: number | null; muscleMass: number | null; visceral: number | null; hydration: number | null; date: string | null } {
+  const wl: any[] = state.weightLog || [];
+  const bl: any[] = state.bfLog || [];
+  const bc: any = state.bodyComp || {};
+  const cw  = wl.length ? wl[wl.length - 1].weight : null;
+  const cbf = bl.length ? bl[bl.length - 1].bf     : null;
+  const lbm = (cw && cbf) ? Math.round(cw * (1 - cbf / 100) * 100) / 100 : null;
+  const fatMass = (cw && cbf) ? Math.round(cw * (cbf / 100) * 100) / 100 : null;
+  const bcDates = Object.keys(bc).sort();
+  let muscleMass: number | null = null, visceral: number | null = null, hydration: number | null = null;
+  for (let i = bcDates.length - 1; i >= 0; i--) {
+    const e = bc[bcDates[i]] || {};
+    if (muscleMass == null && e.muscleMass != null) muscleMass = e.muscleMass;
+    if (visceral   == null && e.visceralFat != null) visceral   = e.visceralFat;
+    if (hydration  == null && e.hydration  != null) hydration  = e.hydration;
+    if (muscleMass != null && visceral != null && hydration != null) break;
+  }
+  const date = wl.length ? wl[wl.length - 1].date : (bl.length ? bl[bl.length - 1].date : null);
+  return { weight: cw, bf: cbf, lbm, fatMass, muscleMass, visceral, hydration, date };
+}
+
+function bodyCompAtDate(state: any, date: string): { weight: number | null; bf: number | null; lbm: number | null; fatMass: number | null } {
+  const wl: any[] = state.weightLog || [];
+  const bl: any[] = state.bfLog || [];
+  // pick closest entry on or before `date`
+  const wOnBefore = [...wl].filter(e => e.date <= date).sort((a, b) => b.date.localeCompare(a.date))[0];
+  const bOnBefore = [...bl].filter(e => e.date <= date).sort((a, b) => b.date.localeCompare(a.date))[0];
+  const w = wOnBefore?.weight ?? null;
+  const b = bOnBefore?.bf ?? null;
+  const lbm = (w && b) ? Math.round(w * (1 - b / 100) * 100) / 100 : null;
+  const fatMass = (w && b) ? Math.round(w * (b / 100) * 100) / 100 : null;
+  return { weight: w, bf: b, lbm, fatMass };
+}
+
 function buildContext(state: any): string {
   const today = ukToday();
   const cutoff14 = daysAgoUK(14);
@@ -47,6 +82,10 @@ function buildContext(state: any): string {
   const personal = profile.personal || {};
   const meds = Array.isArray(profile.medications) ? profile.medications : [];
   const recovery = state.recovery || {};
+  const stepsLog = state.stepsLog || {};
+  const calorieLog = state.calorieLog || {};
+  const mealPlan = state.mealPlan;
+  const bc = state.bodyComp || {};
 
   const wl = (state.weightLog || []).filter((e: any) => e.date >= cutoff14);
   const bl = (state.bfLog || []).filter((e: any) => e.date >= cutoff14);
@@ -88,7 +127,15 @@ function buildContext(state: any): string {
 
   const sleepDays = Object.keys(state.sleepLog || {}).filter((d) => d >= cutoff7).sort().map((d) => {
     const s = state.sleepLog[d] || {};
-    return { date: d, hours: s.totalHours ?? s.hours ?? null, score: s.score ?? null };
+    return {
+      date: d,
+      hours: s.totalHours ?? s.hours ?? null,
+      score: s.score ?? null,
+      remMin: s.remMin ?? null,
+      deepMin: s.deepMin ?? null,
+      lightMin: s.lightMin ?? null,
+      awakeMin: s.awakeMin ?? null,
+    };
   });
 
   const supps = state.supps || [];
@@ -136,6 +183,29 @@ function buildContext(state: any): string {
   else for (const e of bl) lines.push(`  ${e.date}: ${e.bf}%${e.source ? ` (${e.source})` : ""}`);
   lines.push("");
 
+  // Phase 29: body composition trends — most important section for LBM preservation
+  const cur = latestBodyComp(state);
+  const past7 = bodyCompAtDate(state, daysAgoUK(7));
+  const past14 = bodyCompAtDate(state, daysAgoUK(14));
+  lines.push("BODY COMPOSITION (current + deltas — CRITICAL for fat-loss-with-LBM-preservation goal):");
+  lines.push(`  Current: ${cur.weight ?? "?"}kg total · ${cur.bf ?? "?"}% BF · ${cur.lbm ?? "?"}kg LBM · ${cur.fatMass ?? "?"}kg fat mass`);
+  if (cur.muscleMass != null) lines.push(`  Muscle mass (Withings): ${cur.muscleMass}kg`);
+  if (cur.visceral != null)   lines.push(`  Visceral fat: ${cur.visceral} (lower is better; user has South Asian threshold context if set)`);
+  if (cur.hydration != null)  lines.push(`  Hydration: ${cur.hydration}kg (rough indicator only)`);
+  if (past7.weight != null && cur.weight != null) {
+    const dw = (cur.weight - past7.weight).toFixed(2);
+    const dlbm = (past7.lbm != null && cur.lbm != null) ? (cur.lbm - past7.lbm).toFixed(2) : "?";
+    const dfat = (past7.fatMass != null && cur.fatMass != null) ? (cur.fatMass - past7.fatMass).toFixed(2) : "?";
+    lines.push(`  7-day delta: weight ${dw}kg · LBM ${dlbm}kg · fat mass ${dfat}kg`);
+  }
+  if (past14.weight != null && cur.weight != null) {
+    const dw = (cur.weight - past14.weight).toFixed(2);
+    const dlbm = (past14.lbm != null && cur.lbm != null) ? (cur.lbm - past14.lbm).toFixed(2) : "?";
+    const dfat = (past14.fatMass != null && cur.fatMass != null) ? (cur.fatMass - past14.fatMass).toFixed(2) : "?";
+    lines.push(`  14-day delta: weight ${dw}kg · LBM ${dlbm}kg · fat mass ${dfat}kg`);
+  }
+  lines.push("");
+
   lines.push("FOOD INTAKE (last 7d, daily totals):");
   if (foodDays.length === 0) lines.push("  (no entries)");
   else for (const d of foodDays) lines.push(`  ${d.date}: ${d.kcal}kcal P${d.p} C${d.c} F${d.f}`);
@@ -146,9 +216,14 @@ function buildContext(state: any): string {
   else for (const d of exerciseDays) lines.push(`  ${d.date}: ${d.summary}`);
   lines.push("");
 
-  lines.push("SLEEP (last 7d):");
+  lines.push("SLEEP (last 7d, stages in minutes — REM/deep matter more than total hours):");
   if (sleepDays.length === 0) lines.push("  (no entries)");
-  else for (const s of sleepDays) lines.push(`  ${s.date}: ${s.hours != null ? `${s.hours}h` : "?"}${s.score != null ? ` score=${s.score}` : ""}`);
+  else for (const s of sleepDays) {
+    const stages = (s.remMin != null || s.deepMin != null)
+      ? ` · REM ${s.remMin ?? "?"}m · deep ${s.deepMin ?? "?"}m · light ${s.lightMin ?? "?"}m · awake ${s.awakeMin ?? "?"}m`
+      : " (stages not captured)";
+    lines.push(`  ${s.date}: ${s.hours != null ? `${s.hours}h` : "?"}${s.score != null ? ` score=${s.score}` : ""}${stages}`);
+  }
   lines.push("");
 
   lines.push("RECOVERY (Oura last 7d, scores 0-100; rising HRV + falling RHR = recovering well):");
@@ -169,35 +244,149 @@ function buildContext(state: any): string {
 
   lines.push("SUPPLEMENT ADHERENCE (last 7d, taken/total):");
   for (const a of suppAdherence) lines.push(`  ${a.date}: ${a.taken}/${a.of}`);
+  lines.push("");
+
+  // Phase 29: Oura activity (steps + active calories) — primary TDEE signal
+  lines.push("DAILY ACTIVITY (last 7d, Oura — active calories is the most accurate TDEE input):");
+  let activeCalSum = 0, activeCalDays = 0;
+  for (let i = 6; i >= 0; i--) {
+    const d = daysAgoUK(i);
+    const steps = stepsLog[d];
+    const cals = calorieLog[d];
+    const parts: string[] = [];
+    if (steps != null) parts.push(`${steps} steps`);
+    if (cals?.active != null) { parts.push(`${cals.active} active kcal`); activeCalSum += cals.active; activeCalDays++; }
+    if (cals?.total != null) parts.push(`${cals.total} total kcal`);
+    if (parts.length === 0) continue;
+    lines.push(`  ${d}: ${parts.join(" · ")}`);
+  }
+  if (activeCalDays > 0) lines.push(`  → 7-day avg active calories: ${Math.round(activeCalSum / activeCalDays)} kcal/day (use this for TDEE — more accurate than Mifflin estimate)`);
+  lines.push("");
+
+  // Phase 29: meal-plan adherence
+  if (mealPlan?.meals?.length) {
+    lines.push("MEAL PLAN ADHERENCE (last 7d — % of planned meals + ingredients actually logged):");
+    const plannedMeals = mealPlan.meals;
+    for (let i = 6; i >= 0; i--) {
+      const d = daysAgoUK(i);
+      const dayFoods: any[] = (state.foods || {})[d] || [];
+      let mealsLogged = 0, ingsLogged = 0, ingsPlanned = 0;
+      for (const m of plannedMeals) {
+        const ings = Array.isArray(m.ingredients) ? m.ingredients : [];
+        ingsPlanned += ings.length;
+        const granular = dayFoods.filter(f => f.mealId === m.id);
+        const legacy = dayFoods.find(f => f.name === m.name && !f.mealId);
+        if (granular.length > 0 || legacy) mealsLogged++;
+        if (granular.length > 0) {
+          const ln = new Set(granular.map(f => f.name));
+          ingsLogged += ings.filter((ing: any) => ln.has(ing.name)).length;
+        } else if (legacy) {
+          ingsLogged += ings.length;
+        }
+      }
+      const mealPct = plannedMeals.length ? Math.round((mealsLogged / plannedMeals.length) * 100) : 0;
+      const ingPct  = ingsPlanned ? Math.round((ingsLogged / ingsPlanned) * 100) : 0;
+      lines.push(`  ${d}: ${mealsLogged}/${plannedMeals.length} meals (${mealPct}%) · ${ingsLogged}/${ingsPlanned} ingredients (${ingPct}%)`);
+    }
+    lines.push("");
+  }
+
+  // Phase 29: training effort distribution
+  lines.push("TRAINING EFFORT (last 7d, % of logged sets tagged easy/solid/tough):");
+  let easyCount = 0, solidCount = 0, toughCount = 0, totalTagged = 0;
+  for (const date of Object.keys(state.exLog || {}).sort()) {
+    if (date < cutoff7) continue;
+    const exs = state.exLog[date] || {};
+    for (const ex of Object.values(exs) as any[]) {
+      const sets = Array.isArray(ex?.sets) ? ex.sets : [];
+      for (const s of sets) {
+        if (s?.effort === "easy")  { easyCount++; totalTagged++; }
+        else if (s?.effort === "solid") { solidCount++; totalTagged++; }
+        else if (s?.effort === "tough") { toughCount++; totalTagged++; }
+      }
+    }
+  }
+  if (totalTagged === 0) lines.push("  (no effort tags in last 7d — user is not rating sets)");
+  else {
+    const p = (n: number) => Math.round((n / totalTagged) * 100);
+    lines.push(`  ${totalTagged} tagged sets: easy ${p(easyCount)}% · solid ${p(solidCount)}% · tough ${p(toughCount)}%`);
+    lines.push(`  → ${easyCount > toughCount * 2 ? "Skewed easy — could push harder" : toughCount > easyCount * 2 ? "Skewed tough — possible under-recovery or weight too high" : "Balanced effort distribution"}`);
+  }
+  lines.push("");
+
+  // Phase 29: previous coaching reports (memory)
+  const prevReports = (state.coachingReports || []).slice(0, 4);
+  if (prevReports.length > 0) {
+    lines.push("PREVIOUS REPORTS (your last 4 — reference them to build on advice, don't repeat yourself):");
+    for (const r of prevReports) {
+      const dt = (r.createdAt || "").slice(0, 10);
+      lines.push(`  [${dt}] "${r.title}"`);
+      // Trim content to a digestible summary
+      const contentPreview = String(r.content || "").replace(/\s+/g, " ").slice(0, 400);
+      lines.push(`    Content: ${contentPreview}${contentPreview.length >= 400 ? "..." : ""}`);
+      if (Array.isArray(r.suggestions) && r.suggestions.length > 0) {
+        const applied = r.suggestions.filter((s: any) => s.applied);
+        const dismissed = r.suggestions.filter((s: any) => s.dismissed);
+        const pending = r.suggestions.filter((s: any) => !s.applied && !s.dismissed);
+        lines.push(`    Suggestions: ${applied.length} applied, ${dismissed.length} dismissed, ${pending.length} pending`);
+        for (const s of applied)   lines.push(`      ✓ APPLIED  · ${s.type} · ${s.label}`);
+        for (const s of dismissed) lines.push(`      ✕ DISMISSED · ${s.type} · ${s.label}`);
+      }
+    }
+    lines.push("");
+  }
 
   return lines.join("\n");
 }
 
 const SYSTEM_PROMPT = `You are Forge's weekly coach. You write concise, specific, actionable weekly reviews for a user on a structured fat-loss / recomp plan.
 
-Forge is a personal fitness tracker. The user logs weight, body fat, food (per ingredient with portions), training (per set), sleep, and supplements. Oura provides recovery (readiness, HRV, RHR). You see the last 7-14 days of their data plus demographics, medications, and a Mifflin-St Jeor TDEE estimate.
+THE USER'S GOAL (read every report through this lens):
+- This is a FAT LOSS WITH LBM PRESERVATION cut, not generic weight loss.
+- Target LBM ≈ current LBM. Weight loss should come almost entirely from fat mass.
+- The single most important metric every week is the LBM delta. If LBM drops > 0.3kg/week for 2+ weeks running, flag it URGENTLY. Likely cause: deficit too aggressive, protein too low, or training stimulus too low.
+- Never credit "weight loss" without checking LBM. "Down 1.1kg this week" is meaningless until you know fat-mass-delta vs LBM-delta. Report both.
 
-HOW TO REASON ABOUT THE DATA:
-- Compare actual intake to the TDEE estimate (not just the stated calorie target). If TDEE is unavailable due to incomplete demographics, flag it once and prompt the user to fill in age/height/sex/activity.
-- Factor in MEDICATIONS when interpreting trends. Critical:
-  - GLP-1 agonists (Mounjaro/tirzepatide, Ozempic/Wegovy/semaglutide) suppress appetite and produce non-linear weight loss curves with plateaus. Don't credit "great adherence" for week-1 rapid loss or panic about week-3 plateau — that's the drug. Dose escalations cause re-acceleration.
-  - Statins can cause muscle soreness/weakness — factor into training feedback.
-  - Metformin can cause GI side effects and slight weight neutrality. Affects carb tolerance.
-  - Insulin / glucose-affecting meds change carb timing recommendations.
-- Use Oura recovery (HRV, readiness, RHR) to detect overtraining or stress weeks before the user feels it. Falling HRV + rising RHR over 3+ days = recover/deload signal.
-- Ethnicity context (if provided): South Asian users have lower healthy visceral fat thresholds (>7 = elevated risk vs >10 for European baseline).
-- The training split (Upper/Rest/Lower/Rest) is fixed. Don't suggest splitting changes unless data shows clear under-recovery.
+DATA YOU NOW HAVE (Phase 29):
+1. BODY COMPOSITION (current + 7d/14d deltas) — your primary lens
+2. DEMOGRAPHICS (age, height, sex, ethnicity, activity level)
+3. MEDICATIONS (with user notes) — factor into every interpretation
+4. WEIGHT, BODY FAT logs (Withings sync)
+5. FOOD INTAKE daily totals + MEAL PLAN ADHERENCE (% planned meals + ingredients logged per day)
+6. TRAINING log + EFFORT DISTRIBUTION (% sets tagged easy/solid/tough across last 7d)
+7. SLEEP with stages (REM/deep/light/awake minutes) — REM + deep matter more than total hours
+8. OURA RECOVERY (readiness, HRV, RHR)
+9. DAILY ACTIVITY (steps + Oura active calories — active cals is the most accurate TDEE input you have)
+10. SUPPLEMENT ADHERENCE
+11. PREVIOUS COACHING REPORTS (last 4 with their suggestions + apply/dismiss status) — your memory
+
+INTERPRETATION RULES:
+- Use Oura active calories as primary TDEE input. Mifflin-St Jeor is a fallback. If both available, average them and explain the range.
+- Sleep: deep < 45 min or REM < 60 min = poor quality even if hours are fine. Reference stages, not just totals.
+- Effort tags: >50% easy + no tough = sandbagging (push harder). >40% tough = under-recovery or weights too high.
+- Meal plan adherence: <70% on multiple days = the plan doesn't fit life, not a discipline problem. Suggest a swap, not a guilt trip.
+- MEMORY: reference what you said in previous reports. If you suggested a change 2-4 weeks ago and the user applied it, explicitly evaluate whether it worked. If they dismissed it, don't suggest it again unless data has changed materially. DO NOT repeat advice from prior reports without acknowledging the prior recommendation.
+- MEDICATIONS (factor every week):
+  - GLP-1 agonists (Mounjaro / Ozempic / Wegovy / semaglutide / tirzepatide): non-linear weight curves, plateau-then-re-accelerate on dose escalations. Injection-day weight differs systematically from mid-cycle. Don't credit week 1 or panic week 3.
+  - Statins: muscle soreness common — factor into training feedback before suggesting volume bumps.
+  - Metformin: GI tolerance, slight insulin sensitivity boost, mild appetite effect.
+  - Other meds: read user notes carefully and apply common sense.
+- Ethnicity: South Asian visceral fat threshold ≥ 7 = elevated risk (vs ≥ 10 for European baseline). Calibrate visceral commentary accordingly.
+- Training split (Upper/Rest/Lower/Rest 4-day) is FIXED. Don't suggest split changes. Inside the split, you can suggest volume / intensity tweaks.
 
 OUTPUT FORMAT:
-1. A markdown REPORT under 400 words. Sections: ## This week, ## What's working, ## What to fix, ## Next week focus. Reference actual numbers and call out medication / recovery context when relevant.
-2. Optional SUGGESTIONS — concrete one-tap changes. Only when clearly supported by data. If on track, output empty array.
+1. Markdown REPORT under 450 words. Sections: ## This week, ## What's working, ## What to fix, ## Next week focus.
+   - "This week" must include: weight delta, FAT MASS delta, LBM delta, plus standout numbers from sleep / training / adherence.
+   - Always reference previous reports when relevant ("3 weeks ago I suggested X, you applied it, results: ...").
+   - End with a realistic timeline ("at current rate you hit 90kg ≈ <month year>"). Compute this honestly from the 14-day weight trend.
+2. Optional SUGGESTIONS — concrete one-tap changes. Only when clearly supported by data. If on track, output empty array. Never repeat a dismissed suggestion without new justification.
 
 Suggestion types:
-- "macros": adjust daily calorie/macro targets. Payload keys (any subset): calsGym, calsRest, protein, carbs, fat. Only suggest if weekly average rate is off target by >0.2kg/wk AND it isn't explained by medication timing.
+- "macros": adjust daily calorie/macro targets. Payload keys (any subset): calsGym, calsRest, protein, carbs, fat. Only suggest if 7-day average is off target rate by >0.2kg/wk AND it isn't explained by medication timing.
 - "reminders": add/change a reminder. Payload: { action: "add" | "remove", reminder: { time: "HH:MM", text: string, days?: number[] } }.
 - "note": directional nudge that doesn't change app state. Payload: {}.
 
-Be direct. Cite the data. The user wants a coach, not a chatbot.`;
+Be direct. Cite the actual numbers. The user wants a coach, not a chatbot.`;
 
 interface Suggestion {
   id: string;
