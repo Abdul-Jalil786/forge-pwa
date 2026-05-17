@@ -8,14 +8,14 @@ const WORKOUTS = {
     muscles:'Chest · Back · Shoulders · Biceps · Triceps · Core',
     duration:'55–60',
     exercises:[
-      {id:'u1',name:'Chest Press',sets:4,reps:'6–8',rest:90,muscle:'Chest',yt:'https://www.youtube.com/results?search_query=chest+press+form'},
-      {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Upper Chest',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
-      {id:'u3',name:'Seated Row',sets:4,reps:'6–8',rest:90,muscle:'Back',yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
-      {id:'u4',name:'Shoulder Press',sets:3,reps:'6–8',rest:90,muscle:'Shoulders',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
-      {id:'u5',name:'Lat Pulldown',sets:3,reps:'8–10',rest:90,muscle:'Lats',yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
-      {id:'u6',name:'Bicep Curl',sets:3,reps:'10–12',rest:60,muscle:'Biceps',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
-      {id:'u7',name:'Tricep Pushdown',sets:3,reps:'10–12',rest:60,muscle:'Triceps',yt:'https://www.youtube.com/results?search_query=tricep+pushdown+form'},
-      {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
+      {id:'u1',name:'Chest Press',sets:4,reps:'6–8',rest:90,muscle:'Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=chest+press+form'},
+      {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Upper Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
+      {id:'u3',name:'Seated Row',sets:4,reps:'6–8',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
+      {id:'u4',name:'Shoulder Press',sets:3,reps:'6–8',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'u5',name:'Lat Pulldown',sets:3,reps:'8–10',rest:90,muscle:'Lats',size:'medium',yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
+      {id:'u6',name:'Bicep Curl',sets:3,reps:'10–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
+      {id:'u7',name:'Tricep Pushdown',sets:3,reps:'10–12',rest:60,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+pushdown+form'},
+      {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
       {id:'u9',name:'Plank',sets:3,reps:'30–45s',rest:45,muscle:'Core',metric:'time',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
     ]
   },
@@ -24,14 +24,14 @@ const WORKOUTS = {
     muscles:'Quads · Hamstrings · Glutes · Calves · Lower Back · Core',
     duration:'60–65',
     exercises:[
-      {id:'l1',name:'Leg Press',sets:4,reps:'6–8',rest:120,muscle:'Quads',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
-      {id:'l2',name:'Romanian Deadlift',sets:4,reps:'6–8',rest:120,muscle:'Hamstrings',yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
-      {id:'l3',name:'Leg Extension',sets:3,reps:'10–12',rest:60,muscle:'Quads',yt:'https://www.youtube.com/results?search_query=leg+extension+machine+form'},
-      {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
-      {id:'l5',name:'Hip Thrust',sets:3,reps:'8–10',rest:90,muscle:'Glutes',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
-      {id:'l6',name:'Calf Raise',sets:4,reps:'15–20',rest:45,muscle:'Calves',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
-      {id:'l7',name:'Back Extension',sets:3,reps:'12–15',rest:60,muscle:'Lower Back',yt:'https://www.youtube.com/results?search_query=back+extension+form'},
-      {id:'l8',name:'Ab Crunch',sets:3,reps:'15',rest:45,muscle:'Core',yt:'https://www.youtube.com/results?search_query=ab+crunch+form+technique'},
+      {id:'l1',name:'Leg Press',sets:4,reps:'6–8',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
+      {id:'l2',name:'Romanian Deadlift',sets:4,reps:'6–8',rest:120,muscle:'Hamstrings',size:'large',yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
+      {id:'l3',name:'Leg Extension',sets:3,reps:'10–12',rest:60,muscle:'Quads',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+extension+machine+form'},
+      {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
+      {id:'l5',name:'Hip Thrust',sets:3,reps:'8–10',rest:90,muscle:'Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
+      {id:'l6',name:'Calf Raise',sets:4,reps:'15–20',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
+      {id:'l7',name:'Back Extension',sets:3,reps:'12–15',rest:60,muscle:'Lower Back',size:'small',yt:'https://www.youtube.com/results?search_query=back+extension+form'},
+      {id:'l8',name:'Ab Crunch',sets:3,reps:'15',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=ab+crunch+form+technique'},
     ]
   }
 };
@@ -353,6 +353,24 @@ function getPreviousSessionData(beforeDate,sessionType){
     if(hasData)return{date,log:dayLog};
   }
   return null;
+}
+
+// Phase 28: get the last N sessions of a given type (most recent first), each with log + date
+function getPreviousSessions(beforeDate, sessionType, limit){
+  if(!sessionType)return [];
+  const exLog=getExLog();
+  const dates=Object.keys(exLog).filter(d=>d<beforeDate).sort().reverse();
+  const out=[];
+  for(const date of dates){
+    if(getSessionTypeForDate(date)!==sessionType)continue;
+    const dayLog=exLog[date];
+    if(!dayLog)continue;
+    const hasData=Object.values(dayLog).some(e=>e.sets?.some(s=>s.kg||s.reps||s.seconds));
+    if(!hasData)continue;
+    out.push({date,log:dayLog});
+    if(out.length>=limit)break;
+  }
+  return out;
 }
 
 // Was a session completed on a date? (4+ exercises marked done)

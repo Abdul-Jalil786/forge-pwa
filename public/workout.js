@@ -307,13 +307,94 @@ function exitGuidedWorkout(){
   renderToday();
 }
 
-function suggestWeight(exId, prevSession, setIdx){
+// Phase 28: per-lift increment scales
+const INCREMENT_SCALES = {
+  large:  { easy: 5,    solid: 2.5,  fail: 5    },
+  medium: { easy: 5,    solid: 2.5,  fail: 2.5  },
+  small:  { easy: 2.5,  solid: 1.25, fail: 1.25 },
+};
+function _incForLift(exObj){
+  return INCREMENT_SCALES[exObj.size || 'medium'];
+}
+function _roundToPlate(kg){
+  // Round to nearest 0.25 (covers microplates + standard plates)
+  return Math.round(kg * 4) / 4;
+}
+
+// Phase 28: recovery gate — checks today's Oura readiness + HRV trend
+// Returns { lowRecovery: bool, reason: string }
+function checkRecoveryGate(){
+  const today = (typeof todayStr === 'function') ? todayStr() : new Date().toISOString().slice(0,10);
+  const recovery = (typeof STATE !== 'undefined' && STATE.recovery) || {};
+  const todayRec = recovery[today];
+  if(!todayRec) return { lowRecovery: false, reason: '' };
+
+  const readiness = todayRec.readiness;
+  // Check HRV trend over last 4 days (including today). Need 3+ falling days to flag.
+  const hrvSeries = [];
+  for(let i = 0; i < 4; i++){
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0,10);
+    const r = recovery[key];
+    if(r && typeof r.hrv === 'number') hrvSeries.push({ date: key, hrv: r.hrv });
+  }
+  hrvSeries.reverse(); // oldest first
+  let fallingStreak = 0;
+  for(let i = 1; i < hrvSeries.length; i++){
+    if(hrvSeries[i].hrv < hrvSeries[i-1].hrv) fallingStreak++;
+    else fallingStreak = 0;
+  }
+  const hrvDown3d = fallingStreak >= 3;
+
+  if(typeof readiness === 'number' && readiness < 60){
+    return { lowRecovery: true, reason: `readiness ${readiness}` + (hrvDown3d ? `, HRV ↓3d` : '') };
+  }
+  if(hrvDown3d){
+    return { lowRecovery: true, reason: `HRV down 3 days running` };
+  }
+  return { lowRecovery: false, reason: '' };
+}
+
+// Phase 28: stall detection — has weight been held same for 3+ sessions without hitting upper rep?
+function detectStall(exId, exObj, prevSessions){
+  if(!prevSessions || prevSessions.length < 3) return null;
+  const rm = String(exObj.reps).match(/(\d+)[–-](\d+)/);
+  const upperRep = rm ? parseInt(rm[2]) : null;
+  if(!upperRep) return null;
+
+  // Get latest weight at this exercise
+  const recentSets = prevSessions[0]?.log[exId]?.sets?.filter(s => s.kg && s.reps) || [];
+  if(recentSets.length === 0) return null;
+  const baselineKg = parseFloat(recentSets[0].kg);
+
+  // Check if same weight + no top-of-range hit across 3+ sessions
+  let stalledSessions = 0;
+  for(const sess of prevSessions){
+    const sets = (sess.log[exId]?.sets || []).filter(s => s.kg && s.reps);
+    if(sets.length === 0) break;
+    const sessKg = parseFloat(sets[0].kg);
+    if(Math.abs(sessKg - baselineKg) > 0.1) break; // weight changed → not stalled
+    const hitUpper = sets.some(s => parseInt(s.reps) >= upperRep);
+    if(hitUpper) break; // hit top of range → progressing
+    stalledSessions++;
+  }
+  if(stalledSessions < 3) return null;
+  const deloadKg = _roundToPlate(baselineKg * 0.88);
+  return {
+    baselineKg,
+    deloadKg,
+    sessions: stalledSessions,
+    reason: `Deload — stalled ${stalledSessions} sessions at ${baselineKg}kg. Try ${deloadKg}kg today, then return to ${baselineKg}kg+ next time.`,
+  };
+}
+
+function suggestWeight(exId, prevSession, setIdx, opts){
   const exObj=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises].find(e=>e.id===exId);
   if(!exObj)return null;
   const timed=isTimeBased(exObj);
 
   if(timed){
-    return suggestTime(exId,exObj,prevSession,setIdx);
+    return suggestTime(exId,exObj,prevSession,setIdx,opts);
   }
 
   if(!prevSession||!prevSession.log[exId])return null;
@@ -328,6 +409,20 @@ function suggestWeight(exId, prevSession, setIdx){
   const efforts=sets.map(s=>s.effort).filter(e=>e);
   const hasEffort=efforts.length>0;
   const prevSummary = sets.map(s=>`${s.kg}×${s.reps}`).join(', ');
+  const inc = _incForLift(exObj);
+
+  // Check 1: recovery gate (skip when caller hasn't passed it — only the outline page checks)
+  if(opts?.lowRecovery){
+    return { kg:lastKg, reps:lastReps, reason:`Hold — low recovery (${opts.recoveryReason}). Focus on form.`, dir:null, recovery:'low' };
+  }
+
+  // Check 2: stall detection (needs multi-session data)
+  if(opts?.prevSessions){
+    const stall = detectStall(exId, exObj, opts.prevSessions);
+    if(stall){
+      return { kg:stall.deloadKg, reps:upperRep||lastReps, reason:stall.reason, dir:'down', deload:true };
+    }
+  }
 
   if(!upperRep){
     return { kg:lastKg, reps:lastReps, reason:`Last: ${prevSummary}`, dir:null };
@@ -336,22 +431,23 @@ function suggestWeight(exId, prevSession, setIdx){
   const allHitUpper=sets.every(s=>parseInt(s.reps)>=upperRep);
   const firstFailed=parseInt(sets[0].reps)<(lowerRep||0);
 
+  // Check 3: smart progression with per-lift increments
   if(hasEffort){
     const allEasy=efforts.every(e=>e==='easy');
     const mostlySolid=efforts.filter(e=>e==='solid').length>=efforts.length/2;
     const anyTough=efforts.some(e=>e==='tough');
-    if(allEasy&&allHitUpper) return { kg:lastKg+5, reps:lowerRep, reason:`+5kg ↑ (last: ${prevSummary}, felt easy)`, dir:'up' };
-    if(mostlySolid&&allHitUpper) return { kg:lastKg+2.5, reps:lowerRep, reason:`+2.5kg ↑ (last: ${prevSummary}, solid)`, dir:'up' };
-    if(anyTough&&!allHitUpper) return { kg:lastKg, reps:lastReps, reason:`Hold weight (last: ${prevSummary}, was tough)`, dir:null };
+    if(allEasy&&allHitUpper)    return { kg:_roundToPlate(lastKg+inc.easy),  reps:lowerRep, reason:`+${inc.easy}kg ↑ (last: ${prevSummary}, felt easy)`, dir:'up' };
+    if(mostlySolid&&allHitUpper) return { kg:_roundToPlate(lastKg+inc.solid), reps:lowerRep, reason:`+${inc.solid}kg ↑ (last: ${prevSummary}, solid)`, dir:'up' };
+    if(anyTough&&!allHitUpper)   return { kg:lastKg, reps:lastReps, reason:`Hold weight (last: ${prevSummary}, was tough)`, dir:null };
   }
 
-  if(allHitUpper) return { kg:lastKg+2.5, reps:lowerRep, reason:`+2.5kg ↑ (last: ${prevSummary})`, dir:'up' };
-  if(firstFailed) return { kg:Math.max(0,lastKg-2.5), reps:upperRep, reason:`-2.5kg ↓ (last: ${prevSummary}, struggled)`, dir:'down' };
+  if(allHitUpper)  return { kg:_roundToPlate(lastKg+inc.solid), reps:lowerRep, reason:`+${inc.solid}kg ↑ (last: ${prevSummary})`, dir:'up' };
+  if(firstFailed)  return { kg:Math.max(0,_roundToPlate(lastKg-inc.fail)), reps:upperRep, reason:`-${inc.fail}kg ↓ (last: ${prevSummary}, struggled)`, dir:'down' };
   const targetReps = Math.min(upperRep, lastReps+1);
   return { kg:lastKg, reps:targetReps, reason:`Same weight, target ${targetReps} reps (last: ${prevSummary})`, dir:null };
 }
 
-function suggestTime(exId,exObj,prevSession,setIdx){
+function suggestTime(exId,exObj,prevSession,setIdx,opts){
   // Parse prescribed range from reps string like "30–45s"
   const rm=String(exObj.reps).match(/(\d+)[–-](\d+)/);
   const lower=rm?parseInt(rm[1]):30;
@@ -366,6 +462,11 @@ function suggestTime(exId,exObj,prevSession,setIdx){
   const effort=prevSession.log[exId].effort||sets[sets.length-1]?.effort;
   const allHitPrescribed=sets.every(s=>parseInt(s.seconds)>=upper);
 
+  // Phase 28: recovery gate
+  if(opts?.lowRecovery){
+    return{seconds:lastSec,reason:`Hold ${fmtSec(lastSec)} — low recovery (${opts.recoveryReason}). Focus on form.`,dir:null,timed:true,recovery:'low'};
+  }
+
   if(allHitPrescribed&&(effort==='easy'||effort==='maybe')){
     return{seconds:lastSec+5,reason:`Try ${fmtSec(lastSec+5)} — beat last week's ${fmtSec(lastSec)}`,dir:'up',timed:true};
   }
@@ -375,7 +476,6 @@ function suggestTime(exId,exObj,prevSession,setIdx){
   if(!allHitPrescribed){
     return{seconds:lastSec,reason:`Hold ${fmtSec(lastSec)} — match last week (last: ${prevSummary})`,dir:null,timed:true};
   }
-  // Default: progress
   return{seconds:lastSec+5,reason:`Try ${fmtSec(lastSec+5)} — beat last week's ${fmtSec(lastSec)}`,dir:'up',timed:true};
 }
 
@@ -383,18 +483,26 @@ function renderWmOutline(){
   const w=WORKOUTS[wm.session];
   const date=todayStr();
   const prev=getPreviousSessionData(date,wm.session);
+  const prevSessions=getPreviousSessions(date,wm.session,5);
+  const gate=checkRecoveryGate();
+  const opts={ lowRecovery: gate.lowRecovery, recoveryReason: gate.reason, prevSessions };
+  const banner = gate.lowRecovery
+    ? `<div style="background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:#ffc107;line-height:1.5;">⚠️ <strong>Lower recovery today</strong> (${gate.reason}). Today is about form and finishing every set — not PRs. Suggestions are set to hold weights.</div>`
+    : '';
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div class="wm-title">${w.name}</div>
     <div class="wm-sub">${w.muscles} · ${w.exercises.length} exercises · ~${w.duration} mins</div>
+    ${banner}
     <div class="wm-h">Today's Plan</div>
     <div style="margin-bottom:24px;">
       ${w.exercises.map((ex,i)=>{
-        const sug=suggestWeight(ex.id,prev);
+        const sug=suggestWeight(ex.id,prev,undefined,opts);
         const timed=isTimeBased(ex);
         const arrow=sug?.dir==='up'?'<span class="wm-arrow-up">↑</span>':sug?.dir==='down'?'<span class="wm-arrow-down">↓</span>':'';
         const wt=sug?(timed?`@ ${fmtSec(sug.seconds)} ${arrow}`:`@ ${sug.kg}kg ${arrow}`):'';
-        return `<div class="wm-ex-row"><div><div style="font-size:10px;color:var(--text3);font-weight:700;">${i+1}.</div><div class="wm-ex-name">${ex.name}</div></div><div class="wm-ex-spec">${ex.sets}×${ex.reps}<br>${wt}</div></div>`;
+        const badge=sug?.deload?'<span style="font-size:9px;color:var(--orange);font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">DELOAD</span>':sug?.recovery==='low'?'<span style="font-size:9px;color:#ffc107;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">HOLD</span>':'';
+        return `<div class="wm-ex-row"><div><div style="font-size:10px;color:var(--text3);font-weight:700;">${i+1}.</div><div class="wm-ex-name">${ex.name}</div></div><div class="wm-ex-spec">${ex.sets}×${ex.reps}<br>${wt}${badge}</div></div>`;
       }).join('')}
     </div>
     <button class="wm-cta" onclick="wmStartFirstSet()">START WORKOUT →</button>
@@ -415,7 +523,9 @@ function renderWmSet(){
   const date=todayStr();
   const dayLog=getExLogForDate(date);
   const prev=getPreviousSessionData(date,wm.session);
-  const sug=suggestWeight(ex.id,prev,wm.setIdx);
+  const prevSessions=getPreviousSessions(date,wm.session,5);
+  const gate=checkRecoveryGate();
+  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const startKg=existingSet?.kg||sug?.kg||'';
   const repMatch=String(ex.reps).match(/(\d+)[–-](\d+)/);
@@ -453,7 +563,9 @@ function renderWmSetTimed(){
   const date=todayStr();
   const dayLog=getExLogForDate(date);
   const prev=getPreviousSessionData(date,wm.session);
-  const sug=suggestWeight(ex.id,prev,wm.setIdx);
+  const prevSessions=getPreviousSessions(date,wm.session,5);
+  const gate=checkRecoveryGate();
+  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const alreadyDone=existingSet?.done&&existingSet?.seconds;
 
