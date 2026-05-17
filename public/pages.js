@@ -485,7 +485,8 @@ function renderTodaysPlan(){
         </div>`;
       }).join('')}
     </div>
-    <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:14px;font-size:12px;" onclick="recomputeMacrosNow()">↻ Compute exact macros (keep items)</button>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px;font-size:12px;" onclick="recomputeMacrosNow()">↻ Compute exact macros (keep items)</button>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:14px;font-size:11px;color:var(--text3);border-style:dashed;" onclick="regeneratePlanNow()">⚠️ Regenerate plan with AI (replaces items — set Food Preferences first)</button>
   `;
 }
 
