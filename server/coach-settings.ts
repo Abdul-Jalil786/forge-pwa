@@ -88,8 +88,9 @@ router.post("/generate-now", requireAuth, async (req: Request, res: Response) =>
     const st: any = user?.state || {};
     if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
     const hrs = hoursSinceLastReport(st);
-    if (hrs < 1) {
-      res.status(429).json({ error: `Please wait — last report was ${Math.round(hrs * 60)} min ago. New report allowed in ${Math.ceil((1 - hrs) * 60)} min.` });
+    const minSinceLast = hrs * 60;
+    if (minSinceLast < 1) {
+      res.status(429).json({ error: `Slow down — last report was ${Math.round(minSinceLast * 60)}s ago. Try again in ${Math.ceil(60 - minSinceLast * 60)}s.` });
       return;
     }
     const report = await generateWeeklyReport(req.userId as string);
