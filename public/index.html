@@ -528,6 +528,38 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
   </div>
 </div>
 
+<div class="modal-bg" id="modal-ing-edit">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="ie-title">Edit Ingredient</div>
+      <button class="modal-close" onclick="closeModal('modal-ing-edit')">✕</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Name</div>
+    <input id="ie-name" type="text" maxlength="200" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:14px;" placeholder="e.g. 200g chicken breast grilled" />
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">
+      <div>
+        <div style="font-size:10px;color:var(--lime);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">KCAL</div>
+        <input id="ie-cals" type="number" min="0" max="3000" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:'Archivo Black',sans-serif;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">PROT g</div>
+        <input id="ie-protein" type="number" min="0" max="500" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:'Archivo Black',sans-serif;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--blue);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">CARB g</div>
+        <input id="ie-carbs" type="number" min="0" max="500" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:'Archivo Black',sans-serif;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--purple);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">FAT g</div>
+        <input id="ie-fat" type="number" min="0" max="500" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:'Archivo Black',sans-serif;text-align:center;" />
+      </div>
+    </div>
+    <div id="ie-edited-note" style="display:none;font-size:11px;color:var(--orange);margin-bottom:14px;">✏️ Edited — these macros will be locked from auto-refresh</div>
+    <button class="btn btn-lime btn-full" style="margin-bottom:8px;" onclick="saveIngredientEdit()">Save Ingredient</button>
+    <button id="ie-delete-btn" class="btn btn-ghost btn-full" style="color:var(--red);border-color:var(--red);display:none;" onclick="deleteIngredient()">Delete from Meal</button>
+  </div>
+</div>
+
 <div id="workoutMode">
   <div id="wmContent"></div>
 </div>

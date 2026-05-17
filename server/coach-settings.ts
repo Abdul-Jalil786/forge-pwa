@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { requireAuth } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
-import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen } from "./ai-coach";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros } from "./ai-coach";
 
 const router = Router();
 
@@ -99,6 +99,25 @@ router.post("/generate-now", requireAuth, async (req: Request, res: Response) =>
   } catch (err: any) {
     console.error("Coach generate-now error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to generate report" });
+  }
+});
+
+router.post("/recompute-macros", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
+    if (!st.mealPlan?.meals?.length) { res.status(400).json({ error: "No meal plan yet — add items first or regenerate" }); return; }
+    const hrs = hoursSinceLastPlanRegen(st);
+    if (hrs < 1/60) {
+      res.status(429).json({ error: `Just recomputed ${Math.round(hrs * 3600)}s ago. Wait a minute.` });
+      return;
+    }
+    const result = await recomputeMealPlanMacros(req.userId as string);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error("Recompute macros error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to recompute macros" });
   }
 });
 

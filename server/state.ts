@@ -138,6 +138,41 @@ router.put("/weight", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// Phase 26a: user edits to the meal plan (add/remove/edit ingredients)
+router.put("/meal-plan", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { mealPlan } = req.body;
+    if (!mealPlan || typeof mealPlan !== "object") { res.status(400).json({ error: "mealPlan must be an object" }); return; }
+    if (!Array.isArray(mealPlan.meals)) { res.status(400).json({ error: "mealPlan.meals must be an array" }); return; }
+    if (mealPlan.meals.length > 20) { res.status(400).json({ error: "max 20 meals" }); return; }
+    // Validate against exclusions
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    const excluded = (st.profile?.foodPrefs?.excluded || []).map((e: string) => String(e).toLowerCase().trim()).filter(Boolean);
+    for (const m of mealPlan.meals) {
+      if (!Array.isArray(m.ingredients)) continue;
+      for (const ing of m.ingredients) {
+        const name = String(ing?.name || "").toLowerCase();
+        for (const ex of excluded) {
+          if (name.includes(ex)) { res.status(400).json({ error: `Excluded food "${ex}" found in "${ing.name}"` }); return; }
+        }
+      }
+    }
+    const valueJson = JSON.stringify(mealPlan);
+    if (valueJson.length > 200000) { res.status(413).json({ error: "Meal plan too large" }); return; }
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{mealPlan}', ${valueJson}::jsonb, true),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put meal-plan error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 24: food preferences (subfield of profile)
 router.put("/profile/food-prefs", requireAuth, async (req: Request, res: Response) => {
   try {

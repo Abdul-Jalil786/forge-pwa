@@ -3,7 +3,7 @@ import webpush from "web-push";
 import prisma from "./db";
 import { syncOuraForAllUsers } from "./oura";
 import { syncWithingsForAllUsers } from "./withings";
-import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen } from "./ai-coach";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport, hoursSinceLastPlanRegen, recomputeMealPlanMacros } from "./ai-coach";
 
 function ukToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -310,23 +310,27 @@ export function startCron() {
           console.error(`[coach] Failed for ${user.email}:`, e?.message || e);
         }
 
-        // Phase 26: meal plan regen based on user's cadence
-        const cadence = state.profile?.foodPrefs?.refreshCadence || "weekly-sunday";
-        const planHrs = hoursSinceLastPlanRegen(state);
-        const shouldRegen =
-          (cadence === "weekly-sunday" && planHrs >= 24 * 6) ||
-          (cadence === "biweekly" && planHrs >= 24 * 13);
-        if (shouldRegen) {
-          try {
-            const plan = await generateMealPlan(user.id);
-            await saveMealPlan(user.id, plan);
-            await sendPushToUser(user.id, {
-              title: "🍽️ New meal plan",
-              body: `${plan.name} · ${plan.meals.length} meals · open Forge to view`,
-            });
-            console.log(`[coach] Plan regenerated for ${user.email}`);
-          } catch (e: any) {
-            console.error(`[coach] Plan regen failed for ${user.email}:`, e?.message || e);
+        // Phase 26a: refresh meal-plan macros (items locked) based on cadence.
+        // Items never change automatically — only macros are recomputed against canonical references.
+        if (state.mealPlan?.meals?.length) {
+          const cadence = state.profile?.foodPrefs?.refreshCadence || "weekly-sunday";
+          const planHrs = hoursSinceLastPlanRegen(state);
+          const shouldRefresh =
+            (cadence === "weekly-sunday" && planHrs >= 24 * 6) ||
+            (cadence === "biweekly" && planHrs >= 24 * 13);
+          if (shouldRefresh) {
+            try {
+              const result = await recomputeMealPlanMacros(user.id);
+              if (result.updated > 0) {
+                await sendPushToUser(user.id, {
+                  title: "🍽️ Plan macros refreshed",
+                  body: `${result.updated} ingredient${result.updated === 1 ? "" : "s"} updated · ${result.skipped} kept (your edits)`,
+                });
+              }
+              console.log(`[coach] Macros refreshed for ${user.email}: ${result.updated}/${result.total} updated, ${result.skipped} skipped`);
+            } catch (e: any) {
+              console.error(`[coach] Macro refresh failed for ${user.email}:`, e?.message || e);
+            }
           }
         }
       }

@@ -390,6 +390,113 @@ async function testCoachKey(){
   }catch(e){showToast(e.message||'Key test failed');}
 }
 
+// ---- INGREDIENT EDIT / ADD / DELETE (Phase 26a) ----
+let _iedit = null; // { mealId, ingIdx: number | null }
+
+function openIngredientEdit(ingIdx){
+  if(!_mds)return;
+  _iedit = { mealId: _mds.mealId, ingIdx };
+  const isNew = ingIdx === null;
+  const ing = isNew ? { name: '', cals: 0, protein: 0, carbs: 0, fat: 0 } : (_mds.ingredients[ingIdx] || {});
+  document.getElementById('ie-title').textContent = isNew ? 'Add Ingredient' : 'Edit Ingredient';
+  document.getElementById('ie-name').value = ing.name || '';
+  document.getElementById('ie-cals').value = ing.cals || 0;
+  document.getElementById('ie-protein').value = ing.protein || 0;
+  document.getElementById('ie-carbs').value = ing.carbs || 0;
+  document.getElementById('ie-fat').value = ing.fat || 0;
+  document.getElementById('ie-edited-note').style.display = isNew ? 'none' : 'block';
+  document.getElementById('ie-delete-btn').style.display = isNew ? 'none' : 'block';
+  openModal('modal-ing-edit');
+}
+
+async function _saveMealPlanToServer(){
+  const jwt = localStorage.getItem('forge_token');
+  if(!jwt)throw new Error('Not logged in');
+  const res = await fetch('/api/state/meal-plan', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
+    body: JSON.stringify({ mealPlan: STATE.mealPlan }),
+  });
+  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Save failed');}
+}
+
+function _recomputeMealTotals(meal){
+  if(!Array.isArray(meal.ingredients))return;
+  meal.cals    = meal.ingredients.reduce((s,i)=>s+(+i.cals    ||0),0);
+  meal.protein = meal.ingredients.reduce((s,i)=>s+(+i.protein ||0),0);
+  meal.carbs   = meal.ingredients.reduce((s,i)=>s+(+i.carbs   ||0),0);
+  meal.fat     = meal.ingredients.reduce((s,i)=>s+(+i.fat     ||0),0);
+}
+
+async function saveIngredientEdit(){
+  if(!_iedit)return;
+  const name = (document.getElementById('ie-name').value||'').trim();
+  if(!name){showToast('Name required');return;}
+  const cals    = Math.max(0, parseInt(document.getElementById('ie-cals').value,10)    || 0);
+  const protein = Math.max(0, parseInt(document.getElementById('ie-protein').value,10) || 0);
+  const carbs   = Math.max(0, parseInt(document.getElementById('ie-carbs').value,10)   || 0);
+  const fat     = Math.max(0, parseInt(document.getElementById('ie-fat').value,10)     || 0);
+  const mealId = _iedit.mealId;
+  const plan = STATE.mealPlan;
+  if(!plan || !plan.meals){showToast('No meal plan');return;}
+  const meal = plan.meals.find(m=>m.id===mealId);
+  if(!meal){showToast('Meal not found');return;}
+  if(!Array.isArray(meal.ingredients)) meal.ingredients = [];
+  const updated = { name, cals, protein, carbs, fat, edited: true };
+  if(_iedit.ingIdx === null){
+    meal.ingredients.push(updated);
+  } else {
+    meal.ingredients[_iedit.ingIdx] = { ...meal.ingredients[_iedit.ingIdx], ...updated };
+  }
+  _recomputeMealTotals(meal);
+  updateLocalCache();
+  try{
+    await _saveMealPlanToServer();
+    showToast(_iedit.ingIdx === null ? 'Added ✓' : 'Saved ✓');
+    closeModal('modal-ing-edit');
+    _iedit = null;
+    openMealDetail(mealId); // refresh detail modal
+  }catch(e){
+    showToast(e.message || 'Save failed');
+  }
+}
+
+async function deleteIngredient(){
+  if(!_iedit || _iedit.ingIdx === null)return;
+  if(!confirm('Remove this ingredient from the meal?'))return;
+  const mealId = _iedit.mealId;
+  const meal = STATE.mealPlan?.meals?.find(m=>m.id===mealId);
+  if(!meal || !Array.isArray(meal.ingredients))return;
+  meal.ingredients.splice(_iedit.ingIdx, 1);
+  _recomputeMealTotals(meal);
+  updateLocalCache();
+  try{
+    await _saveMealPlanToServer();
+    showToast('Removed');
+    closeModal('modal-ing-edit');
+    _iedit = null;
+    openMealDetail(mealId);
+  }catch(e){
+    showToast(e.message || 'Delete failed');
+  }
+}
+
+async function recomputeMacrosNow(){
+  if(!confirm('Ask AI Coach to compute exact per-ingredient macros for your current items? Costs ~$0.05–$0.15 of your Anthropic credit. Items will NOT change — only macros.'))return;
+  const jwt = localStorage.getItem('forge_token');
+  showToast('Computing macros… (10-20s)');
+  try{
+    const res = await fetch('/api/coach/recompute-macros', { method: 'POST', headers: { Authorization: 'Bearer ' + jwt } });
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Recompute failed');}
+    const data = await res.json();
+    showToast(`Updated ${data.updated} ingredient${data.updated===1?'':'s'}${data.skipped?` · ${data.skipped} kept (your edits)`:''}`);
+    await loadState();
+    if(typeof renderFood==='function') renderFood();
+  }catch(e){
+    showToast(e.message || 'Failed to recompute');
+  }
+}
+
 async function regeneratePlanNow(){
   if(!confirm('Regenerate your meal plan with AI Coach? Costs ~$0.50–$1 of your Anthropic credit. Respects your Food Preferences.'))return;
   const jwt=localStorage.getItem('forge_token');

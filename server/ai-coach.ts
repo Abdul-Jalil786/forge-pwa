@@ -454,3 +454,110 @@ export async function saveMealPlan(userId: string, plan: GeneratedMealPlan): Pro
   state.lastMealPlanRegenAt = new Date().toISOString();
   await prisma.user.update({ where: { id: userId }, data: { state } });
 }
+
+// --- Phase 26a: recompute macros for existing items (keeps items, fills correct macros) ---
+
+const MACRO_RECOMPUTE_SYSTEM = `You are a nutrition database. For each food item provided, return accurate macro estimates using standard UK supermarket / USDA reference values.
+
+Rules:
+- For mixed items ("3 eggs + 6 egg whites scrambled with 1 tsp olive oil"), compute the TOTAL for the combined portion as written.
+- For raw weights ("200g raw chicken breast"), use raw values.
+- For cooked weights, use cooked values.
+- For prepared dishes, sum the components.
+- Be precise to within ±5% of canonical reference values.
+- Round to whole numbers.`;
+
+export async function recomputeMealPlanMacros(userId: string): Promise<{ updated: number; total: number; skipped: number }> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  if (!state.mealPlan?.meals?.length) throw new Error("No meal plan to update");
+  const encKey = state.coachingKey as string | undefined;
+  if (!encKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(encKey); }
+  catch { throw new Error("Failed to decrypt API key"); }
+
+  // Collect all non-edited ingredients across all meals
+  type Slot = { mealIdx: number; ingIdx: number; name: string };
+  const slots: Slot[] = [];
+  let skipped = 0;
+  state.mealPlan.meals.forEach((m: any, mi: number) => {
+    if (!Array.isArray(m.ingredients)) return;
+    m.ingredients.forEach((ing: any, ii: number) => {
+      if (ing.edited) { skipped++; return; }
+      if (!ing.name) return;
+      slots.push({ mealIdx: mi, ingIdx: ii, name: String(ing.name) });
+    });
+  });
+
+  if (slots.length === 0) return { updated: 0, total: 0, skipped };
+
+  const client = new Anthropic({ apiKey });
+  const itemsList = slots.map((s, i) => `${i + 1}. ${s.name}`).join("\n");
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 4000,
+    system: MACRO_RECOMPUTE_SYSTEM,
+    tools: [{
+      name: "submit_macros",
+      description: "Submit per-item macros, one entry per input item.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                index: { type: "number", description: "1-based input index, must match the prompt numbering" },
+                cals: { type: "number" },
+                protein: { type: "number" },
+                carbs: { type: "number" },
+                fat: { type: "number" },
+              },
+              required: ["index", "cals", "protein", "carbs", "fat"],
+            },
+          },
+        },
+        required: ["items"],
+      },
+    }],
+    tool_choice: { type: "tool", name: "submit_macros" },
+    messages: [{ role: "user", content: `Compute exact macros per item:\n\n${itemsList}` }],
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === "tool_use") as any;
+  if (!toolBlock) throw new Error("Model did not return structured macros");
+  const result = toolBlock.input as { items: Array<{ index: number; cals: number; protein: number; carbs: number; fat: number }> };
+
+  const newPlan = JSON.parse(JSON.stringify(state.mealPlan));
+  let updated = 0;
+  for (const item of result.items) {
+    const slot = slots[item.index - 1];
+    if (!slot) continue;
+    const ing = newPlan.meals[slot.mealIdx].ingredients[slot.ingIdx];
+    if (ing.edited) continue;
+    ing.cals    = Math.max(0, Math.round(item.cals    || 0));
+    ing.protein = Math.max(0, Math.round(item.protein || 0));
+    ing.carbs   = Math.max(0, Math.round(item.carbs   || 0));
+    ing.fat     = Math.max(0, Math.round(item.fat     || 0));
+    updated++;
+  }
+
+  // Recompute meal totals from ingredients
+  for (const meal of newPlan.meals) {
+    if (!Array.isArray(meal.ingredients)) continue;
+    meal.cals    = meal.ingredients.reduce((s: number, i: any) => s + (i.cals    || 0), 0);
+    meal.protein = meal.ingredients.reduce((s: number, i: any) => s + (i.protein || 0), 0);
+    meal.carbs   = meal.ingredients.reduce((s: number, i: any) => s + (i.carbs   || 0), 0);
+    meal.fat     = meal.ingredients.reduce((s: number, i: any) => s + (i.fat     || 0), 0);
+  }
+
+  state.mealPlan = newPlan;
+  state.lastMealPlanRegenAt = new Date().toISOString();
+  await prisma.user.update({ where: { id: userId }, data: { state } });
+
+  return { updated, total: slots.length, skipped };
+}

@@ -485,7 +485,7 @@ function renderTodaysPlan(){
         </div>`;
       }).join('')}
     </div>
-    <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:14px;font-size:11px;color:var(--text3);" onclick="regeneratePlanNow()">↻ Regenerate plan with AI Coach</button>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:14px;font-size:12px;" onclick="recomputeMacrosNow()">↻ Compute exact macros (keep items)</button>
   `;
 }
 
@@ -610,18 +610,23 @@ function _renderMealDetail(){
         <div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--purple);">${fat}g</div><div style="font-size:9px;color:var(--text3);">FAT</div></div>
       </div>
     </div>
-    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Ingredients — tap a portion</div>
-    <div style="margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Ingredients — tap portion · tap name to edit</div>
+    </div>
+    <div style="margin-bottom:12px;">
       ${s.ingredients.map((ing,i)=>{
         const q=s.ingQty[i]||0;
         const dim=q===0;
         const ingCals=Math.round((ing.cals||0)*q);
         const ingP=Math.round((ing.protein||0)*q);
+        const ingC=Math.round((ing.carbs||0)*q);
+        const ingF=Math.round((ing.fat||0)*q);
         return`<div style="padding:10px 0;border-bottom:1px solid var(--border);">
-          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px;">
-            <div style="flex:1;font-size:13px;color:${dim?'var(--text3)':'var(--text)'};${dim?'text-decoration:line-through;':''}">${ing.name}</div>
-            <div style="font-size:11px;color:var(--text3);flex-shrink:0;">${dim?'—':`${ingCals} kcal · ${ingP}g P`}</div>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px;">
+            <div onclick="openIngredientEdit(${i})" style="flex:1;font-size:13px;color:${dim?'var(--text3)':'var(--text)'};${dim?'text-decoration:line-through;':''}cursor:pointer;">${ing.name}${ing.edited?' <span style="font-size:10px;color:var(--orange);">✏️</span>':''}</div>
+            <div style="font-size:11px;color:var(--text3);flex-shrink:0;text-align:right;">${dim?'—':`${ingCals} kcal`}</div>
           </div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:8px;">${dim?'skipped':`${ingP}g P · ${ingC}g C · ${ingF}g F`}</div>
           <div style="display:flex;gap:4px;">
             ${PORTION_OPTIONS.map(opt=>{
               const active=Math.abs((q||0)-opt.qty)<0.01;
@@ -629,6 +634,7 @@ function _renderMealDetail(){
             }).join('')}
           </div>
         </div>`;}).join('')}
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:12px;" onclick="openIngredientEdit(null)">+ Add ingredient</button>
     </div>
     ${s.supplements.length?`
     <div style="background:rgba(255,85,0,.08);border:1px solid rgba(255,85,0,.25);border-radius:10px;padding:10px 12px;margin-bottom:16px;">
@@ -640,7 +646,7 @@ function _renderMealDetail(){
           <div style="flex:1;font-size:13px;color:${on?'var(--text)':'var(--text3)'};">${supp.name}${supp.dose?' · '+supp.dose:''}</div>
         </div>`;}).join('')}
     </div>`:''}
-    ${s.isStringFormat?`<div style="font-size:11px;color:var(--text3);margin-bottom:14px;padding:8px 10px;background:var(--s2);border-radius:8px;">ⓘ Per-ingredient macros are estimated (divided equally). More accurate breakdown after Sunday's plan refresh.</div>`:''}
+    ${s.isStringFormat?`<div style="font-size:11px;color:var(--text3);margin-bottom:14px;padding:8px 10px;background:var(--s2);border-radius:8px;">ⓘ Per-ingredient macros are estimated (divided equally). Tap <strong>Compute exact macros</strong> on the Food page to get accurate values.</div>`:''}
     <button class="btn ${btnClass} btn-full" onclick="logMealFromModal()">${btnText}</button>
   `;
 }
