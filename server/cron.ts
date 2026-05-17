@@ -3,6 +3,7 @@ import webpush from "web-push";
 import prisma from "./db";
 import { syncOuraForAllUsers } from "./oura";
 import { syncWithingsForAllUsers } from "./withings";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport } from "./ai-coach";
 
 function ukToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -274,12 +275,44 @@ export function startCron() {
         const deltaStr = delta < 0 ? `down ${Math.abs(delta).toFixed(1)}kg` : delta > 0 ? `up ${delta.toFixed(1)}kg` : "flat";
         await sendPushToUser(user.id, {
           title: "📊 Week in numbers",
-          body: `Weight ${deltaStr} · ${trainingDays} training days · sleep ${avgSleep.toFixed(1)}h avg · ${stepsHit}/7 step days. Full review lands Sunday 9am from Cowork.`
+          body: `Weight ${deltaStr} · ${trainingDays} training days · sleep ${avgSleep.toFixed(1)}h avg · ${stepsHit}/7 step days. Coach review lands Sunday 9am.`
         });
       }
       console.log("Weekly summary complete");
     } catch (err) {
       console.error("Weekly summary error:", err);
+    }
+  }, { timezone: "Europe/London" });
+
+  // Phase 23: BYOK coaching report — Sunday 09:00 UK
+  cron.schedule("0 9 * * 0", async () => {
+    console.log("Running Sunday BYOK coaching reports...");
+    try {
+      const users = await prisma.user.findMany();
+      for (const user of users) {
+        const state: any = user.state || {};
+        if (!state.coachingKey) continue;
+        if (hoursSinceLastReport(state) < 24) {
+          console.log(`[coach] Skipping ${user.email} — report generated ${Math.round(hoursSinceLastReport(state))}h ago`);
+          continue;
+        }
+        try {
+          const report = await generateWeeklyReport(user.id);
+          await saveReport(user.id, report);
+          await sendPushToUser(user.id, {
+            title: "🧠 Weekly coaching report",
+            body: report.suggestions.length
+              ? `${report.title} — ${report.suggestions.length} suggestion${report.suggestions.length === 1 ? "" : "s"}`
+              : report.title,
+          });
+          console.log(`[coach] Report generated for ${user.email}`);
+        } catch (e: any) {
+          console.error(`[coach] Failed for ${user.email}:`, e?.message || e);
+        }
+      }
+      console.log("Sunday coaching reports complete");
+    } catch (err) {
+      console.error("Sunday coaching reports error:", err);
     }
   }, { timezone: "Europe/London" });
 }

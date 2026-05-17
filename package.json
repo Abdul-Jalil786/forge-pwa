@@ -9,6 +9,7 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.96.0",
     "@prisma/client": "^6.8.2",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",

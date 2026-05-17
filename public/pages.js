@@ -1261,10 +1261,10 @@ function renderCoach(){
 
     ${renderSupplementsCoach()}
 
-    <div class="sec-label">Coaching from Cowork</div>
+    <div class="sec-label">AI Coach</div>
     ${(STATE.coachingReports||[]).length===0?`
     <div class="card" style="margin-bottom:10px;text-align:center;color:var(--text3);font-size:13px;padding:20px;">
-      No reports yet. Cowork delivers a weekly review every Sunday.
+      No reports yet. Set your Anthropic API key on More page to receive a weekly review every Sunday 9am.
     </div>`:`
     <div class="card" style="margin-bottom:10px;">
       ${STATE.coachingReports.slice(0,1).map((r)=>{
@@ -1272,11 +1272,12 @@ function renderCoach(){
         return `
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
             <div>
-              <div style="font-family:'Archivo Black',sans-serif;font-size:15px;letter-spacing:-.3px;">${r.title}</div>
-              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">${r.type} · ${dt}</div>
+              <div style="font-family:'Archivo Black',sans-serif;font-size:15px;letter-spacing:-.3px;">${escapeHtml(r.title)}</div>
+              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">${escapeHtml(r.type||'')} · ${dt}</div>
             </div>
           </div>
           <div class="ai-report" style="font-size:13px;line-height:1.7;color:var(--text2);">${formatCoachingReport(r.content)}</div>
+          ${renderSuggestions(r)}
         `;
       }).join('')}
     </div>
@@ -1308,13 +1309,44 @@ function renderCoach(){
   });
 }
 
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
 function formatCoachingReport(text){
-  return (text||'')
+  return escapeHtml(text)
     .replace(/^### (.+)$/gm,'<h3 style="font-family:\'Archivo Black\',sans-serif;font-size:14px;color:var(--lime);margin:14px 0 6px;">$1</h3>')
     .replace(/^## (.+)$/gm,'<h3 style="font-family:\'Archivo Black\',sans-serif;font-size:15px;color:var(--lime);margin:14px 0 6px;">$1</h3>')
     .replace(/\*\*(.+?)\*\*/g,'<strong style="color:var(--text);">$1</strong>')
     .replace(/\n\n/g,'<br><br>')
     .replace(/\n/g,'<br>');
+}
+
+function renderSuggestions(report){
+  const sugs=(report.suggestions||[]).filter(s=>!s.dismissed);
+  if(!sugs.length)return '';
+  return `
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+      <div class="sec-label" style="margin-bottom:8px;">Suggestions</div>
+      ${sugs.map(s=>{
+        const typeLabel={macros:'MACROS',reminders:'REMINDER',note:'NOTE'}[s.type]||s.type.toUpperCase();
+        const typeColor=s.type==='note'?'var(--text3)':'var(--lime)';
+        return `
+          <div style="padding:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <div style="font-size:10px;letter-spacing:1px;color:${typeColor};font-weight:700;">${typeLabel}</div>
+              ${s.applied?'<div style="font-size:10px;color:var(--lime);">✓ APPLIED</div>':''}
+            </div>
+            <div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:4px;">${escapeHtml(s.label)}</div>
+            <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:${s.applied?'0':'10px'};">${escapeHtml(s.rationale)}</div>
+            ${!s.applied?`
+              <div style="display:flex;gap:8px;">
+                ${s.type!=='note'?`<button class="btn btn-lime btn-sm" style="flex:1;" onclick="applyCoachSuggestion('${report.id}','${s.id}')">Apply</button>`:''}
+                <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="dismissCoachSuggestion('${report.id}','${s.id}')">${s.type==='note'?'Got it':'Dismiss'}</button>
+              </div>`:''}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
 }
 
 function showCoachingHistory(){
@@ -1323,9 +1355,10 @@ function showCoachingHistory(){
   const html=list.map(r=>{
     const dt=new Date(r.createdAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
     return `<div class="card" style="margin-bottom:10px;">
-      <div style="font-family:'Archivo Black',sans-serif;font-size:14px;margin-bottom:4px;">${r.title}</div>
-      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">${r.type} · ${dt}</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:14px;margin-bottom:4px;">${escapeHtml(r.title)}</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">${escapeHtml(r.type||'')} · ${dt}</div>
       <div class="ai-report" style="font-size:12px;line-height:1.6;color:var(--text2);">${formatCoachingReport(r.content)}</div>
+      ${renderSuggestions(r)}
     </div>`;
   }).join('');
   document.getElementById('page-coach').innerHTML=`
@@ -1393,12 +1426,21 @@ function renderMore(){
       </button>
     </div>
 
-    <div class="sec-label">Cowork Connection</div>
+    <div class="sec-label">AI Coach (Anthropic key)</div>
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
-        Generate a read-only access token to let Cowork fetch your data for AI coaching.
+        Paste your own Anthropic API key. Forge generates a weekly review every Sunday 9am using your key (Opus 4.7). Costs ~$0.25–$0.75 per report. Key is encrypted at rest.
       </div>
-      <button class="btn btn-lime btn-sm" style="width:100%;margin-bottom:10px;" onclick="generateAccessToken()">+ Generate Access Token</button>
+      <div id="coach-status" style="font-size:12px;color:var(--text3);margin-bottom:10px;">Loading…</div>
+      <div id="coach-controls"></div>
+    </div>
+
+    <div class="sec-label">Cowork Access Token (legacy)</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        Old integration — used to let Cowork push reports. Superseded by the AI Coach above. Revoke any unused tokens.
+      </div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px;" onclick="generateAccessToken()">+ Generate Access Token</button>
       <div id="token-list" style="font-size:12px;"></div>
     </div>
 
@@ -1460,6 +1502,7 @@ function renderMore(){
 
   loadOuraStatus();
   loadWithingsStatus();
+  loadCoachKeyStatus();
 
   loadAccessTokens().then(tokens=>{
     const el=document.getElementById('token-list');

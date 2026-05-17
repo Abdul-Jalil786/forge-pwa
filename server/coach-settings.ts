@@ -1,0 +1,104 @@
+import { Router, Request, Response } from "express";
+import Anthropic from "@anthropic-ai/sdk";
+import prisma from "./db";
+import { requireAuth } from "./auth";
+import { encrypt, decrypt } from "./crypto-util";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport } from "./ai-coach";
+
+const router = Router();
+
+router.get("/key", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    res.json({
+      hasKey: !!st.coachingKey,
+      lastReportAt: st.lastCoachingReportAt || null,
+    });
+  } catch (err) {
+    console.error("Get coach key error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/key", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { apiKey } = req.body;
+    if (typeof apiKey !== "string" || !apiKey.startsWith("sk-ant-")) {
+      res.status(400).json({ error: "Invalid Anthropic API key format" }); return;
+    }
+    if (apiKey.length > 256) {
+      res.status(400).json({ error: "Key too long" }); return;
+    }
+    const enc = encrypt(apiKey);
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    const state: any = user.state || {};
+    state.coachingKey = enc;
+    await prisma.user.update({ where: { id: req.userId }, data: { state } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Set coach key error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/key", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    const state: any = user.state || {};
+    delete state.coachingKey;
+    await prisma.user.update({ where: { id: req.userId }, data: { state } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete coach key error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/test", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    if (!st.coachingKey) { res.status(400).json({ error: "No key configured" }); return; }
+    let apiKey: string;
+    try { apiKey = decrypt(st.coachingKey); }
+    catch { res.status(500).json({ error: "Failed to decrypt key" }); return; }
+    const client = new Anthropic({ apiKey });
+    await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 8,
+      messages: [{ role: "user", content: "Reply with the word OK." }],
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    const msg = err?.message || "Unknown error";
+    if (msg.includes("authentication") || msg.includes("invalid")) {
+      res.status(401).json({ error: "Invalid API key" }); return;
+    }
+    console.error("Coach key test error:", err);
+    res.status(500).json({ error: "Test failed: " + msg.slice(0, 120) });
+  }
+});
+
+router.post("/generate-now", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
+    const hrs = hoursSinceLastReport(st);
+    if (hrs < 1) {
+      res.status(429).json({ error: `Please wait — last report was ${Math.round(hrs * 60)} min ago. New report allowed in ${Math.ceil((1 - hrs) * 60)} min.` });
+      return;
+    }
+    const report = await generateWeeklyReport(req.userId as string);
+    const id = await saveReport(req.userId as string, report);
+    res.json({ success: true, id, suggestions: report.suggestions.length });
+  } catch (err: any) {
+    console.error("Coach generate-now error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to generate report" });
+  }
+});
+
+export default router;

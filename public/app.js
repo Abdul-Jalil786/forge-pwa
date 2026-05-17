@@ -242,6 +242,118 @@ function confirmDeleteSupplement(id,name){
 function setWater(cups){saveWater(cups);renderMore();renderToday();showToast(`${cups} cups 💧`);}
 function resetWater(){saveWater(0);renderMore();renderToday();}
 
+// ---- AI COACH (BYOK) ----
+function _esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+async function loadCoachKeyStatus(){
+  const jwt=localStorage.getItem('forge_token');
+  const status=document.getElementById('coach-status');
+  const ctrls=document.getElementById('coach-controls');
+  if(!status||!ctrls)return;
+  try{
+    const res=await fetch('/api/coach/key',{headers:{Authorization:'Bearer '+jwt}});
+    if(!res.ok)throw new Error();
+    const data=await res.json();
+    if(data.hasKey){
+      const last=data.lastReportAt?new Date(data.lastReportAt).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'never';
+      status.innerHTML=`<span style="color:var(--lime);">● Connected</span> · last report: ${_esc(last)}`;
+      ctrls.innerHTML=`
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-lime btn-sm" style="flex:1;min-width:140px;" onclick="generateCoachReportNow()">Generate Report Now</button>
+          <button class="btn btn-ghost btn-sm" onclick="testCoachKey()">Test</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red);" onclick="removeCoachKey()">Remove</button>
+        </div>`;
+    } else {
+      status.innerHTML='<span style="color:var(--text3);">○ No key set</span>';
+      ctrls.innerHTML=`
+        <input id="coach-key-input" type="password" placeholder="sk-ant-..." autocomplete="off" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:monospace;font-size:12px;margin-bottom:8px;" />
+        <button class="btn btn-lime btn-sm" style="width:100%;" onclick="saveCoachKey()">Save Key</button>`;
+    }
+  }catch{
+    status.innerHTML='<span style="color:var(--red);">Failed to load coach status</span>';
+    ctrls.innerHTML='';
+  }
+}
+
+async function saveCoachKey(){
+  const input=document.getElementById('coach-key-input');
+  if(!input)return;
+  const apiKey=input.value.trim();
+  if(!apiKey.startsWith('sk-ant-')){showToast('Key must start with sk-ant-');return;}
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/coach/key',{
+      method:'PUT',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},
+      body:JSON.stringify({apiKey}),
+    });
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Save failed');}
+    input.value='';
+    showToast('Key saved ✓');
+    loadCoachKeyStatus();
+  }catch(e){showToast(e.message||'Failed to save');}
+}
+
+async function removeCoachKey(){
+  if(!confirm('Remove your Anthropic API key from Forge? Weekly reports will stop.'))return;
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    await fetch('/api/coach/key',{method:'DELETE',headers:{Authorization:'Bearer '+jwt}});
+    showToast('Key removed');
+    loadCoachKeyStatus();
+  }catch{showToast('Failed to remove');}
+}
+
+async function testCoachKey(){
+  const jwt=localStorage.getItem('forge_token');
+  showToast('Testing key…');
+  try{
+    const res=await fetch('/api/coach/test',{method:'POST',headers:{Authorization:'Bearer '+jwt}});
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Test failed');}
+    showToast('Key works ✓');
+  }catch(e){showToast(e.message||'Key test failed');}
+}
+
+async function generateCoachReportNow(){
+  if(!confirm('Generate a report now? Uses ~$0.25–$0.75 of your Anthropic credit.'))return;
+  const jwt=localStorage.getItem('forge_token');
+  showToast('Generating report… (10-30s)');
+  try{
+    const res=await fetch('/api/coach/generate-now',{method:'POST',headers:{Authorization:'Bearer '+jwt}});
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Generation failed');}
+    const data=await res.json();
+    showToast(`Report ready · ${data.suggestions} suggestion${data.suggestions===1?'':'s'}`);
+    // Refresh state so the new report is visible
+    await loadState();
+    loadCoachKeyStatus();
+  }catch(e){showToast(e.message||'Failed to generate');}
+}
+
+async function applyCoachSuggestion(rid,sid){
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch(`/api/coaching-reports/${rid}/apply/${sid}`,{method:'POST',headers:{Authorization:'Bearer '+jwt}});
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Apply failed');}
+    const data=await res.json();
+    if(data.state)STATE={...STATE,...data.state};
+    showToast('Applied ✓');
+    renderCoach();
+  }catch(e){showToast(e.message||'Failed to apply');}
+}
+
+async function dismissCoachSuggestion(rid,sid){
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch(`/api/coaching-reports/${rid}/dismiss/${sid}`,{method:'POST',headers:{Authorization:'Bearer '+jwt}});
+    if(!res.ok)throw new Error();
+    // Locally mark dismissed
+    const rep=(STATE.coachingReports||[]).find(r=>r.id===rid);
+    if(rep){const s=(rep.suggestions||[]).find(x=>x.id===sid);if(s)s.dismissed=true;}
+    showToast('Dismissed');
+    renderCoach();
+  }catch{showToast('Failed');}
+}
+
 // ---- ACCESS TOKENS ----
 async function generateAccessToken(){
   const name=prompt('Token name (e.g. "Cowork"):')||'Cowork';
