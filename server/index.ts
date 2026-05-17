@@ -132,10 +132,90 @@ async function migrateJayProgress() {
   }
 }
 
+// Phase 26b: one-shot seed of Jay's locked meal plan (chicken / low-GI, exact items he wants)
+async function seedJayMealPlan() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.mealPlanSeededV2) return;
+
+    const plan = {
+      name: "Cut V7 — Locked: Chicken & Low-GI",
+      meals: [
+        {
+          id: "breakfast",
+          name: "Breakfast: Eggs, Oats, Yogurt & Berries",
+          time: "12:00",
+          cals: 679, protein: 61, carbs: 54, fat: 23,
+          ingredients: [
+            { name: "3 whole eggs + 6 egg whites scrambled with 1 tsp olive oil", cals: 358, protein: 39, carbs: 2, fat: 20 },
+            { name: "40g (dry) rolled oats with cinnamon", cals: 152, protein: 5, carbs: 26, fat: 3 },
+            { name: "150g 0% Greek yogurt + 1 tsp honey", cals: 112, protein: 16, carbs: 12, fat: 0 },
+            { name: "100g blueberries", cals: 57, protein: 1, carbs: 14, fat: 0 },
+          ],
+          supplements: [
+            { id: "vit-d", name: "Vitamin D", dose: "4000 IU" },
+            { id: "omega-3", name: "Omega 3", dose: "2 caps" },
+            { id: "metformin-am", name: "Metformin", dose: "1000mg" },
+          ],
+        },
+        {
+          id: "pre-workout",
+          name: "Pre-Workout: Chicken, Basmati & Veg",
+          time: "14:30",
+          cals: 602, protein: 56, carbs: 72, fat: 8,
+          ingredients: [
+            { name: "200g (raw) chicken breast grilled with salt, pepper, paprika", cals: 220, protein: 46, carbs: 0, fat: 2 },
+            { name: "80g (dry) basmati rice boiled", cals: 280, protein: 6, carbs: 60, fat: 1 },
+            { name: "100g broccoli + 100g mixed peppers roasted with 1 tsp olive oil. Eat fully by 15:00 to digest before training.", cals: 102, protein: 4, carbs: 12, fat: 5 },
+          ],
+          supplements: [],
+        },
+        {
+          id: "post-workout",
+          name: "Post-Workout Shake (Whey, Milk, Banana, Creatine)",
+          time: "17:15",
+          cals: 306, protein: 32, carbs: 35, fat: 6,
+          ingredients: [
+            { name: "Immediately after training. 1 scoop whey protein + 200ml semi-skimmed milk + 1 banana + 5g creatine — blend or shake.", cals: 306, protein: 32, carbs: 35, fat: 6 },
+          ],
+          supplements: [
+            { id: "creatine", name: "Creatine", dose: "5g (in shake)" },
+          ],
+        },
+        {
+          id: "dinner",
+          name: "Last Meal: Chicken & Tomato Stew + Side Salad",
+          time: "17:50",
+          cals: 488, protein: 54, carbs: 31, fat: 16,
+          ingredients: [
+            { name: "200g (raw) chicken breast diced, pan-fried with chopped onion + garlic + 1 tin chopped tomatoes (200g), simmer 10 min", cals: 295, protein: 49, carbs: 16, fat: 2 },
+            { name: "1 tbsp olive oil for cooking", cals: 120, protein: 0, carbs: 0, fat: 14 },
+            { name: "Side salad: 100g spinach + 1 sliced tomato + ½ cucumber + 1 tbsp lemon juice", cals: 73, protein: 5, carbs: 15, fat: 0 },
+          ],
+          supplements: [
+            { id: "statin-pm", name: "Statin", dose: "current dose" },
+          ],
+        },
+      ],
+    };
+
+    state.mealPlan = plan;
+    state.mealPlanSeededV2 = true;
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay meal plan seeded (V7 locked chicken/low-GI)");
+  } catch (err) {
+    console.error("[migration] Jay meal plan seed failed:", err);
+  }
+}
+
 const server = app.listen(PORT, () => {
   console.log(`Forge server running on port ${PORT}`);
   startCron();
   migrateJayProgress();
+  seedJayMealPlan();
 });
 
 const shutdown = async (signal: string) => {
