@@ -113,9 +113,10 @@ function renderToday(){
   const weightTrend=trendDelta(getWeightLog().map(e=>e.weight),7);
   const bfTrend=trendDelta(getBfLog().map(e=>e.bf),7);
 
-  // Phase 30a: derived fat mass + LBM
+  // Phase 30a: derived fat mass + LBM (kg + %)
   const fatMassNow = (cw != null && bf != null) ? Math.round(cw * (bf/100) * 10) / 10 : null;
   const lbmNow     = (cw != null && bf != null) ? Math.round(cw * (1 - bf/100) * 10) / 10 : null;
+  const lbmPctNow  = (bf != null) ? Math.round((100 - bf) * 10) / 10 : null;
   const lbmEntries = (typeof getJourneyEntries === 'function' ? getJourneyEntries('lbm') : []);
   const lbmSparkArr = lbmEntries.slice(-14).map(e => e.lbm);
   const lbmSpark = lbmSparkArr.length >= 2 ? spark(lbmSparkArr, 'var(--blue)') : '';
@@ -193,6 +194,7 @@ function renderToday(){
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Lean Mass</div>
           <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
             <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--blue);">${lbmNow!=null?lbmNow:'—'}<span style="font-size:11px;color:var(--text2);">kg</span></div>
+            ${lbmPctNow!=null?`<div style="font-size:11px;color:var(--text2);">${lbmPctNow}%</div>`:''}
             ${lbmTrend?`<div style="font-size:11px;color:${lbmTrend.dir==='flat'?'var(--green)':lbmTrend.dir==='up'?'var(--green)':Math.abs(parseFloat(lbmTrend.delta))<0.3?'#ffc107':'var(--red)'};">${lbmTrend.arrow} ${lbmTrend.delta}kg/wk</div>`:''}
             ${p.targetLBM?`<div style="font-size:10px;color:var(--text3);">target hold ${p.targetLBM}kg</div>`:''}
           </div>
