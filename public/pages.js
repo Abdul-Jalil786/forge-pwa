@@ -835,10 +835,28 @@ function renderTrack(){
     <div style="font-size:10px;color:var(--text3);line-height:1.5;padding-top:10px;">Goal is fat loss with lean preserved. Green LBM = holding · amber = small drop · red = losing muscle (review protein / deficit / training).</div>
   </div>`;
 
+  // Phase 30: Compare two dates card
+  const compareCard = `<div class="card" style="margin-bottom:14px;">
+    <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Compare Any Two Dates</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px;">From</div>
+        <input id="cmp-date-a" type="date" value="${p.startDate || todayStr()}" onchange="renderCompareSnapshot()" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;" />
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px;">To</div>
+        <input id="cmp-date-b" type="date" value="${todayStr()}" onchange="renderCompareSnapshot()" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;" />
+      </div>
+    </div>
+    <div id="cmp-result"></div>
+  </div>`;
+
   document.getElementById('page-track').innerHTML=`
     <div class="pg-title" style="margin-bottom:14px;">Progress</div>
 
     ${trendCard}
+
+    ${compareCard}
 
     ${_progressCard('Weight',`${_v(p.startWeight)}kg → ${_v(p.targetWeight)}kg`,cw,'kg',wPct,'var(--lime)',hasEnoughW?wRate:null,' kg',`Lost ${wLost}kg · ${wToGo}kg to go · ${wGoalStr}`,wSpark)}
     ${_progressCard('Body Fat',`${_v(p.startBF)}% → ${_v(p.targetBF)}%`,cbf,'%',bPct,'var(--orange)',hasEnoughB?bRate:null,'%',bCaption,bSpark)}
@@ -953,6 +971,80 @@ function renderTrack(){
 
     <div class="sec-label">Training Calendar</div>
     ${renderCalendar()}
+  `;
+
+  // Phase 30: render the date-compare snapshot after innerHTML
+  renderCompareSnapshot();
+}
+
+// Phase 30: compute a snapshot of key metrics on a given date (or nearest before)
+function _snapshotAtDate(date){
+  const wl = (STATE.weightLog || []).filter(e => e.date <= date).sort((a,b) => b.date.localeCompare(a.date));
+  const bl = (STATE.bfLog     || []).filter(e => e.date <= date).sort((a,b) => b.date.localeCompare(a.date));
+  const bc = STATE.bodyComp   || {};
+  const sleep = STATE.sleepLog || {};
+  const steps = STATE.stepsLog || {};
+  const cals  = STATE.calorieLog || {};
+  const w  = wl[0]?.weight ?? null;
+  const bf = bl[0]?.bf ?? null;
+  const lbm = (w != null && bf != null) ? Math.round(w * (1 - bf/100) * 100) / 100 : null;
+  const fat = (w != null && bf != null) ? Math.round(w * (bf/100) * 100) / 100 : null;
+  // bodyComp on this date (or closest before)
+  const bcDates = Object.keys(bc).filter(d => d <= date).sort().reverse();
+  let muscle = null, visceral = null;
+  for (const d of bcDates) {
+    if (muscle == null && bc[d]?.muscleMass != null) muscle = bc[d].muscleMass;
+    if (visceral == null && bc[d]?.visceralFat != null) visceral = bc[d].visceralFat;
+    if (muscle != null && visceral != null) break;
+  }
+  return {
+    weight: w, bf, lbm, fat, muscle, visceral,
+    sleep: sleep[date]?.hours ?? null,
+    steps: steps[date] ?? null,
+    activeCal: cals[date]?.active ?? null,
+    totalCal: cals[date]?.total ?? null,
+    weightDate: wl[0]?.date ?? null,
+    bfDate: bl[0]?.date ?? null,
+  };
+}
+
+function renderCompareSnapshot(){
+  const a = document.getElementById('cmp-date-a')?.value;
+  const b = document.getElementById('cmp-date-b')?.value;
+  const out = document.getElementById('cmp-result');
+  if(!a || !b || !out) return;
+  const A = _snapshotAtDate(a);
+  const B = _snapshotAtDate(b);
+  const _fmt = (v, dp=1, unit='') => v != null ? `${v.toFixed(dp)}${unit}` : '—';
+  const _delta = (vA, vB, dp=1, unit='', invert=false) => {
+    if (vA == null || vB == null) return '<span style="color:var(--text3);">—</span>';
+    const d = vB - vA;
+    if (Math.abs(d) < 0.01) return '<span style="color:var(--text3);">no change</span>';
+    const good = invert ? d > 0 : d < 0;
+    const color = good ? 'var(--green)' : 'var(--red)';
+    const sign = d > 0 ? '+' : '';
+    return `<span style="color:${color};font-weight:700;">${sign}${d.toFixed(dp)}${unit}</span>`;
+  };
+  const _row = (label, vA, vB, dp=1, unit='', invertGood=false) => `
+    <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;">
+      <div style="color:var(--text3);">${label}</div>
+      <div style="font-family:'Archivo Black',sans-serif;color:var(--text);">${_fmt(vA, dp, unit)}</div>
+      <div style="font-family:'Archivo Black',sans-serif;color:var(--text);">${_fmt(vB, dp, unit)}</div>
+      <div style="text-align:right;">${_delta(vA, vB, dp, unit, invertGood)}</div>
+    </div>`;
+  out.innerHTML = `
+    <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr;gap:8px;padding-bottom:6px;border-bottom:1px solid var(--border2);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">
+      <div></div><div>${a}</div><div>${b}</div><div style="text-align:right;">Δ</div>
+    </div>
+    ${_row('Weight',     A.weight,    B.weight,    1, 'kg')}
+    ${_row('Body fat',   A.bf,        B.bf,        1, '%')}
+    ${_row('Lean mass',  A.lbm,       B.lbm,       1, 'kg', true)}
+    ${_row('Fat mass',   A.fat,       B.fat,       1, 'kg')}
+    ${_row('Muscle',     A.muscle,    B.muscle,    1, 'kg', true)}
+    ${_row('Visceral',   A.visceral,  B.visceral,  1, '')}
+    ${_row('Sleep',      A.sleep,     B.sleep,     1, 'h', true)}
+    ${_row('Steps',      A.steps,     B.steps,     0, '',  true)}
+    ${_row('TDEE',       A.totalCal,  B.totalCal,  0, ' kcal', true)}
   `;
 }
 

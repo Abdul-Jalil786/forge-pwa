@@ -60,6 +60,69 @@ function latestBodyComp(state: any): { weight: number | null; bf: number | null;
   return { weight: cw, bf: cbf, lbm, fatMass, muscleMass, visceral, hydration, date };
 }
 
+// Phase 30: aggregate stats over a date range
+function periodStats(state: any, fromDate: string, toDate: string): {
+  daysWithWeight: number;
+  avgWeight: number | null;
+  avgBF: number | null;
+  trainingSessions: number;
+  avgSleepHrs: number | null;
+  avgSteps: number | null;
+  avgActiveCal: number | null;
+  avgTotalCal: number | null;
+  avgFoodKcal: number | null;
+  avgProtein: number | null;
+} {
+  const wl: any[] = (state.weightLog || []).filter((e: any) => e.date >= fromDate && e.date <= toDate);
+  const bl: any[] = (state.bfLog     || []).filter((e: any) => e.date >= fromDate && e.date <= toDate);
+  const sleepLog = state.sleepLog || {};
+  const stepsLog = state.stepsLog || {};
+  const calorieLog = state.calorieLog || {};
+  const exLog = state.exLog || {};
+  const foods = state.foods || {};
+
+  const avg = (arr: number[]) => arr.length ? Math.round((arr.reduce((s, x) => s + x, 0) / arr.length) * 10) / 10 : null;
+  const sleepHrs: number[] = [];
+  const stepDays: number[] = [];
+  const activeCals: number[] = [];
+  const totalCals: number[] = [];
+  const foodKcals: number[] = [];
+  const proteins: number[] = [];
+  let trainingSessions = 0;
+
+  // iterate dates in range
+  for (let d = new Date(fromDate); d <= new Date(toDate); d.setDate(d.getDate() + 1)) {
+    const key = d.toISOString().slice(0, 10);
+    const sl = sleepLog[key];
+    if (sl?.hours != null) sleepHrs.push(sl.hours);
+    if (stepsLog[key] != null) stepDays.push(stepsLog[key]);
+    if (calorieLog[key]?.active != null) activeCals.push(calorieLog[key].active);
+    if (calorieLog[key]?.total != null) totalCals.push(calorieLog[key].total);
+    const dayFoods = foods[key] || [];
+    if (dayFoods.length > 0) {
+      let kcal = 0, p = 0;
+      for (const f of dayFoods) { kcal += +f.cals || 0; p += +f.protein || 0; }
+      foodKcals.push(Math.round(kcal));
+      proteins.push(Math.round(p));
+    }
+    const session = exLog[key];
+    if (session && Object.values(session).some((ex: any) => ex?.done)) trainingSessions++;
+  }
+
+  return {
+    daysWithWeight: wl.length,
+    avgWeight: wl.length ? Math.round((wl.reduce((s, e) => s + e.weight, 0) / wl.length) * 10) / 10 : null,
+    avgBF:     bl.length ? Math.round((bl.reduce((s, e) => s + e.bf, 0) / bl.length) * 10) / 10 : null,
+    trainingSessions,
+    avgSleepHrs: avg(sleepHrs),
+    avgSteps: avg(stepDays),
+    avgActiveCal: avg(activeCals),
+    avgTotalCal: avg(totalCals),
+    avgFoodKcal: avg(foodKcals),
+    avgProtein: avg(proteins),
+  };
+}
+
 function bodyCompAtDate(state: any, date: string): { weight: number | null; bf: number | null; lbm: number | null; fatMass: number | null } {
   const wl: any[] = state.weightLog || [];
   const bl: any[] = state.bfLog || [];
@@ -276,8 +339,10 @@ function buildContext(state: any): string {
   for (const a of suppAdherence) lines.push(`  ${a.date}: ${a.taken}/${a.of}`);
   lines.push("");
 
-  // Phase 29: Oura activity (steps + active calories) — primary TDEE signal
-  lines.push("DAILY ACTIVITY (last 7d, Oura — active calories is the most accurate TDEE input):");
+  // Phase 29 + 30: Oura activity. NOTE: total_calories ≈ TDEE (BMR + active);
+  // active_calories alone is just movement burn above BMR. Use total for TDEE.
+  lines.push("DAILY ACTIVITY (last 7d, Oura):");
+  let totalCalSum = 0, totalCalDays = 0;
   let activeCalSum = 0, activeCalDays = 0;
   for (let i = 6; i >= 0; i--) {
     const d = daysAgoUK(i);
@@ -285,13 +350,82 @@ function buildContext(state: any): string {
     const cals = calorieLog[d];
     const parts: string[] = [];
     if (steps != null) parts.push(`${steps} steps`);
+    if (cals?.total != null) { parts.push(`${cals.total} total kcal (TDEE)`); totalCalSum += cals.total; totalCalDays++; }
     if (cals?.active != null) { parts.push(`${cals.active} active kcal`); activeCalSum += cals.active; activeCalDays++; }
-    if (cals?.total != null) parts.push(`${cals.total} total kcal`);
     if (parts.length === 0) continue;
     lines.push(`  ${d}: ${parts.join(" · ")}`);
   }
-  if (activeCalDays > 0) lines.push(`  → 7-day avg active calories: ${Math.round(activeCalSum / activeCalDays)} kcal/day (use this for TDEE — more accurate than Mifflin estimate)`);
+  if (totalCalDays > 0)  lines.push(`  → 7-day avg TOTAL calories (= Oura TDEE estimate): ${Math.round(totalCalSum / totalCalDays)} kcal/day — use this as primary TDEE`);
+  if (activeCalDays > 0) lines.push(`  → 7-day avg ACTIVE calories (movement above BMR only): ${Math.round(activeCalSum / activeCalDays)} kcal/day`);
   lines.push("");
+
+  // Phase 30: SINCE START — current vs plan start absolute progress
+  const startDate = profile.startDate || profile.planStartDate;
+  if (startDate && profile.startWeight) {
+    const cwNow = cur.weight;
+    const cbfNow = cur.bf;
+    const startW = profile.startWeight;
+    const startBF = profile.startBF;
+    const startLBM = profile.startLBM;
+    const weeksIn = Math.max(0.1, (Date.now() - new Date(startDate + "T12:00:00").getTime()) / (7 * 86400000));
+    const dW   = (cwNow != null && startW != null) ? cwNow - startW : null;
+    const dBF  = (cbfNow != null && startBF != null) ? cbfNow - startBF : null;
+    const dLBM = (cur.lbm != null && startLBM != null) ? cur.lbm - startLBM : null;
+    lines.push(`SINCE PLAN START (${startDate}, ${weeksIn.toFixed(1)} weeks in):`);
+    if (dW != null)  lines.push(`  Weight: ${startW}kg → ${cwNow}kg (${dW.toFixed(1)}kg, ${(dW / weeksIn).toFixed(2)}kg/wk)`);
+    if (dBF != null) lines.push(`  Body fat: ${startBF}% → ${cbfNow}% (${dBF > 0 ? "+" : ""}${dBF.toFixed(1)}pp)`);
+    if (dLBM != null) lines.push(`  LBM: ${startLBM}kg → ${cur.lbm}kg (${dLBM > 0 ? "+" : ""}${dLBM.toFixed(2)}kg) — preservation status: ${Math.abs(dLBM) < 0.5 ? "EXCELLENT" : dLBM > 0 ? "GAINING" : dLBM > -1 ? "minor loss" : "concerning loss"}`);
+    lines.push("");
+  }
+
+  // Phase 30: WEEK-OVER-WEEK comparison — last 7 days vs the 7 days before
+  const wk0From = daysAgoUK(6),  wk0To = ukToday();
+  const wk1From = daysAgoUK(13), wk1To = daysAgoUK(7);
+  const wk0 = periodStats(state, wk0From, wk0To);
+  const wk1 = periodStats(state, wk1From, wk1To);
+  lines.push("WEEK-OVER-WEEK (last 7d vs the 7d before — did the trend accelerate, hold, or slow?):");
+  const wowRow = (label: string, k: keyof typeof wk0, unit: string) => {
+    const a = wk0[k] as number | null;
+    const b = wk1[k] as number | null;
+    if (a == null && b == null) return;
+    const delta = (a != null && b != null) ? a - b : null;
+    const sign = delta != null ? (delta >= 0 ? "+" : "") : "";
+    lines.push(`  ${label}: this week ${a ?? "—"}${unit}, last week ${b ?? "—"}${unit}${delta != null ? ` (Δ ${sign}${delta.toFixed(unit ? 1 : 0)})` : ""}`);
+  };
+  wowRow("Avg weight",          "avgWeight",        "kg");
+  wowRow("Avg body fat",        "avgBF",            "%");
+  wowRow("Training sessions",   "trainingSessions", "");
+  wowRow("Avg sleep",           "avgSleepHrs",      "h");
+  wowRow("Avg steps",           "avgSteps",         "");
+  wowRow("Avg TDEE (total kcal)", "avgTotalCal",    " kcal");
+  wowRow("Avg food intake",     "avgFoodKcal",      " kcal");
+  wowRow("Avg protein",         "avgProtein",       "g");
+  lines.push("");
+
+  // Phase 30: MONTHLY ARC — last 30d vs prior 30d (only if data exists)
+  const m0From = daysAgoUK(29), m0To = ukToday();
+  const m1From = daysAgoUK(59), m1To = daysAgoUK(30);
+  const m0 = periodStats(state, m0From, m0To);
+  const m1 = periodStats(state, m1From, m1To);
+  if (m1.daysWithWeight > 0 || m1.trainingSessions > 0) {
+    lines.push("MONTHLY ARC (last 30d vs prior 30d — long-term momentum check):");
+    const mowRow = (label: string, k: keyof typeof m0, unit: string) => {
+      const a = m0[k] as number | null;
+      const b = m1[k] as number | null;
+      if (a == null && b == null) return;
+      const delta = (a != null && b != null) ? a - b : null;
+      const sign = delta != null ? (delta >= 0 ? "+" : "") : "";
+      lines.push(`  ${label}: last 30d ${a ?? "—"}${unit}, prior 30d ${b ?? "—"}${unit}${delta != null ? ` (Δ ${sign}${delta.toFixed(unit ? 1 : 0)})` : ""}`);
+    };
+    mowRow("Avg weight",        "avgWeight",        "kg");
+    mowRow("Avg body fat",      "avgBF",            "%");
+    mowRow("Training sessions", "trainingSessions", "");
+    mowRow("Avg sleep",         "avgSleepHrs",      "h");
+    mowRow("Avg TDEE",          "avgTotalCal",      " kcal");
+    mowRow("Avg food intake",   "avgFoodKcal",      " kcal");
+    mowRow("Avg protein",       "avgProtein",       "g");
+    lines.push("");
+  }
 
   // Phase 29: meal-plan adherence
   if (mealPlan?.meals?.length) {
@@ -391,7 +525,10 @@ DATA YOU NOW HAVE (Phase 29):
 11. PREVIOUS COACHING REPORTS (last 4 with their suggestions + apply/dismiss status) — your memory
 
 INTERPRETATION RULES:
-- Use Oura active calories as primary TDEE input. Mifflin-St Jeor is a fallback. If both available, average them and explain the range.
+- Use Oura TOTAL calories (labelled "TDEE" in the data) as primary TDEE input. Mifflin-St Jeor is a fallback. ACTIVE calories alone is movement burn above BMR, NOT TDEE — never use active cals as TDEE.
+- Reference SINCE PLAN START in every "This week" section ("X weeks in, Yg/kg down, LBM preservation status"). Frame the cut as a multi-month arc, not a week-to-week slog.
+- Use WEEK-OVER-WEEK to characterise trend direction: rate "accelerated", "held", "slowed", or "stalled" relative to the previous 7 days. Cite both numbers.
+- Use MONTHLY ARC (if present) to flag whether momentum is rising or fading over the longer arc.
 - Sleep: deep < 45 min or REM < 60 min = poor quality even if hours are fine. Reference stages, not just totals.
 - Effort tags: >50% easy + no tough = sandbagging (push harder). >40% tough = under-recovery or weights too high.
 - Meal plan adherence: <70% on multiple days = the plan doesn't fit life, not a discipline problem. Suggest a swap, not a guilt trip.
