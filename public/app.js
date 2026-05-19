@@ -90,9 +90,12 @@ function openModal(id){
     document.getElementById('mw-val').value='';
   }
 }
-function closeModal(id){document.getElementById(id)?.classList.remove('open');}
+function closeModal(id){
+  document.getElementById(id)?.classList.remove('open');
+  if(id==='modal-food')window._foodTargetDate=null;
+}
 document.querySelectorAll('.modal-bg').forEach(m=>{
-  m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');});
+  m.addEventListener('click',e=>{if(e.target===m){m.classList.remove('open');if(m.id==='modal-food')window._foodTargetDate=null;}});
 });
 
 // ---- WEIGHT ----
@@ -111,6 +114,13 @@ function saveWeight(){
 
 // ---- FOOD ----
 let selectedSleepQ=3;
+window._foodTargetDate=null; // when set, modal-food saves to this date instead of today
+
+function openAddFoodForDate(date){
+  window._foodTargetDate=date;
+  openModal('modal-food');
+}
+
 function saveFood(){
   const name=document.getElementById('mf-name').value.trim();
   const cals=parseInt(document.getElementById('mf-cals').value)||0;
@@ -119,8 +129,9 @@ function saveFood(){
   const fat=parseInt(document.getElementById('mf-fat').value)||0;
   const time=document.getElementById('mf-time').value||fmtNow();
   if(!name||!cals){showToast('Name and calories required');return;}
-  const entry={name,cals,protein,carbs,fat,time};
-  saveFoodEntry(entry);
+  const targetDate=window._foodTargetDate||todayStr();
+  const entry={name,cals,protein,carbs,fat,time,loggedAt:new Date().toISOString()};
+  saveFoodEntry(entry,targetDate);
 
   // Offer to save as template
   const shouldSave=cals>0&&confirm(`Save "${name}" as a template for quick re-use?`);
@@ -128,8 +139,20 @@ function saveFood(){
 
   ['mf-name','mf-cals','mf-protein','mf-carbs','mf-fat'].forEach(id=>document.getElementById(id).value='');
   closeModal('modal-food');
-  showToast(`${name} logged ✓`);
-  renderFood(); renderToday();
+  const dateLabel=targetDate===todayStr()?'':' ('+targetDate+')';
+  window._foodTargetDate=null;
+  showToast(`${name} logged${dateLabel} ✓`);
+  // Refresh whichever view is open
+  if(typeof renderFood==='function')renderFood();
+  if(typeof renderToday==='function')renderToday();
+  if(typeof renderDayDetail==='function'&&targetDate!==todayStr())renderDayDetail(targetDate);
+}
+
+function delFoodFromDayDetail(idx,date){
+  if(!confirm('Delete this entry from '+date+'?'))return;
+  deleteFoodEntry(idx,date);
+  showToast('Removed');
+  renderDayDetail(date);
 }
 
 function logPlannedMeal(mealId){

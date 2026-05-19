@@ -1267,21 +1267,25 @@ function renderDayDetail(date){
 
   // FOOD
   html+=`<div class="sec-label">Food</div>`;
+  html+=`<div class="card" style="margin-bottom:10px;">`;
   if(foods.length===0){
-    html+=`<div class="card" style="margin-bottom:10px;text-align:center;color:var(--text2);font-size:13px;padding:14px;">Nothing logged on this day</div>`;
+    html+=`<div style="text-align:center;color:var(--text2);font-size:13px;padding:8px 0 14px;">Nothing logged on this day</div>`;
   }else{
-    html+=`<div class="card" style="margin-bottom:10px;">
+    html+=`
       <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border);">
         <div>${foods.length} entries</div>
         <div><strong style="color:var(--lime);">${foodTotals.cals}</strong> kcal · <strong style="color:var(--orange);">${foodTotals.protein}g</strong> P · <strong style="color:var(--blue);">${foodTotals.carbs}g</strong> C · <strong style="color:var(--purple);">${foodTotals.fat}g</strong> F</div>
       </div>
-      ${foods.map(f=>`<div class="food-row">
+      ${foods.map((f,i)=>`<div class="food-row">
         <div class="food-time">${_foodDisplayTime(f)}</div>
         <div class="food-name">${f.name}${_qtyBadge(f)}</div>
         <div class="food-right"><div class="food-cals">${f.cals} kcal</div><div class="food-p">${f.protein||0}g P</div></div>
+        <button class="del-btn" onclick="delFoodFromDayDetail(${i},'${date}')" title="Delete this entry">×</button>
       </div>`).join('')}
-    </div>`;
+    `;
   }
+  html+=`<button class="btn btn-lime btn-sm" style="width:100%;margin-top:10px;font-size:12px;" onclick="openAddFoodForDate('${date}')">+ Add forgotten food to this day</button>`;
+  html+=`</div>`;
 
   // ACTIVITY
   if(steps||cals){
