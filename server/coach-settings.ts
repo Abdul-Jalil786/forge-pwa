@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { requireAuth } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
-import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM } from "./ai-coach";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection } from "./ai-coach";
 
 const router = Router();
 
@@ -118,6 +118,42 @@ router.post("/recompute-macros", requireAuth, async (req: Request, res: Response
   } catch (err: any) {
     console.error("Recompute macros error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to recompute macros" });
+  }
+});
+
+router.post("/session-brief", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { sessionType, prescriptions } = req.body || {};
+    if (!sessionType || !Array.isArray(prescriptions)) {
+      res.status(400).json({ error: "sessionType + prescriptions[] required" });
+      return;
+    }
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
+    const brief = await generateSessionBrief(req.userId as string, sessionType, prescriptions);
+    res.json({ success: true, brief });
+  } catch (err: any) {
+    console.error("Session brief error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to generate brief" });
+  }
+});
+
+router.post("/session-reflection", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { sessionType, completedSession } = req.body || {};
+    if (!sessionType || !completedSession) {
+      res.status(400).json({ error: "sessionType + completedSession required" });
+      return;
+    }
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
+    const reflection = await generateSessionReflection(req.userId as string, sessionType, completedSession);
+    res.json({ success: true, reflection });
+  } catch (err: any) {
+    console.error("Session reflection error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to generate reflection" });
   }
 });
 

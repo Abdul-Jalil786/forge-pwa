@@ -876,6 +876,195 @@ export async function generateMealPlan(userId: string): Promise<GeneratedMealPla
   return plan;
 }
 
+// --- Phase 33: per-session AI brief + post-session reflection (Haiku 4.5) ---
+
+const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+
+const SESSION_BRIEF_SYSTEM = `You write a pre-workout brief for someone about to start training.
+
+Output (via submit_brief tool):
+1. "strategy" — 2-3 sentences setting today's tone. Reference the most signal-rich 1-2 items from today's recovery, last night's sleep, or yesterday's protein. Tie it to the user's phase + goal.
+2. "perExercise" — one short cue per exercise. ONE SENTENCE. Form cue, rep target focus, or push/pull-back guidance.
+
+CRITICAL RULES:
+- The kg/reps prescriptions come from a separate progression formula. DO NOT change them. Your job is to add the WHY and HOW, not new numbers.
+- Use the user's exId values exactly as given.
+- Reference specific data — last session's reps, last night's hours, today's HRV. Never generic "stay hydrated" platitudes.
+- Direct tone, like a knowledgeable training partner. No motivational fluff.
+- Mention medications (GLP-1, statin) only when relevant to today.
+- Keep total output under 200 words.`;
+
+const SESSION_REFLECTION_SYSTEM = `You write ONE short sentence acknowledging what the user just completed in their training session.
+
+Compare what was completed to recent norms. Call out PRs, missed sets, surprises. Direct, no fluff. 1 sentence only. No emojis.`;
+
+interface SessionBrief {
+  strategy: string;
+  perExercise: Array<{ exId: string; cue: string }>;
+}
+
+export async function generateSessionBrief(
+  userId: string,
+  sessionType: string,
+  prescriptions: Array<{ exId: string; name: string; kg?: number; reps?: number | string; seconds?: number; deload?: boolean; recovery?: string }>,
+): Promise<SessionBrief> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  const encKey = state.coachingKey as string | undefined;
+  if (!encKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(encKey); }
+  catch { throw new Error("Failed to decrypt API key"); }
+
+  const today = ukToday();
+  const yesterday = daysAgoUK(1);
+  const profile = state.profile || {};
+  const personal = profile.personal || {};
+  const recovery = state.recovery || {};
+  const sleepLog = state.sleepLog || {};
+  const exLog = state.exLog || {};
+  const todayRec = recovery[today] || {};
+  const lastSleep = sleepLog[today] || sleepLog[yesterday] || {};
+  const yFoods = (state.foods || {})[yesterday] || [];
+  const yProtein = yFoods.reduce((s: number, f: any) => s + (+f.protein || 0), 0);
+  const yKcal = yFoods.reduce((s: number, f: any) => s + (+f.cals || 0), 0);
+
+  // Last 2 sessions of the same type (compact summary)
+  const sameTypeDates = Object.keys(exLog).filter((d) => d < today).sort().reverse().slice(0, 5);
+  const recentSessions: string[] = [];
+  for (const d of sameTypeDates) {
+    const dayLog = exLog[d] || {};
+    const ids = Object.keys(dayLog);
+    if (ids.length === 0) continue;
+    // Only include if it looks like the same body region (check if any prescribed exId appears)
+    const presIds = new Set(prescriptions.map((p) => p.exId));
+    if (!ids.some((id) => presIds.has(id))) continue;
+    const exSummaries = ids
+      .filter((id) => dayLog[id]?.sets?.length > 0 && presIds.has(id))
+      .slice(0, 8)
+      .map((id) => {
+        const sets = (dayLog[id].sets || []).filter((s: any) => s.kg || s.reps || s.seconds);
+        const txt = sets.map((s: any) => s.seconds ? `${s.seconds}s` : `${s.kg || '-'}×${s.reps || '-'}`).join(',');
+        return `${id}:${txt}`;
+      })
+      .join(' · ');
+    recentSessions.push(`${d}: ${exSummaries}`);
+    if (recentSessions.length >= 2) break;
+  }
+
+  const lines: string[] = [];
+  lines.push(`SESSION: ${sessionType.toUpperCase()} BODY · ${today}`);
+  lines.push("");
+  lines.push("USER:");
+  if (personal.age) lines.push(`  ${personal.age}yo ${personal.sex || ''}, phase: ${personal.phase || 'cut'}`);
+  if (profile.targetWeight && profile.targetBF) lines.push(`  Goal: ${profile.targetWeight}kg @ ${profile.targetBF}% BF${personal.targetLBMStretch ? ` (stretch LBM target ${personal.targetLBMStretch}kg)` : ''}`);
+  const meds = (profile.medications || []).map((m: any) => m.name).filter(Boolean);
+  if (meds.length > 0) lines.push(`  Medications: ${meds.join(', ')}`);
+  // Highlight notable blood markers
+  const bm = profile.bloodMarkers || [];
+  const flagged = bm.filter((m: any) => m.value != null && ((m.refHigh != null && m.value > m.refHigh) || (m.refLow != null && m.value < m.refLow)))
+    .slice(0, 5).map((m: any) => `${m.name} ${m.value}${m.unit || ''}`).join(', ');
+  if (flagged) lines.push(`  Out-of-range markers: ${flagged}`);
+  lines.push("");
+
+  lines.push("TODAY:");
+  const rcv: string[] = [];
+  if (todayRec.readiness != null) rcv.push(`readiness ${todayRec.readiness}`);
+  if (todayRec.hrv != null) rcv.push(`HRV ${todayRec.hrv}`);
+  if (todayRec.restingHR != null) rcv.push(`RHR ${todayRec.restingHR}`);
+  if (rcv.length) lines.push(`  Recovery: ${rcv.join(' · ')}`);
+  if (lastSleep.hours != null) {
+    const stages = (lastSleep.remMin != null || lastSleep.deepMin != null) ? ` (REM ${lastSleep.remMin ?? '?'}m, deep ${lastSleep.deepMin ?? '?'}m)` : '';
+    lines.push(`  Sleep last night: ${lastSleep.hours}h${stages}`);
+  }
+  if (yProtein > 0) lines.push(`  Yesterday's intake: ${yKcal}kcal, ${yProtein}g protein`);
+  lines.push("");
+
+  lines.push("TODAY'S PRESCRIPTIONS (formula-computed — DO NOT change):");
+  for (const p of prescriptions) {
+    const target = p.seconds ? `${p.seconds}s` : (p.kg != null ? `${p.kg}kg × ${p.reps} reps` : '—');
+    const flags: string[] = [];
+    if (p.deload) flags.push('DELOAD');
+    if (p.recovery === 'low') flags.push('HOLD (low recovery)');
+    lines.push(`  ${p.exId} ${p.name}: ${target}${flags.length ? ' [' + flags.join(', ') + ']' : ''}`);
+  }
+  lines.push("");
+
+  if (recentSessions.length > 0) {
+    lines.push("RECENT SAME-TYPE SESSIONS (for context):");
+    for (const r of recentSessions) lines.push(`  ${r}`);
+  }
+
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: HAIKU_MODEL,
+    max_tokens: 1500,
+    system: SESSION_BRIEF_SYSTEM,
+    tools: [{
+      name: "submit_brief",
+      description: "Submit the session brief.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          strategy: { type: "string", description: "2-3 sentences setting today's tone" },
+          perExercise: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                exId: { type: "string", description: "Must match an exId from the prescriptions list" },
+                cue: { type: "string", description: "One short sentence cue" },
+              },
+              required: ["exId", "cue"],
+            },
+          },
+        },
+        required: ["strategy", "perExercise"],
+      },
+    }],
+    tool_choice: { type: "tool", name: "submit_brief" },
+    messages: [{ role: "user", content: lines.join("\n") }],
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === "tool_use") as any;
+  if (!toolBlock) throw new Error("Model did not return a structured brief");
+  return toolBlock.input as SessionBrief;
+}
+
+export async function generateSessionReflection(
+  userId: string,
+  sessionType: string,
+  completedSession: Record<string, any>,
+): Promise<string> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  const encKey = state.coachingKey as string | undefined;
+  if (!encKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(encKey); }
+  catch { throw new Error("Failed to decrypt API key"); }
+
+  const summary = Object.entries(completedSession || {}).map(([exId, log]: [string, any]) => {
+    const sets = ((log && log.sets) || []).filter((s: any) => s.kg || s.reps || s.seconds);
+    if (sets.length === 0) return null;
+    const txt = sets.map((s: any) => s.seconds ? `${s.seconds}s` : `${s.kg || '-'}×${s.reps || '-'}${s.effort ? `(${s.effort})` : ''}`).join(', ');
+    return `${exId}: ${txt}`;
+  }).filter(Boolean).join('\n');
+
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: HAIKU_MODEL,
+    max_tokens: 200,
+    system: SESSION_REFLECTION_SYSTEM,
+    messages: [{ role: "user", content: `Session type: ${sessionType.toUpperCase()}\n\nCompleted:\n${summary || '(nothing logged)'}` }],
+  });
+
+  const textBlock = response.content.find((b: any) => b.type === "text") as any;
+  return (textBlock?.text || "Session complete.").trim();
+}
+
 // --- Phase 32: realistic max LBM projection ---
 
 const MAX_LBM_SYSTEM = `You are a sports physiologist analysing a single user's realistic upper bound for lean body mass (LBM).

@@ -301,6 +301,22 @@ function exitGuidedWorkout(){
   if(wm.restInterval)clearInterval(wm.restInterval);
   if(wmTimer.interval)clearInterval(wmTimer.interval);
   wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
+
+  // Phase 33: fire post-session reflection if user actually completed work
+  const sessionType = wm.session;
+  const today = todayStr();
+  const completedSession = (STATE.exLog || {})[today] || {};
+  const hasWork = Object.values(completedSession).some(ex =>
+    Array.isArray(ex?.sets) && ex.sets.some(s => s.kg || s.reps || s.seconds)
+  );
+  const alreadyReflected = STATE.sessionReflections && STATE.sessionReflections[`${today}_${sessionType}`];
+  if (hasWork && !alreadyReflected && typeof requestSessionReflection === 'function') {
+    requestSessionReflection(sessionType, completedSession);
+    if(!STATE.sessionReflections) STATE.sessionReflections = {};
+    STATE.sessionReflections[`${today}_${sessionType}`] = true;
+    updateLocalCache();
+  }
+
   wm.active=false;
   document.getElementById('workoutMode').classList.remove('open');
   renderWorkout();
@@ -508,25 +524,62 @@ function renderWmOutline(){
   const banner = gate.lowRecovery
     ? `<div style="background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:#ffc107;line-height:1.5;">⚠️ <strong>Lower recovery today</strong> (${gate.reason}). Today is about form and finishing every set — not PRs. Suggestions are set to hold weights.</div>`
     : '';
+
+  // Phase 33: build prescriptions array for AI brief
+  const prescriptions = w.exercises.map(ex => {
+    const sug = suggestWeight(ex.id, prev, undefined, opts);
+    return {
+      exId: ex.id,
+      name: ex.name,
+      kg: sug?.kg,
+      reps: sug?.reps,
+      seconds: sug?.seconds,
+      deload: !!sug?.deload,
+      recovery: sug?.recovery,
+    };
+  });
+
+  // Cache key for this session brief
+  const briefKey = `${date}_${wm.session}`;
+  const cached = (STATE.sessionBriefs || {})[briefKey];
+  const briefSlot = cached
+    ? _renderBriefHTML(cached)
+    : `<div id="ai-brief-slot" style="background:rgba(200,255,0,.04);border:1px solid rgba(200,255,0,.2);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:var(--text3);line-height:1.5;">🧠 <em>AI brief loading…</em></div>`;
+
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div class="wm-title">${w.name}</div>
     <div class="wm-sub">${w.muscles} · ${w.exercises.length} exercises · ~${w.duration} mins</div>
     ${banner}
+    ${briefSlot}
     <div class="wm-h">Today's Plan</div>
-    <div style="margin-bottom:24px;">
+    <div style="margin-bottom:24px;" id="wm-exercise-list">
       ${w.exercises.map((ex,i)=>{
         const sug=suggestWeight(ex.id,prev,undefined,opts);
         const timed=isTimeBased(ex);
         const arrow=sug?.dir==='up'?'<span class="wm-arrow-up">↑</span>':sug?.dir==='down'?'<span class="wm-arrow-down">↓</span>':'';
         const wt=sug?(timed?`@ ${fmtSec(sug.seconds)} ${arrow}`:`@ ${sug.kg}kg ${arrow}`):'';
         const badge=sug?.deload?'<span style="font-size:9px;color:var(--orange);font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">DELOAD</span>':sug?.recovery==='low'?'<span style="font-size:9px;color:#ffc107;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">HOLD</span>':'';
-        return `<div class="wm-ex-row"><div><div style="font-size:10px;color:var(--text3);font-weight:700;">${i+1}.</div><div class="wm-ex-name">${ex.name}</div></div><div class="wm-ex-spec">${ex.sets}×${ex.reps}<br>${wt}${badge}</div></div>`;
+        const cueId = `cue-${ex.id}`;
+        const cueText = cached?.perExercise?.find(c => c.exId === ex.id)?.cue || '';
+        return `<div class="wm-ex-row"><div style="flex:1;"><div style="font-size:10px;color:var(--text3);font-weight:700;">${i+1}.</div><div class="wm-ex-name">${ex.name}</div><div id="${cueId}" style="font-size:11px;color:var(--lime);margin-top:4px;line-height:1.4;${cueText?'':'display:none;'}">${cueText}</div></div><div class="wm-ex-spec">${ex.sets}×${ex.reps}<br>${wt}${badge}</div></div>`;
       }).join('')}
     </div>
     <button class="wm-cta" onclick="wmStartFirstSet()">START WORKOUT →</button>
   `;
   document.getElementById('wmContent').innerHTML=html;
+
+  // Phase 33: fire off the AI brief in background if not cached
+  if (!cached && typeof requestSessionBrief === 'function') {
+    requestSessionBrief(wm.session, prescriptions, briefKey);
+  }
+}
+
+function _renderBriefHTML(brief){
+  return `<div id="ai-brief-slot" style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.3);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:var(--text2);line-height:1.6;">
+    <div style="font-size:9px;color:var(--lime);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:6px;">🧠 AI Brief</div>
+    <div style="color:var(--text);">${(brief.strategy||'').replace(/</g,'&lt;')}</div>
+  </div>`;
 }
 
 function wmStartFirstSet(){

@@ -942,6 +942,77 @@ async function recomputeMacrosNow(){
   }
 }
 
+// Phase 33: AI session brief (Haiku 4.5, auto on workout open)
+async function requestSessionBrief(sessionType, prescriptions, cacheKey){
+  const jwt = localStorage.getItem('forge_token');
+  if(!jwt) return;
+  // Skip if no API key — silently
+  const hasKey = STATE.profile?.foodPrefs ? true : null;
+  try {
+    const res = await fetch('/api/coach/session-brief', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
+      body: JSON.stringify({ sessionType, prescriptions }),
+    });
+    if(!res.ok){
+      // Hide loading slot silently — no toast, brief is supplementary
+      const slot = document.getElementById('ai-brief-slot');
+      if(slot) slot.style.display = 'none';
+      return;
+    }
+    const data = await res.json();
+    if(!data.brief) return;
+    // Cache the brief
+    if(!STATE.sessionBriefs) STATE.sessionBriefs = {};
+    STATE.sessionBriefs[cacheKey] = data.brief;
+    updateLocalCache();
+    // Render the strategy
+    const slot = document.getElementById('ai-brief-slot');
+    if(slot && typeof _renderBriefHTML === 'function'){
+      slot.outerHTML = _renderBriefHTML(data.brief);
+    }
+    // Render per-exercise cues
+    for(const item of (data.brief.perExercise || [])){
+      const el = document.getElementById('cue-' + item.exId);
+      if(el && item.cue){
+        el.textContent = item.cue;
+        el.style.display = 'block';
+      }
+    }
+  } catch(e){
+    const slot = document.getElementById('ai-brief-slot');
+    if(slot) slot.style.display = 'none';
+  }
+}
+
+// Post-session reflection: 1-sentence acknowledgement, runs on workout exit
+async function requestSessionReflection(sessionType, completedSession){
+  const jwt = localStorage.getItem('forge_token');
+  if(!jwt) return;
+  try {
+    const res = await fetch('/api/coach/session-reflection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
+      body: JSON.stringify({ sessionType, completedSession }),
+    });
+    if(!res.ok) return;
+    const data = await res.json();
+    if(data.reflection){
+      // Show as a longer toast (5s)
+      _showLongToast('🧠 ' + data.reflection, 6000);
+    }
+  } catch {}
+}
+
+function _showLongToast(msg, durationMs){
+  const t = document.createElement('div');
+  t.className = 'toast show';
+  t.style.cssText = 'position:fixed;bottom:calc(var(--safe-bottom)+76px);left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--lime);color:var(--text);font-size:12px;font-weight:600;padding:12px 20px;border-radius:16px;z-index:999;max-width:90vw;text-align:center;line-height:1.5;';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, durationMs || 5000);
+}
+
 async function askCoachMaxLBM(){
   if(!confirm('Ask AI Coach to compute your realistic LBM ceiling? Uses ~$0.10–$0.20 of your Anthropic credit. Opus 4.7 will analyze your demographics, blood markers, medications, training history.'))return;
   const jwt=localStorage.getItem('forge_token');
