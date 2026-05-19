@@ -1006,6 +1006,9 @@ function renderTrack(){
       ${renderLiftingRecords()}
     </div>
 
+    <div class="sec-label">Strength Standards</div>
+    ${renderStrengthStandards()}
+
     <div class="sec-label">Training Calendar</div>
     ${renderCalendar()}
   `;
@@ -1093,6 +1096,142 @@ function promptSteps(){
     renderToday();
     showToast(`${parseInt(val).toLocaleString()} steps saved ✓`);
   }
+}
+
+// ============================================================
+// PHASE 31a: Strength Standards — tier classification per lift
+// ============================================================
+// Standards = est. 1RM × bodyweight multipliers for an age-30 male baseline.
+// Adjusted down by 0.5%/yr past 30 (accounts for sarcopenia).
+// Sources: ExRx machine standards averaged with StrengthLevel community data.
+// All values are approximate — machines vary, 1RM is estimated.
+const STRENGTH_STD = {
+  // [novice, intermediate, advanced, elite] × bodyweight
+  u1: { name:'Chest Press',          male:[0.50, 0.85, 1.20, 1.50] },
+  u2: { name:'Incline DB Press',     male:[0.30, 0.55, 0.80, 1.05] },
+  u3: { name:'Seated Row',           male:[0.50, 0.85, 1.20, 1.50] },
+  u4: { name:'Shoulder Press',       male:[0.35, 0.55, 0.80, 1.05] },
+  u5: { name:'Lat Pulldown',         male:[0.60, 0.95, 1.30, 1.60] },
+  u6: { name:'Bicep Curl',           male:[0.25, 0.40, 0.60, 0.80] },
+  u7: { name:'Tricep Pushdown',      male:[0.30, 0.50, 0.70, 0.90] },
+  u8: { name:'Face Pull',            male:[0.30, 0.50, 0.70, 0.90] },
+  l1: { name:'Leg Press',            male:[1.20, 1.75, 2.50, 3.50] },
+  l2: { name:'Romanian Deadlift',    male:[0.85, 1.50, 2.00, 2.50] },
+  l3: { name:'Leg Extension',        male:[0.50, 0.80, 1.10, 1.40] },
+  l4: { name:'Leg Curl',             male:[0.40, 0.70, 0.95, 1.20] },
+  l5: { name:'Hip Thrust',           male:[1.00, 1.50, 2.25, 3.00] },
+  l6: { name:'Calf Raise',           male:[1.00, 1.50, 2.00, 2.75] },
+  l7: { name:'Back Extension',       male:[0.30, 0.50, 0.75, 1.00] },
+};
+
+const STRENGTH_TIERS = [
+  {label:'Untrained',    color:'var(--text3)'},
+  {label:'Novice',       color:'var(--orange)'},
+  {label:'Intermediate', color:'var(--blue)'},
+  {label:'Advanced',     color:'var(--lime)'},
+  {label:'Elite',        color:'var(--green)'},
+];
+
+function _ageAdjustFactor(age){
+  if(!age || age <= 30) return 1;
+  // 0.5%/yr decay past 30 — generous, accounts for trained populations
+  return Math.max(0.6, 1 - 0.005 * (age - 30));
+}
+
+function _brzycki1RM(weight, reps){
+  const w = parseFloat(weight) || 0;
+  const r = Math.min(parseInt(reps, 10) || 0, 10);
+  if(!w || !r) return 0;
+  return Math.round(w * (36 / (37 - r)));
+}
+
+function _bestEstimated1RM(exId){
+  const exLog = STATE.exLog || {};
+  let best = 0;
+  for(const date of Object.keys(exLog)){
+    const sets = exLog[date]?.[exId]?.sets || [];
+    for(const s of sets){
+      const r = _brzycki1RM(s.kg, s.reps);
+      if(r > best) best = r;
+    }
+  }
+  return best;
+}
+
+function _classifyLift(estimated1RM, bw, lbm, ageFactor, multipliers){
+  if(!estimated1RM || !multipliers || !bw) return null;
+  // Tier thresholds (kg) for THIS user
+  const thresholds = multipliers.map(m => m * bw * ageFactor);
+  let tier = 0;
+  for(let i = 0; i < thresholds.length; i++){
+    if(estimated1RM >= thresholds[i]) tier = i + 1;
+  }
+  return {
+    tier,                                  // 0-4
+    label: STRENGTH_TIERS[tier].label,
+    color: STRENGTH_TIERS[tier].color,
+    bwRatio: Math.round((estimated1RM / bw) * 100) / 100,
+    lbmRatio: lbm ? Math.round((estimated1RM / lbm) * 100) / 100 : null,
+    thresholds,
+  };
+}
+
+function renderStrengthStandards(){
+  const profile = STATE.profile || {};
+  const personal = profile.personal || {};
+  const age = personal.age;
+  const sex = personal.sex || 'male';
+  if(sex !== 'male') {
+    return `<div class="card" style="margin-bottom:10px;padding:14px;text-align:center;color:var(--text3);font-size:12px;">Female strength standards coming soon — bodyweight standards differ meaningfully by sex.</div>`;
+  }
+  const wl = STATE.weightLog || [];
+  const bl = STATE.bfLog || [];
+  const cw = wl.length ? wl[wl.length-1].weight : null;
+  const cbf = bl.length ? bl[bl.length-1].bf : null;
+  const lbm = (cw && cbf) ? Math.round(cw * (1 - cbf/100) * 10) / 10 : null;
+  if(!cw){
+    return `<div class="card" style="margin-bottom:10px;padding:14px;text-align:center;color:var(--text3);font-size:12px;">Log your weight to see strength standards.</div>`;
+  }
+  if(!age){
+    return `<div class="card" style="margin-bottom:10px;padding:14px;text-align:center;color:var(--text3);font-size:12px;">Add your age in More → Personal Profile to see age-adjusted strength standards.</div>`;
+  }
+  const ageFactor = _ageAdjustFactor(age);
+  const rows = Object.keys(STRENGTH_STD).map(exId => {
+    const exDef = STRENGTH_STD[exId];
+    const est1RM = _bestEstimated1RM(exId);
+    if(est1RM === 0) return null;
+    const cls = _classifyLift(est1RM, cw, lbm, ageFactor, exDef.male);
+    if(!cls) return null;
+    return { exId, name: exDef.name, est1RM, ...cls };
+  }).filter(Boolean);
+  rows.sort((a, b) => b.tier - a.tier);
+
+  if(rows.length === 0){
+    return `<div class="card" style="margin-bottom:10px;padding:14px;text-align:center;color:var(--text3);font-size:12px;">Log a few workouts to see your strength standards.</div>`;
+  }
+
+  // Overall summary
+  const avgTier = rows.reduce((s, r) => s + r.tier, 0) / rows.length;
+  const overallLabel = STRENGTH_TIERS[Math.round(avgTier)].label;
+  const overallColor = STRENGTH_TIERS[Math.round(avgTier)].color;
+
+  return `<div class="card" style="margin-bottom:10px;padding:12px 14px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Overall</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:${overallColor};">${overallLabel}</div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:10px;line-height:1.5;">Bodyweight ${cw}kg · age ${age}${lbm?` · LBM ${lbm}kg`:''}. Age factor: ${(ageFactor*100).toFixed(0)}%. Standards adjusted for ${age}yo ${sex}.</div>
+    <div style="display:grid;grid-template-columns:1fr 60px 60px 90px;gap:6px;padding:6px 0;border-bottom:1px solid var(--border2);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">
+      <div>Lift</div><div style="text-align:right;">1RM</div><div style="text-align:right;">×BW</div><div style="text-align:right;">Tier</div>
+    </div>
+    ${rows.map(r => `<div style="display:grid;grid-template-columns:1fr 60px 60px 90px;gap:6px;padding:7px 0;border-bottom:1px solid var(--border);align-items:center;font-size:12px;">
+      <div style="color:var(--text);">${r.name}</div>
+      <div style="text-align:right;font-family:'Archivo Black',sans-serif;color:var(--text);">${r.est1RM}<span style="font-size:9px;color:var(--text3);">kg</span></div>
+      <div style="text-align:right;color:var(--text2);">${r.bwRatio}×</div>
+      <div style="text-align:right;font-size:10px;color:${r.color};text-transform:uppercase;letter-spacing:1px;font-weight:700;">${r.label}</div>
+    </div>`).join('')}
+    <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.5;">1RMs estimated from working sets (Brzycki formula). Standards from ExRx + StrengthLevel data, age-adjusted ~0.5%/yr past 30. Machines vary — treat tiers as rough guidance, not gospel.</div>
+  </div>`;
 }
 
 function renderLiftingRecords(){
