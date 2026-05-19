@@ -30,7 +30,7 @@ const WORKOUTS = {
       {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
       {id:'l5',name:'Hip Thrust',sets:3,reps:'8–10',rest:90,muscle:'Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
       {id:'l6',name:'Calf Raise',sets:4,reps:'15–20',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
-      {id:'l7',name:'Back Extension',sets:3,reps:'12–15',rest:60,muscle:'Lower Back',size:'small',yt:'https://www.youtube.com/results?search_query=back+extension+form'},
+      {id:'l7',name:'Good Mornings',sets:3,reps:'10–12',rest:90,muscle:'Lower Back / Hams',size:'small',yt:'https://www.youtube.com/results?search_query=good+morning+barbell+form'},
       {id:'l8',name:'Ab Crunch',sets:3,reps:'15',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=ab+crunch+form+technique'},
     ]
   }

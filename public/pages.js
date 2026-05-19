@@ -1121,7 +1121,7 @@ const STRENGTH_STD = {
   l4: { name:'Leg Curl',             male:[0.40, 0.70, 0.95, 1.20] },
   l5: { name:'Hip Thrust',           male:[1.00, 1.50, 2.25, 3.00] },
   l6: { name:'Calf Raise',           male:[1.00, 1.50, 2.00, 2.75] },
-  l7: { name:'Back Extension',       male:[0.30, 0.50, 0.75, 1.00] },
+  l7: { name:'Good Mornings',        male:[0.40, 0.65, 0.95, 1.25] },
 };
 
 const STRENGTH_TIERS = [
@@ -2107,7 +2107,24 @@ function renderMore(){
         <option value="other">Other</option>
         <option value="prefer-not-to-say">Prefer not to say</option>
       </select>
-      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="savePersonalProfile()">Save Personal Profile</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Current Phase</div>
+          <select id="pp-phase" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+            <option value="">—</option>
+            <option value="cut">Cut (lose fat)</option>
+            <option value="recomp">Recomp (lose fat + maintain LBM)</option>
+            <option value="lean-bulk">Lean bulk (gain LBM)</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Stretch LBM (kg)</div>
+          <input id="pp-stretchlbm" type="number" min="30" max="150" step="0.5" inputmode="decimal" placeholder="optional" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+        </div>
+      </div>
+      <button class="btn btn-lime btn-sm" style="width:100%;margin-bottom:8px;" onclick="savePersonalProfile()">Save Personal Profile</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;font-size:11px;" onclick="askCoachMaxLBM()">🧠 Compute my realistic max LBM (AI)</button>
     </div>
 
     <div class="sec-label">Medications</div>

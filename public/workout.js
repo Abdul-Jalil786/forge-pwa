@@ -403,12 +403,30 @@ function suggestWeight(exId, prevSession, setIdx, opts){
   const upperRep=repMatch?parseInt(repMatch[2]):null;
   const sets=(prevSession.log[exId].sets||[]).filter(s=>s.kg&&s.reps);
   if(!sets.length)return null;
-  const refSet = (typeof setIdx==='number' && sets[setIdx]) ? sets[setIdx] : sets[0];
-  const lastKg=parseFloat(refSet.kg);
+
+  // Phase 32: use the MODAL (most-frequent) weight as the reference, not set[0].
+  // This handles "top set + back-off" patterns where set 1 might be light warm-up
+  // and one set might be a heavy attempt that's not the user's true working weight.
+  // Tiebreak: prefer the HEAVIEST weight among ties (closer to true working set).
+  const weightCounts = {};
+  for(const s of sets){
+    const k = String(parseFloat(s.kg));
+    weightCounts[k] = (weightCounts[k]||0) + 1;
+  }
+  const weightEntries = Object.entries(weightCounts).map(([k,c])=>({kg:parseFloat(k), count:c}));
+  weightEntries.sort((a,b) => b.count - a.count || b.kg - a.kg);
+  const modalKg = weightEntries[0].kg;
+  // The sets that match the modal weight — used for rep-range check
+  const modalSets = sets.filter(s => Math.abs(parseFloat(s.kg) - modalKg) < 0.1);
+  const refSet = modalSets[0]; // most-frequent weight, first occurrence
+  const lastKg=modalKg;
   const lastReps=parseInt(refSet.reps);
-  const efforts=sets.map(s=>s.effort).filter(e=>e);
+  const efforts=modalSets.map(s=>s.effort).filter(e=>e);
   const hasEffort=efforts.length>0;
   const prevSummary = sets.map(s=>`${s.kg}×${s.reps}`).join(', ');
+  const workingSummary = modalSets.length < sets.length
+    ? ` (working: ${modalKg}kg × ${modalSets.map(s=>s.reps).join(',')})`
+    : '';
   const inc = _incForLift(exObj);
 
   // Check 1: recovery gate (skip when caller hasn't passed it — only the outline page checks)
@@ -428,23 +446,24 @@ function suggestWeight(exId, prevSession, setIdx, opts){
     return { kg:lastKg, reps:lastReps, reason:`Last: ${prevSummary}`, dir:null };
   }
 
-  const allHitUpper=sets.every(s=>parseInt(s.reps)>=upperRep);
-  const firstFailed=parseInt(sets[0].reps)<(lowerRep||0);
+  // Use ONLY the modal-weight sets for rep-range judgement (filters out warm-ups + experimental top sets)
+  const allHitUpper = modalSets.every(s=>parseInt(s.reps)>=upperRep);
+  const firstFailed = parseInt(modalSets[0].reps)<(lowerRep||0);
 
   // Check 3: smart progression with per-lift increments
   if(hasEffort){
     const allEasy=efforts.every(e=>e==='easy');
     const mostlySolid=efforts.filter(e=>e==='solid').length>=efforts.length/2;
     const anyTough=efforts.some(e=>e==='tough');
-    if(allEasy&&allHitUpper)    return { kg:_roundToPlate(lastKg+inc.easy),  reps:lowerRep, reason:`+${inc.easy}kg ↑ (last: ${prevSummary}, felt easy)`, dir:'up' };
-    if(mostlySolid&&allHitUpper) return { kg:_roundToPlate(lastKg+inc.solid), reps:lowerRep, reason:`+${inc.solid}kg ↑ (last: ${prevSummary}, solid)`, dir:'up' };
-    if(anyTough&&!allHitUpper)   return { kg:lastKg, reps:lastReps, reason:`Hold weight (last: ${prevSummary}, was tough)`, dir:null };
+    if(allEasy&&allHitUpper)    return { kg:_roundToPlate(lastKg+inc.easy),  reps:lowerRep, reason:`+${inc.easy}kg ↑ (last: ${prevSummary}${workingSummary}, felt easy)`, dir:'up' };
+    if(mostlySolid&&allHitUpper) return { kg:_roundToPlate(lastKg+inc.solid), reps:lowerRep, reason:`+${inc.solid}kg ↑ (last: ${prevSummary}${workingSummary}, solid)`, dir:'up' };
+    if(anyTough&&!allHitUpper)   return { kg:lastKg, reps:lastReps, reason:`Hold weight (last: ${prevSummary}${workingSummary}, was tough)`, dir:null };
   }
 
-  if(allHitUpper)  return { kg:_roundToPlate(lastKg+inc.solid), reps:lowerRep, reason:`+${inc.solid}kg ↑ (last: ${prevSummary})`, dir:'up' };
-  if(firstFailed)  return { kg:Math.max(0,_roundToPlate(lastKg-inc.fail)), reps:upperRep, reason:`-${inc.fail}kg ↓ (last: ${prevSummary}, struggled)`, dir:'down' };
+  if(allHitUpper)  return { kg:_roundToPlate(lastKg+inc.solid), reps:lowerRep, reason:`+${inc.solid}kg ↑ (last: ${prevSummary}${workingSummary})`, dir:'up' };
+  if(firstFailed)  return { kg:Math.max(0,_roundToPlate(lastKg-inc.fail)), reps:upperRep, reason:`-${inc.fail}kg ↓ (last: ${prevSummary}${workingSummary}, struggled)`, dir:'down' };
   const targetReps = Math.min(upperRep, lastReps+1);
-  return { kg:lastKg, reps:targetReps, reason:`Same weight, target ${targetReps} reps (last: ${prevSummary})`, dir:null };
+  return { kg:lastKg, reps:targetReps, reason:`Same weight, target ${targetReps} reps (last: ${prevSummary}${workingSummary})`, dir:null };
 }
 
 function suggestTime(exId,exObj,prevSession,setIdx,opts){

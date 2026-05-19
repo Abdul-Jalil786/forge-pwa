@@ -398,6 +398,8 @@ function loadPersonalProfileUI(){
   set('pp-sex', p.sex || '');
   set('pp-activity', p.activityLevel || '');
   set('pp-ethnicity', p.ethnicity || '');
+  set('pp-phase', p.phase || '');
+  set('pp-stretchlbm', p.targetLBMStretch != null ? p.targetLBMStretch : '');
 }
 
 async function savePersonalProfile(){
@@ -406,12 +408,16 @@ async function savePersonalProfile(){
   const sex = document.getElementById('pp-sex').value;
   const activityLevel = document.getElementById('pp-activity').value;
   const ethnicity = document.getElementById('pp-ethnicity').value;
+  const phase = document.getElementById('pp-phase').value;
+  const stretchLBMVal = parseFloat(document.getElementById('pp-stretchlbm').value);
   const body = {};
   if (!isNaN(ageVal)) body.age = ageVal;
   if (!isNaN(heightVal)) body.heightCm = heightVal;
   if (sex) body.sex = sex;
   if (activityLevel) body.activityLevel = activityLevel;
   if (ethnicity) body.ethnicity = ethnicity;
+  if (phase) body.phase = phase;
+  if (!isNaN(stretchLBMVal)) body.targetLBMStretch = stretchLBMVal;
   const jwt = localStorage.getItem('forge_token');
   try {
     const res = await fetch('/api/state/profile/personal', {
@@ -934,6 +940,73 @@ async function recomputeMacrosNow(){
   }catch(e){
     showToast(e.message || 'Failed to recompute');
   }
+}
+
+async function askCoachMaxLBM(){
+  if(!confirm('Ask AI Coach to compute your realistic LBM ceiling? Uses ~$0.10–$0.20 of your Anthropic credit. Opus 4.7 will analyze your demographics, blood markers, medications, training history.'))return;
+  const jwt=localStorage.getItem('forge_token');
+  showToast('Analysing your data… (20-40s)');
+  try{
+    const res=await fetch('/api/coach/max-lbm',{method:'POST',headers:{Authorization:'Bearer '+jwt}});
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Failed');}
+    const data=await res.json();
+    const p=data.projection;
+    const html=`<div style="line-height:1.6;">
+      <div style="font-size:14px;font-family:'Archivo Black',sans-serif;margin-bottom:14px;">Realistic LBM Ceiling Analysis</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">
+        <div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;text-align:center;">
+          <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Conservative</div>
+          <div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--text);">${p.conservativeLBM}<span style="font-size:10px;color:var(--text3);">kg LBM</span></div>
+          <div style="font-size:11px;color:var(--text2);">= ${p.conservativeWeightAt15}kg @ 15%</div>
+        </div>
+        <div style="padding:10px;background:var(--bg2);border:1px solid var(--lime);border-radius:8px;text-align:center;">
+          <div style="font-size:9px;color:var(--lime);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Realistic</div>
+          <div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--lime);">${p.realisticLBM}<span style="font-size:10px;color:var(--text3);">kg LBM</span></div>
+          <div style="font-size:11px;color:var(--text2);">= ${p.realisticWeightAt15}kg @ 15%</div>
+        </div>
+        <div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;text-align:center;">
+          <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Optimistic</div>
+          <div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--text);">${p.optimisticLBM}<span style="font-size:10px;color:var(--text3);">kg LBM</span></div>
+          <div style="font-size:11px;color:var(--text2);">= ${p.optimisticWeightAt15}kg @ 15%</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Timeline · Phase Plan</div>
+      <div style="font-size:13px;color:var(--text);margin-bottom:10px;">~${p.timelineMonths} months. ${_esc(p.phaseSequence)}</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Why</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">${_esc(p.rationale)}</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Key Constraints</div>
+      <ul style="margin:0 0 14px 18px;padding:0;font-size:12px;color:var(--text2);">
+        ${(p.keyConstraints||[]).map(c=>`<li style="margin-bottom:4px;">${_esc(c)}</li>`).join('')}
+      </ul>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="_setStretchFromAI(${p.realisticLBM})">Set Stretch LBM Target to ${p.realisticLBM}kg</button>
+    </div>`;
+    _showInfoModal('AI Coach Analysis', html);
+  }catch(e){showToast(e.message||'Failed to compute');}
+}
+
+function _setStretchFromAI(lbm){
+  const el=document.getElementById('pp-stretchlbm');
+  if(el)el.value=lbm;
+  closeModal('modal-info');
+  showToast('Stretch LBM set — tap Save Personal Profile to confirm');
+}
+
+function _showInfoModal(title, htmlBody){
+  let m = document.getElementById('modal-info');
+  if(!m){
+    m = document.createElement('div');
+    m.id = 'modal-info';
+    m.className = 'modal-bg';
+    m.innerHTML = `<div class="modal" style="max-height:85vh;overflow-y:auto;">
+      <div class="modal-hdr"><div class="modal-title" id="modal-info-title">Info</div><button class="modal-close" onclick="closeModal('modal-info')">✕</button></div>
+      <div id="modal-info-body"></div>
+    </div>`;
+    document.body.appendChild(m);
+    m.addEventListener('click', e => { if(e.target === m) closeModal('modal-info'); });
+  }
+  document.getElementById('modal-info-title').textContent = title;
+  document.getElementById('modal-info-body').innerHTML = htmlBody;
+  openModal('modal-info');
 }
 
 async function regeneratePlanNow(){

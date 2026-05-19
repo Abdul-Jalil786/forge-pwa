@@ -173,10 +173,10 @@ router.put("/meal-plan", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Phase 27: personal demographics (subfield of profile)
+// Phase 27 + 32: personal demographics (subfield of profile)
 router.put("/profile/personal", requireAuth, async (req: Request, res: Response) => {
   try {
-    const { age, heightCm, sex, ethnicity, activityLevel } = req.body || {};
+    const { age, heightCm, sex, ethnicity, activityLevel, phase, targetLBMStretch } = req.body || {};
     const out: any = {};
     if (age != null) {
       if (typeof age !== "number" || age < 10 || age > 120) { res.status(400).json({ error: "age must be 10-120" }); return; }
@@ -199,6 +199,17 @@ router.put("/profile/personal", requireAuth, async (req: Request, res: Response)
       const valid = ["sedentary", "light", "moderate", "very-active"];
       if (!valid.includes(activityLevel)) { res.status(400).json({ error: "invalid activityLevel" }); return; }
       out.activityLevel = activityLevel;
+    }
+    if (phase != null) {
+      const valid = ["cut", "recomp", "lean-bulk", "maintenance"];
+      if (!valid.includes(phase)) { res.status(400).json({ error: "invalid phase" }); return; }
+      out.phase = phase;
+    }
+    if (targetLBMStretch != null) {
+      if (typeof targetLBMStretch !== "number" || targetLBMStretch < 30 || targetLBMStretch > 150) {
+        res.status(400).json({ error: "targetLBMStretch must be 30-150" }); return;
+      }
+      out.targetLBMStretch = Math.round(targetLBMStretch * 10) / 10;
     }
     out.updatedAt = new Date().toISOString();
     const valueJson = JSON.stringify(out);

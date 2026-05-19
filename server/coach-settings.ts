@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { requireAuth } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
-import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros } from "./ai-coach";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM } from "./ai-coach";
 
 const router = Router();
 
@@ -118,6 +118,24 @@ router.post("/recompute-macros", requireAuth, async (req: Request, res: Response
   } catch (err: any) {
     console.error("Recompute macros error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to recompute macros" });
+  }
+});
+
+router.post("/max-lbm", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
+    const projection = await computeMaxLBM(req.userId as string);
+    // Save the latest projection to state for reuse
+    const fresh = await prisma.user.findUnique({ where: { id: req.userId } });
+    const state: any = fresh?.state || {};
+    state.maxLBMProjection = { ...projection, computedAt: new Date().toISOString() };
+    await prisma.user.update({ where: { id: req.userId }, data: { state } });
+    res.json({ success: true, projection });
+  } catch (err: any) {
+    console.error("Max LBM error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to compute" });
   }
 });
 

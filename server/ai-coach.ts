@@ -218,9 +218,11 @@ function buildContext(state: any): string {
   const lines: string[] = [];
   lines.push(`Today (UK): ${today}`);
   lines.push("");
-  lines.push("DEMOGRAPHICS:");
+  lines.push("DEMOGRAPHICS + GOAL FRAMING:");
   lines.push(`  Age: ${personal.age ?? "(not set)"} · Height: ${personal.heightCm ?? "?"}cm · Sex (for BMR): ${personal.sex ?? "(not set)"} · Ethnicity: ${personal.ethnicity ?? "(not set)"}`);
   lines.push(`  Activity outside gym: ${personal.activityLevel ?? "(not set)"}`);
+  lines.push(`  CURRENT PHASE: ${personal.phase ?? "(not specified — default behaviour: assume fat-loss cut)"}`);
+  if (personal.targetLBMStretch) lines.push(`  STRETCH LBM GOAL: ${personal.targetLBMStretch}kg lean body mass (vs default target ${profile.targetLBM ?? "?"}kg). User wants to build muscle, not just lose fat — frame coaching toward the LBM ceiling.`);
   if (tdee) lines.push(`  Estimated BMR: ${tdee.bmr} kcal · TDEE (Mifflin-St Jeor × activity factor, excludes training): ${tdee.tdee} kcal/day`);
   else lines.push(`  TDEE estimate unavailable (demographics incomplete — coach should flag this if accuracy matters)`);
   lines.push("");
@@ -506,8 +508,13 @@ function buildContext(state: any): string {
 const SYSTEM_PROMPT = `You are Forge's weekly coach. You write concise, specific, actionable weekly reviews for a user on a structured fat-loss / recomp plan.
 
 THE USER'S GOAL (read every report through this lens):
-- This is a FAT LOSS WITH LBM PRESERVATION cut, not generic weight loss.
-- Target LBM ≈ current LBM. Weight loss should come almost entirely from fat mass.
+- Read the user's CURRENT PHASE from the DEMOGRAPHICS block:
+  * cut          → fat loss with LBM preservation. Target LBM ≈ current LBM.
+  * recomp       → simultaneous fat loss + small LBM gain. Slow deficit (~10-15%), high protein, hard training.
+  * lean-bulk    → controlled surplus (~10-15%). Slow LBM gain (~0.3kg/month max for trained users past 50). Watch fat gain.
+  * maintenance  → hold current. Recovery + small recomposition.
+  * If phase not set: assume cut.
+- If the user has a STRETCH LBM GOAL set, the long-arc objective is "maximum lean mass at target BF%", not just hitting weight + BF numbers. Frame multi-month strategy through this lens — current phase is one step toward the LBM ceiling.
 - The single most important metric every week is the LBM delta. If LBM drops > 0.3kg/week for 2+ weeks running, flag it URGENTLY. Likely cause: deficit too aggressive, protein too low, or training stimulus too low.
 - Never credit "weight loss" without checking LBM. "Down 1.1kg this week" is meaningless until you know fat-mass-delta vs LBM-delta. Report both.
 
@@ -867,6 +874,77 @@ export async function generateMealPlan(userId: string): Promise<GeneratedMealPla
   if (!v.ok) throw new Error("Generated plan failed validation: " + v.error);
 
   return plan;
+}
+
+// --- Phase 32: realistic max LBM projection ---
+
+const MAX_LBM_SYSTEM = `You are a sports physiologist analysing a single user's realistic upper bound for lean body mass (LBM).
+
+Your job:
+1. Compute a HONEST, evidence-based projection of this user's realistic LBM ceiling over 24 months.
+2. Account for: age (sarcopenia), sex, current LBM + training tier, blood markers (especially testosterone, HbA1c), medications (especially GLP-1 agonists which can blunt lean mass gain), training history.
+3. Give three scenarios — conservative, realistic, optimistic — with kg LBM targets and resulting body weight at 15% BF.
+4. Be honest about constraints. Older lifters past 50 gain LBM at ~0.3-0.5kg/month MAX during dedicated build phases. Low testosterone slows this further. GLP-1 medications during weight loss can cause modest lean mass loss.
+5. Recommend a phase sequence (cut → recomp → lean bulk → cut again, or similar).
+6. Cite numbers from the user's data — do not generalise.`;
+
+export interface MaxLBMProjection {
+  conservativeLBM: number;
+  realisticLBM: number;
+  optimisticLBM: number;
+  conservativeWeightAt15: number;
+  realisticWeightAt15: number;
+  optimisticWeightAt15: number;
+  timelineMonths: number;
+  phaseSequence: string;
+  rationale: string;
+  keyConstraints: string[];
+}
+
+export async function computeMaxLBM(userId: string): Promise<MaxLBMProjection> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  const encKey = state.coachingKey as string | undefined;
+  if (!encKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(encKey); }
+  catch { throw new Error("Failed to decrypt API key"); }
+
+  const context = buildContext(state);
+  const client = new Anthropic({ apiKey });
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 3000,
+    system: MAX_LBM_SYSTEM,
+    tools: [{
+      name: "submit_max_lbm",
+      description: "Submit the realistic LBM projection.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          conservativeLBM: { type: "number", description: "LBM kg in 'preservation-only' scenario" },
+          realisticLBM:    { type: "number", description: "LBM kg in 'realistic best-case' scenario with good adherence" },
+          optimisticLBM:   { type: "number", description: "LBM kg in 'optimistic scenario' — best case without unrealistic assumptions" },
+          conservativeWeightAt15: { type: "number", description: "Total weight at 15% BF in conservative scenario" },
+          realisticWeightAt15:    { type: "number" },
+          optimisticWeightAt15:   { type: "number" },
+          timelineMonths: { type: "number", description: "Months from now to reach realistic scenario" },
+          phaseSequence: { type: "string", description: "Recommended phase sequence, e.g. 'Cut 6mo → recomp 3mo → lean bulk 6mo → mini-cut 2mo'" },
+          rationale: { type: "string", description: "1-paragraph explanation citing the user's specific data" },
+          keyConstraints: { type: "array", items: { type: "string" }, description: "3-5 specific factors limiting this user's ceiling" },
+        },
+        required: ["conservativeLBM", "realisticLBM", "optimisticLBM", "conservativeWeightAt15", "realisticWeightAt15", "optimisticWeightAt15", "timelineMonths", "phaseSequence", "rationale", "keyConstraints"],
+      },
+    }],
+    tool_choice: { type: "tool", name: "submit_max_lbm" },
+    messages: [{ role: "user", content: `Analyse this user's data and project their realistic LBM ceiling.\n\n${context}` }],
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === "tool_use") as any;
+  if (!toolBlock) throw new Error("Model did not return a structured projection");
+  return toolBlock.input as MaxLBMProjection;
 }
 
 export async function saveMealPlan(userId: string, plan: GeneratedMealPlan): Promise<void> {
