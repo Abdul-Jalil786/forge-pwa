@@ -1252,15 +1252,28 @@ function renderDayDetail(date){
         const summary=timed
           ?sets.map(s=>fmtSec(s.seconds)).join(', ')+(exEffort?efMap[exEffort]||'':'')
           :sets.map(s=>`${s.kg||'-'}×${s.reps||'-'}${s.effort?(efMap[s.effort]||''):''}`).join(', ');
-        return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
-          <div style="font-weight:600;font-size:13px;">${ex.name}</div>
+        return `<div onclick="openSetEdit('${date}','${ex.id}')" style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <div style="font-weight:600;font-size:13px;">${ex.name}</div>
+            <div style="font-size:10px;color:var(--text3);">✏️ tap to edit</div>
+          </div>
           <div style="font-size:11px;color:var(--text2);margin-top:2px;">${summary||'no sets logged'}</div>
         </div>`;
       }).join('');
+      // Exercises in the workout that were NOT done — let user add them retroactively
+      const notDoneEx = w.exercises.filter(e => !sessionLog[e.id]?.done);
+      const notDoneRows = notDoneEx.map(ex => `<div onclick="openSetEdit('${date}','${ex.id}')" style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;opacity:.55;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;">
+          <div style="font-weight:600;font-size:13px;color:var(--text3);">${ex.name}</div>
+          <div style="font-size:10px;color:var(--text3);">+ add</div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;font-style:italic;">not logged — tap to backfill</div>
+      </div>`).join('');
       html+=`<div class="card" style="margin-bottom:10px;">
         <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:var(--lime);margin-bottom:4px;">${w.name}</div>
         <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${doneEx.length}/${w.exercises.length} exercises · ${totalVolume.toFixed(0)}kg total volume</div>
         ${setRows}
+        ${notDoneRows}
       </div>`;
     }
   }
@@ -1358,6 +1371,216 @@ function renderDayDetail(date){
 }
 
 // ============================================================
+// PHASE 31: "Where You Stand" — peer comparison to age/sex-matched norms
+// ============================================================
+
+// Reference bands by metric, age, sex. Each band = {label, max, color}.
+// User falls in the FIRST band where value < max (last band catches everything else).
+const WYS = {
+  bf: {
+    male: function(age){
+      if(age == null) return null;
+      if(age <= 39) return [
+        {label:'Athletic',  max:11, color:'var(--green)'},
+        {label:'Fitness',   max:17, color:'var(--lime)'},
+        {label:'Average',   max:22, color:'var(--blue)'},
+        {label:'Above avg', max:27, color:'var(--orange)'},
+        {label:'Obese',     max:Infinity, color:'var(--red)'},
+      ];
+      if(age <= 59) return [
+        {label:'Athletic',  max:13, color:'var(--green)'},
+        {label:'Fitness',   max:18, color:'var(--lime)'},
+        {label:'Average',   max:23, color:'var(--blue)'},
+        {label:'Above avg', max:28, color:'var(--orange)'},
+        {label:'Obese',     max:Infinity, color:'var(--red)'},
+      ];
+      return [
+        {label:'Athletic',  max:14, color:'var(--green)'},
+        {label:'Fitness',   max:19, color:'var(--lime)'},
+        {label:'Average',   max:24, color:'var(--blue)'},
+        {label:'Above avg', max:29, color:'var(--orange)'},
+        {label:'Obese',     max:Infinity, color:'var(--red)'},
+      ];
+    },
+    female: function(age){
+      if(age == null) return null;
+      if(age <= 39) return [
+        {label:'Athletic',  max:17, color:'var(--green)'},
+        {label:'Fitness',   max:23, color:'var(--lime)'},
+        {label:'Average',   max:28, color:'var(--blue)'},
+        {label:'Above avg', max:32, color:'var(--orange)'},
+        {label:'Obese',     max:Infinity, color:'var(--red)'},
+      ];
+      if(age <= 59) return [
+        {label:'Athletic',  max:18, color:'var(--green)'},
+        {label:'Fitness',   max:24, color:'var(--lime)'},
+        {label:'Average',   max:29, color:'var(--blue)'},
+        {label:'Above avg', max:33, color:'var(--orange)'},
+        {label:'Obese',     max:Infinity, color:'var(--red)'},
+      ];
+      return [
+        {label:'Athletic',  max:19, color:'var(--green)'},
+        {label:'Fitness',   max:25, color:'var(--lime)'},
+        {label:'Average',   max:30, color:'var(--blue)'},
+        {label:'Above avg', max:34, color:'var(--orange)'},
+        {label:'Obese',     max:Infinity, color:'var(--red)'},
+      ];
+    },
+  },
+  bmi: [
+    {label:'Underweight', max:18.5, color:'var(--orange)'},
+    {label:'Normal',      max:25,   color:'var(--green)'},
+    {label:'Overweight',  max:30,   color:'var(--orange)'},
+    {label:'Obese I',     max:35,   color:'#ff7043'},
+    {label:'Obese II',    max:40,   color:'var(--red)'},
+    {label:'Obese III',   max:Infinity, color:'#d32f2f'},
+  ],
+  lbmi: { // Lean Body Mass Index = LBM / height_m². Men.
+    male: [
+      {label:'Low',         max:17, color:'var(--orange)'},
+      {label:'Average',     max:19, color:'var(--blue)'},
+      {label:'Above avg',   max:22, color:'var(--lime)'},
+      {label:'Excellent',   max:25, color:'var(--green)'},
+      {label:'Very high',   max:Infinity, color:'#4caf50'},
+    ],
+    female: [
+      {label:'Low',         max:14, color:'var(--orange)'},
+      {label:'Average',     max:16, color:'var(--blue)'},
+      {label:'Above avg',   max:18, color:'var(--lime)'},
+      {label:'Excellent',   max:21, color:'var(--green)'},
+      {label:'Very high',   max:Infinity, color:'#4caf50'},
+    ],
+  },
+  rhr: { // Resting heart rate by age 50-65 (Mayo Clinic adult bands, men)
+    bands: [
+      {label:'Athletic',    max:56, color:'var(--green)'},
+      {label:'Excellent',   max:62, color:'var(--lime)'},
+      {label:'Good',        max:66, color:'var(--blue)'},
+      {label:'Above avg',   max:70, color:'#8bc34a'},
+      {label:'Average',     max:74, color:'var(--orange)'},
+      {label:'Below avg',   max:78, color:'#ff7043'},
+      {label:'Poor',        max:Infinity, color:'var(--red)'},
+    ],
+  },
+  sleep: [
+    {label:'Short',        max:6,  color:'var(--red)'},
+    {label:'Borderline',   max:7,  color:'var(--orange)'},
+    {label:'Recommended',  max:9,  color:'var(--green)'},
+    {label:'Long',         max:Infinity, color:'var(--orange)'},
+  ],
+  visceral: { // Withings scale 1-30 range. South Asian threshold lower.
+    standard: [
+      {label:'Healthy',     max:10, color:'var(--green)'},
+      {label:'Elevated',    max:15, color:'var(--orange)'},
+      {label:'High risk',   max:Infinity, color:'var(--red)'},
+    ],
+    southAsian: [
+      {label:'Healthy',     max:7,  color:'var(--green)'},
+      {label:'Elevated',    max:10, color:'var(--orange)'},
+      {label:'High risk',   max:Infinity, color:'var(--red)'},
+    ],
+  },
+};
+
+function _classify(value, bands){
+  if(!Array.isArray(bands)) return null;
+  for(let i=0;i<bands.length;i++){ if(value < bands[i].max) return {...bands[i], index:i, total:bands.length}; }
+  const last = bands[bands.length-1]; return {...last, index:bands.length-1, total:bands.length};
+}
+
+function _wysRow(label, value, unit, bands, hint){
+  if(value == null || !bands) return '';
+  const cat = _classify(value, bands);
+  if(!cat) return '';
+  const segWidth = 100 / bands.length;
+  const segs = bands.map((b, i) => {
+    const active = i === cat.index;
+    return `<div style="flex:1;height:8px;background:${active ? b.color : 'var(--bg2)'};border-right:${i < bands.length-1 ? '1px solid var(--bg)' : 'none'};"></div>`;
+  }).join('');
+  return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+      <div style="font-size:13px;color:var(--text);">${label}</div>
+      <div style="text-align:right;">
+        <div style="font-family:'Archivo Black',sans-serif;font-size:16px;color:${cat.color};">${value}${unit}</div>
+        <div style="font-size:10px;color:${cat.color};text-transform:uppercase;letter-spacing:1px;font-weight:700;">${cat.label}</div>
+      </div>
+    </div>
+    <div style="display:flex;border-radius:4px;overflow:hidden;margin-bottom:4px;">${segs}</div>
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);">${bands.map(b=>`<div style="flex:1;text-align:center;${b.label===cat.label?'color:var(--text2);font-weight:600;':''}">${b.label}</div>`).join('')}</div>
+    ${hint?`<div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.4;">${hint}</div>`:''}
+  </div>`;
+}
+
+function renderWhereYouStand(){
+  const profile = STATE.profile || {};
+  const personal = profile.personal || {};
+  const age = personal.age;
+  const heightCm = personal.heightCm;
+  const sex = personal.sex || 'male';
+  const ethnicity = personal.ethnicity;
+
+  if(!age || !heightCm || !sex){
+    return `<div class="sec-label">Where You Stand</div>
+      <div class="card" style="margin-bottom:14px;padding:16px;">
+        <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:10px;">Fill in your <strong>Personal Profile</strong> (age, height, sex) on the More page to see how you compare against peers of your demographic.</div>
+        <button class="btn btn-ghost btn-sm" style="width:100%;" onclick="nav('more')">Go to More</button>
+      </div>`;
+  }
+
+  const wl = STATE.weightLog || [];
+  const bl = STATE.bfLog || [];
+  const bc = STATE.bodyComp || {};
+  const cw = wl.length ? wl[wl.length-1].weight : null;
+  const cbf = bl.length ? bl[bl.length-1].bf : null;
+  const clbm = (cw && cbf) ? Math.round(cw * (1 - cbf/100) * 10) / 10 : null;
+  const heightM = heightCm / 100;
+  const bmi = cw ? Math.round((cw / (heightM*heightM)) * 10) / 10 : null;
+  const lbmi = clbm ? Math.round((clbm / (heightM*heightM)) * 10) / 10 : null;
+
+  // Visceral fat — latest reading
+  let visceral = null;
+  const bcDates = Object.keys(bc).sort();
+  for(let i=bcDates.length-1;i>=0;i--){ if(bc[bcDates[i]]?.visceralFat != null){ visceral = bc[bcDates[i]].visceralFat; break; } }
+
+  // RHR — 7-day average from Oura recovery
+  const recovery = STATE.recovery || {};
+  const rhrValues = [];
+  for(let i=0;i<7;i++){
+    const d = new Date(); d.setDate(d.getDate()-i);
+    const key = d.toISOString().slice(0,10);
+    const r = recovery[key];
+    if(r && typeof r.restingHR === 'number') rhrValues.push(r.restingHR);
+  }
+  const avgRHR = rhrValues.length ? Math.round(rhrValues.reduce((s,x)=>s+x,0)/rhrValues.length) : null;
+
+  // Sleep — 7-day average
+  const sleepLog = STATE.sleepLog || {};
+  const sleepValues = [];
+  for(let i=0;i<7;i++){
+    const d = new Date(); d.setDate(d.getDate()-i);
+    const key = d.toISOString().slice(0,10);
+    const s = sleepLog[key];
+    if(s && typeof s.hours === 'number') sleepValues.push(s.hours);
+  }
+  const avgSleep = sleepValues.length ? Math.round((sleepValues.reduce((s,x)=>s+x,0)/sleepValues.length) * 10) / 10 : null;
+
+  const bfBands = WYS.bf[sex] ? WYS.bf[sex](age) : null;
+  const lbmiBands = WYS.lbmi[sex];
+  const visceralBands = ethnicity === 'south-asian' ? WYS.visceral.southAsian : WYS.visceral.standard;
+
+  return `<div class="sec-label">Where You Stand</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Compared to ${age}-year-old ${sex==='female'?'women':'men'}${ethnicity==='south-asian'?' (South Asian thresholds for visceral)':''}, height ${heightCm}cm.</div>
+    <div class="card" style="margin-bottom:14px;padding:12px 14px;">
+      ${_wysRow('Body Fat',  cbf,      '%',  bfBands, 'Lower body-fat ranges by age. BF measurements from scales are noisy — track the trend, not the daily.')}
+      ${_wysRow('BMI',       bmi,      '',   WYS.bmi, 'BMI is unreliable for muscular people. Use LBMI below for a better muscle signal.')}
+      ${_wysRow('Lean Mass Index', lbmi, '', lbmiBands, 'LBM / height² — a height-normalized muscularity score. >22 is excellent for a man.')}
+      ${_wysRow('Visceral Fat',  visceral, '',   visceralBands, ethnicity==='south-asian' ? 'South Asian threshold for elevated risk is ≥ 7 (vs ≥ 10 for European baseline).' : null)}
+      ${_wysRow('Resting HR (7d avg)', avgRHR, ' bpm', WYS.rhr.bands, 'Lower RHR generally indicates better cardiovascular fitness.')}
+      ${_wysRow('Sleep (7d avg)', avgSleep, ' h', WYS.sleep, 'NIH recommends 7-9 hours for adults.')}
+    </div>`;
+}
+
+// ============================================================
 // BODY PAGE (Measurements + Sleep)
 // ============================================================
 function renderBody(){
@@ -1371,6 +1594,8 @@ function renderBody(){
 
   document.getElementById('page-body').innerHTML=`
     <div class="pg-title" style="margin-bottom:14px;">Body & Health</div>
+
+    ${renderWhereYouStand()}
 
     <div class="sec-label">Measurements</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">

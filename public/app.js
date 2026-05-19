@@ -149,6 +149,125 @@ function saveFood(){
   if(typeof renderDayDetail==='function'&&targetDate!==todayStr())renderDayDetail(targetDate);
 }
 
+// ---- TRAINING SET EDIT (for past dates) ----
+let _setEdit = null; // { date, exId, exObj, sets: [{kg, reps, seconds, effort}], done }
+
+function openSetEdit(date, exId){
+  const allEx = [...WORKOUTS.upper.exercises, ...WORKOUTS.lower.exercises];
+  const exObj = allEx.find(e => e.id === exId);
+  if(!exObj){ showToast('Exercise not found'); return; }
+  const exLog = STATE.exLog || {};
+  const dayLog = exLog[date] || {};
+  const existing = dayLog[exId] || {};
+  const existingSets = Array.isArray(existing.sets) ? existing.sets : [];
+  const timed = isTimeBased(exObj);
+  // Use existing sets, or seed with `ex.sets` empty rows for new exercises
+  const sets = existingSets.length > 0
+    ? existingSets.map(s => ({
+        kg: s.kg || '',
+        reps: s.reps || '',
+        seconds: s.seconds || '',
+        effort: s.effort || '',
+        done: s.done || false,
+      }))
+    : Array.from({length: exObj.sets || 3}).map(() => ({ kg:'', reps:'', seconds:'', effort:'', done:false }));
+  _setEdit = { date, exId, exObj, timed, sets, done: !!existing.done };
+  document.getElementById('set-title').textContent = exObj.name + (timed ? ' (timed)' : '');
+  document.getElementById('set-date').textContent = date + ' · target ' + exObj.reps + (timed ? '' : ' reps');
+  document.getElementById('set-done').checked = _setEdit.done;
+  _renderSetRows();
+  openModal('modal-set-edit');
+}
+
+function _renderSetRows(){
+  const s = _setEdit;
+  if(!s) return;
+  const wrap = document.getElementById('set-rows');
+  const efforts = ['', 'easy', 'solid', 'tough'];
+  wrap.innerHTML = s.sets.map((row, i) => {
+    if(s.timed){
+      return `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--border);">
+        <div style="font-size:10px;color:var(--text3);width:38px;flex-shrink:0;">SET ${i+1}</div>
+        <input type="number" inputmode="numeric" value="${row.seconds||''}" placeholder="sec" oninput="_updateSetField(${i},'seconds',this.value)" style="flex:1;min-width:0;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-family:'Archivo Black',sans-serif;text-align:center;" />
+        <select onchange="_updateSetField(${i},'effort',this.value)" style="flex:0 0 88px;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;">
+          ${efforts.map(e=>`<option value="${e}"${row.effort===e?' selected':''}>${e||'effort'}</option>`).join('')}
+        </select>
+        <button onclick="_deleteSetFromEdit(${i})" style="flex:0 0 28px;background:transparent;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0;">×</button>
+      </div>`;
+    }
+    return `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--border);">
+      <div style="font-size:10px;color:var(--text3);width:38px;flex-shrink:0;">SET ${i+1}</div>
+      <input type="number" inputmode="decimal" step="0.25" value="${row.kg||''}" placeholder="kg" oninput="_updateSetField(${i},'kg',this.value)" style="flex:1;min-width:0;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-family:'Archivo Black',sans-serif;text-align:center;" />
+      <div style="font-size:13px;color:var(--text3);flex-shrink:0;">×</div>
+      <input type="number" inputmode="numeric" value="${row.reps||''}" placeholder="reps" oninput="_updateSetField(${i},'reps',this.value)" style="flex:1;min-width:0;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-family:'Archivo Black',sans-serif;text-align:center;" />
+      <select onchange="_updateSetField(${i},'effort',this.value)" style="flex:0 0 76px;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;">
+        ${efforts.map(e=>`<option value="${e}"${row.effort===e?' selected':''}>${e||'—'}</option>`).join('')}
+      </select>
+      <button onclick="_deleteSetFromEdit(${i})" style="flex:0 0 28px;background:transparent;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0;">×</button>
+    </div>`;
+  }).join('');
+}
+
+function _updateSetField(idx, field, value){
+  if(!_setEdit) return;
+  _setEdit.sets[idx][field] = value;
+}
+
+function _deleteSetFromEdit(idx){
+  if(!_setEdit) return;
+  _setEdit.sets.splice(idx, 1);
+  _renderSetRows();
+}
+
+function addSetToEdit(){
+  if(!_setEdit) return;
+  _setEdit.sets.push({ kg:'', reps:'', seconds:'', effort:'', done:false });
+  _renderSetRows();
+}
+
+async function saveSetEdit(){
+  if(!_setEdit) return;
+  const s = _setEdit;
+  // Filter out empty sets (no kg/reps/seconds)
+  const cleanedSets = s.sets.filter(r => r.kg || r.reps || r.seconds).map(r => ({
+    kg: r.kg ? String(r.kg) : undefined,
+    reps: r.reps ? String(r.reps) : undefined,
+    seconds: r.seconds ? parseInt(r.seconds, 10) : undefined,
+    effort: r.effort || undefined,
+    done: true,
+  }));
+  const done = document.getElementById('set-done').checked || cleanedSets.length >= (s.exObj.sets || 3) * 0.66;
+  const exLog = STATE.exLog || {};
+  if(!exLog[s.date]) exLog[s.date] = {};
+  exLog[s.date][s.exId] = { done, sets: cleanedSets };
+  STATE.exLog = exLog;
+  updateLocalCache();
+  try{
+    await saveFieldToServer(`/api/state/exLog/${s.date}`, { value: exLog[s.date] });
+    showToast('Saved ✓');
+    closeModal('modal-set-edit');
+    _setEdit = null;
+    if(typeof renderDayDetail === 'function') renderDayDetail(s.date);
+  }catch(e){ showToast('Save failed'); }
+}
+
+async function deleteExerciseFromDay(){
+  if(!_setEdit) return;
+  if(!confirm('Remove this exercise from ' + _setEdit.date + '?')) return;
+  const s = _setEdit;
+  const exLog = STATE.exLog || {};
+  if(exLog[s.date]) delete exLog[s.date][s.exId];
+  STATE.exLog = exLog;
+  updateLocalCache();
+  try{
+    await saveFieldToServer(`/api/state/exLog/${s.date}`, { value: exLog[s.date] || {} });
+    showToast('Removed');
+    closeModal('modal-set-edit');
+    _setEdit = null;
+    if(typeof renderDayDetail === 'function') renderDayDetail(s.date);
+  }catch(e){ showToast('Delete failed'); }
+}
+
 function delFoodFromDayDetail(idx,date){
   if(!confirm('Delete this entry from '+date+'?'))return;
   deleteFoodEntry(idx,date);
