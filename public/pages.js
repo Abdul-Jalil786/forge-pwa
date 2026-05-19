@@ -193,8 +193,8 @@ function renderToday(){
         <div style="flex:1;min-width:0;">
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Lean Mass</div>
           <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
-            <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--blue);">${lbmNow!=null?lbmNow:'—'}<span style="font-size:11px;color:var(--text2);">kg</span></div>
-            ${lbmPctNow!=null?`<div style="font-size:11px;color:var(--text2);">${lbmPctNow}%</div>`:''}
+            <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--blue);">${lbmPctNow!=null?lbmPctNow+'%':'—'}</div>
+            ${lbmNow!=null?`<div style="font-size:11px;color:var(--text2);">${lbmNow}kg lean</div>`:''}
             ${lbmTrend?`<div style="font-size:11px;color:${lbmTrend.dir==='flat'?'var(--green)':lbmTrend.dir==='up'?'var(--green)':Math.abs(parseFloat(lbmTrend.delta))<0.3?'#ffc107':'var(--red)'};">${lbmTrend.arrow} ${lbmTrend.delta}kg/wk</div>`:''}
             ${p.targetLBM?`<div style="font-size:10px;color:var(--text3);">target hold ${p.targetLBM}kg</div>`:''}
           </div>
