@@ -128,7 +128,8 @@ function saveFood(){
   const carbs=parseInt(document.getElementById('mf-carbs').value)||0;
   const fat=parseInt(document.getElementById('mf-fat').value)||0;
   const time=document.getElementById('mf-time').value||fmtNow();
-  if(!name||!cals){showToast('Name and calories required');return;}
+  if(!name){showToast('Name is required');return;}
+  if(!cals&&!protein&&!carbs&&!fat){showToast('Enter calories or at least one macro');return;}
   const targetDate=window._foodTargetDate||todayStr();
   const entry={name,cals,protein,carbs,fat,time,loggedAt:new Date().toISOString()};
   saveFoodEntry(entry,targetDate);
