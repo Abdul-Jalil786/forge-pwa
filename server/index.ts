@@ -297,6 +297,35 @@ async function seedJayBloodMarkers() {
   }
 }
 
+// Phase 32a: swap banana → 100g blueberries in Jay's post-workout shake meal.
+// User doesn't take banana in the shake; macros recomputed for blueberries.
+async function fixJayPostWorkoutBerries() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.profile?.postWorkoutBerriesV1) return;
+    if (!state.mealPlan?.meals?.length) return;
+    const meal = state.mealPlan.meals.find((m: any) => m.id === "post-workout");
+    if (!meal) return;
+    meal.name = "Post-Workout Shake (Whey, Milk, Blueberries, Creatine)";
+    meal.ingredients = [
+      {
+        name: "Immediately after training. 1 scoop whey protein + 200ml semi-skimmed milk + 100g blueberries + 5g creatine — blend or shake.",
+        cals: 273, protein: 32, carbs: 27, fat: 6,
+        edited: true,
+      },
+    ];
+    meal.cals = 273; meal.protein = 32; meal.carbs = 27; meal.fat = 6;
+    if (!state.profile) state.profile = {};
+    state.profile.postWorkoutBerriesV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay post-workout shake updated: banana → 100g blueberries");
+  } catch (err) {
+    console.error("[migration] Post-workout berry swap failed:", err);
+  }
+}
+
 // Phase 29: fix Jay's visceral target — his current visceral (~6.3) is already in healthy range,
 // the previous target of 10 was regression-encouraging. Reset to a maintenance/improvement target of 6.
 async function fixJayVisceralTarget() {
@@ -322,6 +351,7 @@ const server = app.listen(PORT, () => {
   seedJayMealPlan();
   fixJayVisceralTarget();
   seedJayBloodMarkers();
+  fixJayPostWorkoutBerries();
 });
 
 const shutdown = async (signal: string) => {
