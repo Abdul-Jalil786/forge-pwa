@@ -23,15 +23,24 @@ function fmtHrsPlain(h){
 }
 
 function spark(values,color){
-  if(!values||values.length<2)return '<svg width="80" height="24"></svg>';
-  const w=80,h=24,p=2;
+  if(!values||values.length<2)return '<svg width="100" height="32"></svg>';
+  const w=100,h=32,p=3;
   const min=Math.min(...values),max=Math.max(...values),range=max-min||1;
-  const points=values.map((v,i)=>{
+  const pts=values.map((v,i)=>{
     const x=p+(i/(values.length-1))*(w-p*2);
     const y=h-p-((v-min)/range)*(h-p*2);
-    return x.toFixed(1)+','+y.toFixed(1);
-  }).join(' ');
-  return `<svg width="${w}" height="${h}" style="display:block;"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    return {x,y};
+  });
+  const linePoints=pts.map(pt=>pt.x.toFixed(1)+','+pt.y.toFixed(1)).join(' ');
+  const fillPath=`M${pts[0].x.toFixed(1)},${h} L${pts.map(pt=>pt.x.toFixed(1)+','+pt.y.toFixed(1)).join(' L')} L${pts[pts.length-1].x.toFixed(1)},${h} Z`;
+  const gradId='spk'+Math.random().toString(36).slice(2,8);
+  const last=pts[pts.length-1];
+  return `<svg width="${w}" height="${h}" style="display:block;">
+    <defs><linearGradient id="${gradId}" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity="0.35"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    <path d="${fillPath}" fill="url(#${gradId})"/>
+    <polyline points="${linePoints}" fill="none" stroke="${color}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="2.5" fill="${color}"/>
+  </svg>`;
 }
 
 function trendDelta(values,days){
@@ -104,6 +113,20 @@ function renderToday(){
   const weightTrend=trendDelta(getWeightLog().map(e=>e.weight),7);
   const bfTrend=trendDelta(getBfLog().map(e=>e.bf),7);
 
+  // Phase 30a: derived fat mass + LBM
+  const fatMassNow = (cw != null && bf != null) ? Math.round(cw * (bf/100) * 10) / 10 : null;
+  const lbmNow     = (cw != null && bf != null) ? Math.round(cw * (1 - bf/100) * 10) / 10 : null;
+  const lbmEntries = (typeof getJourneyEntries === 'function' ? getJourneyEntries('lbm') : []);
+  const lbmSparkArr = lbmEntries.slice(-14).map(e => e.lbm);
+  const lbmSpark = lbmSparkArr.length >= 2 ? spark(lbmSparkArr, 'var(--blue)') : '';
+  const lbmTrend = trendDelta(lbmEntries.map(e => e.lbm), 7);
+  const fatMassEntries = lbmEntries.map(e => {
+    const wLog = getWeightLog().find(w => w.date === e.date);
+    return wLog ? { date: e.date, fat: Math.round(wLog.weight * (1 - e.lbm/wLog.weight) * 10) / 10 } : null;
+  }).filter(Boolean);
+  const fatMassSparkArr = fatMassEntries.slice(-14).map(e => e.fat);
+  const fatMassSpark = fatMassSparkArr.length >= 2 ? spark(fatMassSparkArr, 'var(--orange)') : '';
+
   document.getElementById('page-today').innerHTML=`
     <div style="margin-bottom:14px;">
       <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;">${dayName()} ${new Date().getDate()} ${new Date().toLocaleDateString('en-GB',{month:'short'})}</div>
@@ -145,33 +168,45 @@ function renderToday(){
     <div class="sec-label">Key Metrics</div>
     <div class="card" style="margin-bottom:10px;padding:10px 12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-        <div style="flex:1;">
+        <div style="flex:1;min-width:0;">
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Weight</div>
-          <div style="display:flex;align-items:baseline;gap:8px;">
+          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
             <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--lime);">${cw}<span style="font-size:11px;color:var(--text2);">kg</span></div>
             ${weightTrend?`<div style="font-size:11px;color:${weightTrend.dir==='down'?'var(--green)':weightTrend.dir==='up'?'var(--red)':'var(--text2)'};">${weightTrend.arrow} ${weightTrend.delta}kg/wk</div>`:''}
           </div>
         </div>
-        <div>${weightSpark}</div>
+        <div style="flex-shrink:0;">${weightSpark}</div>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-        <div style="flex:1;">
+        <div style="flex:1;min-width:0;">
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Body Fat</div>
-          <div style="display:flex;align-items:baseline;gap:8px;">
+          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
             <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--cyan);">${bf?bf+'%':'—'}</div>
+            ${fatMassNow!=null?`<div style="font-size:11px;color:var(--text2);">${fatMassNow}kg fat</div>`:''}
             ${bfTrend?`<div style="font-size:11px;color:${bfTrend.dir==='down'?'var(--green)':bfTrend.dir==='up'?'var(--red)':'var(--text2)'};">${bfTrend.arrow} ${bfTrend.delta}%/wk</div>`:''}
           </div>
         </div>
-        <div>${bfSpark}</div>
+        <div style="flex-shrink:0;">${bfSpark}</div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Lean Mass</div>
+          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+            <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--blue);">${lbmNow!=null?lbmNow:'—'}<span style="font-size:11px;color:var(--text2);">kg</span></div>
+            ${lbmTrend?`<div style="font-size:11px;color:${lbmTrend.dir==='flat'?'var(--green)':lbmTrend.dir==='up'?'var(--green)':Math.abs(parseFloat(lbmTrend.delta))<0.3?'#ffc107':'var(--red)'};">${lbmTrend.arrow} ${lbmTrend.delta}kg/wk</div>`:''}
+            ${p.targetLBM?`<div style="font-size:10px;color:var(--text3);">target hold ${p.targetLBM}kg</div>`:''}
+          </div>
+        </div>
+        <div style="flex-shrink:0;">${lbmSpark}</div>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;">
-        <div style="flex:1;">
+        <div style="flex:1;min-width:0;">
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Waist</div>
           <div style="display:flex;align-items:baseline;gap:8px;">
             <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--orange);">${latestWaist?latestWaist.waist+'cm':'—'}</div>
           </div>
         </div>
-        <div>${waistSparkSvg}</div>
+        <div style="flex-shrink:0;">${waistSparkSvg}</div>
       </div>
     </div>
 
