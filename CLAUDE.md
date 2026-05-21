@@ -112,14 +112,15 @@ A personal fitness tracking PWA. Mobile-first, vanilla JS frontend, Node + Expre
 4. Suggestions appear on the Coach page with Apply/Dismiss buttons. Apply types: `macros` (writes profile.calsGym/calsRest/macros), `reminders` (adds/removes), `note` (informational).
 5. Manual "Generate Report Now" button on More page (rate-limited to 1/hour).
 
-## Legacy Cowork integration (kept for backward compat, not actively used)
-- Jay's PAT (forge_pat_...) lives in Cowork memory, hashed in Forge DB
-- Cowork endpoints still available: GET /api/export, PUT /api/meal-plan, PUT /api/profile, PUT /api/reminders, POST /api/coaching-reports
-- Sunday cron task in Cowork is no longer the primary path — BYOK Forge cron is
-4. Meal plan format: meals[] with structured ingredients[] and supplements[] arrays (see memory/meal-plan-format.md for spec)
-5. Field-scoped state endpoints (used by frontend, not Cowork):
-   - PUT /api/state/foods/:date, /api/state/exLog/:date, /api/state/water/:date
-   - PUT /api/state/weight, /api/state/sleep/:date
+## Cowork removed (Phase 34)
+- The entire legacy Cowork PAT integration is gone — UI section, frontend token functions, and all 5 dead backend route files (tokens/export/mealplan/profile-routes/reminders-routes), the `requireAccessToken` middleware, and the legacy `POST/DELETE /api/coaching-reports` routes. The `AccessToken` Prisma model + its migrations are left in place (dormant, unused table — dropping it would need a migration for no real gain).
+- All coaching is now BYOK only (see "How coaching works" above).
+
+## Field-scoped state endpoints (used by frontend)
+- PUT /api/state/foods/:date, /api/state/exLog/:date, /api/state/water/:date
+- PUT /api/state/weight, /api/state/sleep/:date
+- PUT /api/state/meal-plan, /api/state/profile/{personal,medications,food-prefs,blood-markers}
+- Meal plan format: meals[] with structured ingredients[] and supplements[] arrays
 
 ## Style conventions
 - Lime (#c8ff00) primary, black (#080808) bg, Archivo Black for headlines

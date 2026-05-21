@@ -2209,15 +2209,6 @@ function renderMore(){
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="saveFoodPrefs()">Save Preferences</button>
     </div>
 
-    <div class="sec-label">Cowork Access Token (legacy)</div>
-    <div class="card" style="margin-bottom:10px;">
-      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
-        Old integration — used to let Cowork push reports. Superseded by the AI Coach above. Revoke any unused tokens.
-      </div>
-      <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px;" onclick="generateAccessToken()">+ Generate Access Token</button>
-      <div id="token-list" style="font-size:12px;"></div>
-    </div>
-
     <div class="sec-label">Oura Ring</div>
     <div class="card" style="margin-bottom:10px;">
       <div id="oura-status" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">Loading...</div>
@@ -2281,15 +2272,4 @@ function renderMore(){
   loadPersonalProfileUI();
   renderMedsList();
   renderBloodMarkersList();
-
-  loadAccessTokens().then(tokens=>{
-    const el=document.getElementById('token-list');
-    if(!el)return;
-    if(tokens.length===0){el.innerHTML='<div style="color:var(--text3);">No tokens yet</div>';return;}
-    el.innerHTML=tokens.map(t=>`
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
-        <div><strong>${t.name||'Token'}</strong><br><span style="color:var(--text3);font-size:10px;">Created ${new Date(t.createdAt).toLocaleDateString()}${t.lastUsedAt?' · Last used '+new Date(t.lastUsedAt).toLocaleDateString():''}</span></div>
-        <button class="btn btn-red btn-sm" style="font-size:10px;padding:4px 8px;" onclick="revokeAccessToken('${t.id}')">Revoke</button>
-      </div>`).join('');
-  });
 }

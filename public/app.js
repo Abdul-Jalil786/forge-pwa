@@ -1134,48 +1134,6 @@ async function dismissCoachSuggestion(rid,sid){
   }catch{showToast('Failed');}
 }
 
-// ---- ACCESS TOKENS ----
-async function generateAccessToken(){
-  const name=prompt('Token name (e.g. "Cowork"):')||'Cowork';
-  const jwt=localStorage.getItem('forge_token');
-  try{
-    const res=await fetch('/api/tokens',{
-      method:'POST',
-      headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},
-      body:JSON.stringify({name})
-    });
-    if(!res.ok)throw new Error('Failed');
-    const data=await res.json();
-    const url=window.location.origin;
-    const msg=`Token created. Save these — token only shown once:\n\nURL: ${url}\n\nToken: ${data.token}`;
-    prompt('Copy your token (Cmd/Ctrl+C):',data.token);
-    alert(msg);
-    renderMore();
-  }catch(e){
-    showToast('Failed to create token');
-  }
-}
-
-async function revokeAccessToken(id){
-  if(!confirm('Revoke this token? Cowork will lose access.'))return;
-  const jwt=localStorage.getItem('forge_token');
-  try{
-    await fetch('/api/tokens/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+jwt}});
-    renderMore();
-    showToast('Token revoked');
-  }catch(e){showToast('Failed');}
-}
-
-async function loadAccessTokens(){
-  const jwt=localStorage.getItem('forge_token');
-  try{
-    const res=await fetch('/api/tokens',{headers:{Authorization:'Bearer '+jwt}});
-    if(!res.ok)return [];
-    const data=await res.json();
-    return data.tokens||[];
-  }catch{return [];}
-}
-
 // ---- PUSH NOTIFICATIONS ----
 async function enableReminders(){
   if(!("serviceWorker" in navigator)||!("PushManager" in window)){

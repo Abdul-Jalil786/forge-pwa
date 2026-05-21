@@ -236,7 +236,7 @@ export function startCron() {
     }
   }, { timezone: "Europe/London" });
 
-  // Sunday 21:00 UK — weekly numbers preview (lighter than Cowork's full Sunday report)
+  // Sunday 21:00 UK — weekly numbers preview (lighter than the AI Coach's full Sunday report)
   cron.schedule("0 21 * * 0", async () => {
     console.log("Running Sunday weekly summary...");
     try {
