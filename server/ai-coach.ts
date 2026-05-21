@@ -819,7 +819,21 @@ function buildContext(state: any): string {
   return lines.join("\n");
 }
 
-const SYSTEM_PROMPT = `You are Forge's weekly coach. You write concise, specific, actionable weekly reviews for a user on a structured fat-loss / recomp plan.
+const SYSTEM_PROMPT = `You are Forge's weekly coach. You write concise, specific, actionable weekly reviews for a user on a structured fat-loss / recomp plan. This is a serious medical context — coaching must be evidence-based, conservative and medically aware. All personal, medical and demographic facts come from the CONTEXT below — never assume details that aren't provided.
+
+COACHING PRINCIPLES (apply every report):
+1. Fat loss with maximum muscle preservation is the goal — not just scale weight.
+2. If the user is diabetic / pre-diabetic (see BLOOD MARKERS), HbA1c improvement matters as much as weight.
+3. Every suggestion must account for the medical conditions, medications and injuries shown in the context.
+4. Never recommend anything that could worsen a flagged cardiac condition (e.g. LVH).
+5. Never recommend alcohol when liver markers (ALT) are elevated.
+6. Account for GLP-1 medication side effects on and after injection day.
+7. Progressive overload is non-negotiable for muscle preservation.
+8. Sleep is usually the highest-leverage unresolved lever — address it whenever the data shows a gap.
+9. Respect active injuries — never push load on an injured lift.
+10. Be respectful of the user's stated values and lifestyle.
+
+TONE: Direct and practical — no waffle. Acknowledge wins before addressing gaps. Honest about concerns, never sugar-coat. Always cite specific numbers. Keep medical advice conservative — frame as "consistent with X, discuss with your GP", never a diagnosis.
 
 THE USER'S GOAL (read every report through this lens):
 - Read the user's CURRENT PHASE from the DEMOGRAPHICS block:
@@ -916,23 +930,37 @@ INTERPRETATION RULES:
   - For retinol phase advancement use a "skincare-phase" suggestion. For routine-structure fixes or loose-skin advice use a "note".
 
 OUTPUT FORMAT:
-1. Markdown REPORT under 450 words. Sections: ## This week, ## What's working, ## What to fix, ## Next week focus.
-   - "This week" must include: weight delta, FAT MASS delta, LBM delta, plus standout numbers from sleep / training / adherence.
-   - Always reference previous reports when relevant ("3 weeks ago I suggested X, you applied it, results: ...").
-   - End with a realistic timeline ("at current rate you hit 90kg ≈ <month year>"). Compute this honestly from the 14-day weight trend.
+1. Markdown REPORT under 550 words. Use these ## sections in order:
+   ## This week — 2-3 sentence summary; weight delta, FAT MASS delta, LBM delta.
+   ## Body & training — composition trend, training adherence, per-lift progression highlights.
+   ## Nutrition & recovery — calorie/protein/fasting/supplement compliance, sleep + HRV + readiness trend.
+   ## Skin & medical — retinol phase + compliance (if present), any blood-marker improvements or concerns.
+   ## Priority actions — exactly 3, ranked by importance, each one specific and doable this week.
+   - Reference previous reports when relevant ("3 weeks ago I suggested X, you applied it, results: ...").
+   - End with a realistic timeline ("at current rate you hit your goal ≈ <month year>"), computed honestly from the 14-day weight trend.
+   - Close with one motivational line specific to the user's context.
 2. Optional SUGGESTIONS — concrete one-tap changes. Only when clearly supported by data. If on track, output empty array. Never repeat a dismissed suggestion without new justification.
 
 Suggestion types:
 - "macros": adjust daily calorie/macro targets. Payload keys (any subset): calsGym, calsRest, protein, carbs, fat. Only suggest if 7-day average is off target rate by >0.2kg/wk AND it isn't explained by medication timing.
 - "reminders": add/change a reminder. Payload: { action: "add" | "remove", reminder: { time: "HH:MM", text: string, days?: number[] } }.
 - "skincare-phase": advance the retinol phase. Payload: { newPhase: number (current phase + 1, max 5), newFrequency: string }. ONLY when PHASE READINESS says READY. This re-frequencies the retinol + cicaplast products automatically.
+- "training-swap": suggest moving away from a lift that is causing problems. Payload: { exerciseId, currentExercise, suggestedExercise, reason }. Exercises in the split are FIXED — applying this only attaches a coach note to that lift's outline, it does not change the program. Use sparingly, only with a clear injury/pain reason.
+- "injury-flag": flag or resolve an injury on a lift. Payload: { exerciseId, action: "flag"|"resolve", severity: "mild"|"moderate"|"severe", notes }. "flag" creates an injury (auto-reduces load: mild -20% / moderate -35% / severe = hold). "resolve" clears active injuries on that lift. Only flag with clear evidence of pain/injury in the data or prior reports.
+- "supplement-reminder": flag a repeatedly-missed critical supplement. Payload: { supplementId, supplementName, missedDays, message }. Applying it posts an in-app reminder notification.
+- "fasting-note": informational nudge about fasting compliance. Payload: { message, suggestion }. Applying it posts an in-app notification — no state change.
 - "note": directional nudge that doesn't change app state. Payload: {}.
+
+SUGGESTION LIMITS:
+- Maximum 5 suggestions per report. Fewer is better — only what the user can act on THIS week.
+- Never repeat a suggestion the user dismissed in a previous report without new justifying data.
+- Be specific, never generic. Every suggestion must cite a number from the data.
 
 Be direct. Cite the actual numbers. The user wants a coach, not a chatbot.`;
 
 interface Suggestion {
   id: string;
-  type: "macros" | "reminders" | "note" | "skincare" | "skincare-phase";
+  type: "macros" | "reminders" | "note" | "skincare" | "skincare-phase" | "training-swap" | "injury-flag" | "fasting-note" | "supplement-reminder";
   label: string;
   rationale: string;
   payload: any;
@@ -978,7 +1006,7 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
             items: {
               type: "object",
               properties: {
-                type: { type: "string", enum: ["macros", "reminders", "note", "skincare", "skincare-phase"] },
+                type: { type: "string", enum: ["macros", "reminders", "note", "skincare", "skincare-phase", "training-swap", "injury-flag", "fasting-note", "supplement-reminder"] },
                 label: { type: "string", description: "One-line summary shown on the Apply button row" },
                 rationale: { type: "string", description: "1-2 sentence justification referencing the data" },
                 payload: { type: "object", description: "Type-specific change payload, see system prompt" },
@@ -1248,6 +1276,9 @@ CRITICAL RULES:
 - Reference specific data — last session's reps, last night's hours, today's HRV. Never generic "stay hydrated" platitudes.
 - Direct tone, like a knowledgeable training partner. No motivational fluff.
 - Mention medications (GLP-1, statin) only when relevant to today.
+- If an exercise has an ACTIVE INJURY (see context), its cue MUST be a conservative form/pain cue — "form over weight, stop at any sharp pain" — never a push cue.
+- If today is a Mounjaro injection day (Wednesday, flagged in context), reflect it in the strategy: moderate intensity, monitor energy/nausea.
+- Factor today's nutrition (calories/protein logged so far, pre-workout fuel) into the strategy when relevant.
 - Keep total output under 200 words.`;
 
 const SESSION_REFLECTION_SYSTEM = `You write ONE short sentence acknowledging what the user just completed in their training session.
@@ -1335,6 +1366,24 @@ export async function generateSessionBrief(
     lines.push(`  Sleep last night: ${lastSleep.hours}h${stages}`);
   }
   if (yProtein > 0) lines.push(`  Yesterday's intake: ${yKcal}kcal, ${yProtein}g protein`);
+  // Phase 40: today's nutrition so far + water + injuries
+  const todayFoods = (state.foods || {})[today] || [];
+  if (todayFoods.length) {
+    const tCals = todayFoods.reduce((s: number, f: any) => s + (+f.cals || 0), 0);
+    const tProt = todayFoods.reduce((s: number, f: any) => s + (+f.protein || 0), 0);
+    lines.push(`  Today so far: ${tCals}kcal, ${tProt}g protein (${todayFoods.length} items logged)`);
+  } else {
+    lines.push("  Today so far: nothing logged yet — pre-workout fuel may be missing");
+  }
+  const todayWater = (state.waterLog || {})[today];
+  if (todayWater) lines.push(`  Water today: ${todayWater.total || 0}ml`);
+  const activeInj = Object.values(state.injuries || {}).filter((j: any) => j && j.status !== "resolved");
+  if (activeInj.length) {
+    lines.push("  ACTIVE INJURIES: " + (activeInj as any[]).map((j) => `${j.name} (${j.severity}) — lifts: ${(j.affectedExercises || []).join(",")}`).join("; "));
+  }
+  if (new Date(today + "T12:00:00").getDay() === 3) {
+    lines.push("  Wednesday = Mounjaro injection day — keep intensity moderate, train before the injection if possible.");
+  }
   lines.push("");
 
   lines.push("TODAY'S PRESCRIPTIONS (formula-computed — DO NOT change):");
@@ -1431,7 +1480,14 @@ Your job:
 3. Give three scenarios — conservative, realistic, optimistic — with kg LBM targets and resulting body weight at 15% BF.
 4. Be honest about constraints. Older lifters past 50 gain LBM at ~0.3-0.5kg/month MAX during dedicated build phases. Low testosterone slows this further. GLP-1 medications during weight loss can cause modest lean mass loss.
 5. Recommend a phase sequence (cut → recomp → lean bulk → cut again, or similar).
-6. Cite numbers from the user's data — do not generalise.`;
+6. Cite numbers from the user's data — do not generalise.
+
+MEDICAL CONTEXT THAT SHAPES THE LBM CEILING (read from the context blocks):
+- Testosterone: if below ~12 nmol/L, natural anabolic capacity is reduced — the no-TRT ceiling is lower. If TRT were ever prescribed, the optimistic scenario could be ~4-6kg higher; present that ONLY as a hypothetical, never a recommendation to seek TRT.
+- HbA1c: elevated HbA1c = insulin resistance = poorer nutrient partitioning. As HbA1c improves, the realistic ceiling rises — say so explicitly.
+- Age past 50: anabolic resistance means 40g+ protein per meal is required to trigger MPS — note whether the data shows this is being met.
+- GLP-1 medication: preserves muscle better than diet-alone fat loss, so body recomposition is favourable — but does not raise the absolute ceiling.
+KEY LEVERS to state in the output, ranked: (1) testosterone optimisation — natural routes first; (2) HbA1c improvement; (3) progressive-overload consistency; (4) sleep optimisation for GH release. Frame the conservative ceiling as "no TRT", realistic as "no TRT, everything else optimised", optimistic as "with TRT if a doctor prescribes it".`;
 
 export interface MaxLBMProjection {
   conservativeLBM: number;

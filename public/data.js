@@ -94,6 +94,8 @@ let STATE = {
   waterLog: {},
   fastingLog: {},
   mounjaroLog: {},
+  notifications: [],
+  exerciseNotes: {},
 };
 
 // ---- OWNER GATE (Phase 35) — some features are personal to the owner only ----
@@ -1501,4 +1503,46 @@ function getSessionCalorieBurn(){
   const cal=(pGet('calorieLog',{})[todayStr()]);
   if(cal&&cal.workout)return Math.round(cal.workout);
   return st==='lower'?450:350;
+}
+
+// ---- Phase 40: notifications ----
+function getNotifications(){
+  const list=pGet('notifications',[]);
+  if(!Array.isArray(list))return [];
+  const today=todayStr();
+  return list.filter(n=>n&&(!n.expiresAt||n.expiresAt>=today));
+}
+function getUnreadNotificationCount(){return getNotifications().filter(n=>!n.read).length;}
+function markNotificationRead(id){
+  const list=pGet('notifications',[]);
+  if(!Array.isArray(list))return;
+  const n=list.find(x=>x&&x.id===id);
+  if(n)n.read=true;
+  STATE.notifications=list;
+  updateLocalCache();
+  const jwt=localStorage.getItem('forge_token');
+  if(jwt)fetch(`/api/state/notifications/${id}/read`,{method:'PUT',headers:{Authorization:'Bearer '+jwt}}).catch(()=>{});
+}
+function markAllNotificationsRead(){
+  const list=pGet('notifications',[]);
+  if(!Array.isArray(list))return;
+  list.forEach(n=>{if(n)n.read=true;});
+  STATE.notifications=list;
+  updateLocalCache();
+  const jwt=localStorage.getItem('forge_token');
+  if(jwt)getNotifications().forEach(n=>{
+    fetch(`/api/state/notifications/${n.id}/read`,{method:'PUT',headers:{Authorization:'Bearer '+jwt}}).catch(()=>{});
+  });
+}
+function dismissExpiredNotifications(){
+  const list=pGet('notifications',[]);
+  if(!Array.isArray(list)||!list.length)return;
+  const today=todayStr();
+  const fresh=list.filter(n=>n&&(!n.expiresAt||n.expiresAt>=today));
+  if(fresh.length!==list.length){
+    STATE.notifications=fresh;
+    updateLocalCache();
+    const jwt=localStorage.getItem('forge_token');
+    if(jwt)fetch('/api/state/notifications/expired',{method:'DELETE',headers:{Authorization:'Bearer '+jwt}}).catch(()=>{});
+  }
 }

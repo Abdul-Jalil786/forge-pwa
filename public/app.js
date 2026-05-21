@@ -1675,13 +1675,40 @@ function editProfile(){
 
 function confirmReset(){
   if(confirm('Delete ALL data for this profile? This cannot be undone.')){
-    ['weightLog','foods','stepsLog','exLog','measLog','sleepLog','swimLog','supps','suppDone','water','foodTemplates','supplements','supplementLog'].forEach(k=>{
+    ['weightLog','foods','stepsLog','exLog','measLog','sleepLog','swimLog','supps','suppDone','water','foodTemplates','supplements','supplementLog',
+     'waterLog','fastingLog','mounjaroLog','notifications'].forEach(k=>{
       STATE[k] = Array.isArray(STATE[k]) ? [] : {};
     });
+    // Phase 40: also clear wearable connections (encrypted tokens)
+    delete STATE.ouraToken; delete STATE.ouraLastSync; delete STATE.withings; delete STATE.oura;
+    const jwt=localStorage.getItem('forge_token');
+    if(jwt){
+      fetch('/api/oura/token',{method:'DELETE',headers:{Authorization:'Bearer '+jwt}}).catch(()=>{});
+      fetch('/api/withings/disconnect',{method:'DELETE',headers:{Authorization:'Bearer '+jwt}}).catch(()=>{});
+    }
     saveStateNow();
     renderAll();
-    showToast('Data cleared');
+    showToast('Data cleared — reconnect Oura & Withings in More settings');
   }
+}
+
+// ---- NOTIFICATIONS (Phase 40) ----
+function openNotifications(){
+  const list=(typeof getNotifications==='function')?getNotifications():[];
+  let html;
+  if(!list.length){
+    html='<div style="font-size:13px;color:var(--text3);text-align:center;padding:16px 0;">No notifications</div>';
+  }else{
+    const icon={medication:'💊',training:'🏋️',nutrition:'🥗',coach:'🧠'};
+    html=list.map(n=>`<div style="padding:10px 0;border-bottom:1px solid var(--border);${n.read?'opacity:.55;':''}">
+      <div style="font-size:13px;font-weight:600;color:var(--text);">${icon[n.type]||'🔔'} ${_esc(n.title)}</div>
+      <div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:3px;">${_esc(n.message)}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px;">${_esc(n.date||'')}</div>
+    </div>`).join('');
+  }
+  if(typeof _showInfoModal==='function')_showInfoModal('Notifications',html);
+  if(typeof markAllNotificationsRead==='function')markAllNotificationsRead();
+  setTimeout(()=>{if(typeof renderToday==='function'&&document.getElementById('page-today').classList.contains('active'))renderToday();},150);
 }
 
 // ---- TOAST ----
@@ -1758,6 +1785,8 @@ async function init(){
 
   // Phase 39: water migration + dynamic calorie targets
   if(typeof migrateWaterCups==='function')migrateWaterCups();
+  // Phase 40: prune expired notifications
+  if(typeof dismissExpiredNotifications==='function')dismissExpiredNotifications();
   if(STATE.profile && typeof applyDynamicTargets==='function'){
     const dt=STATE.profile.dynamicTargets;
     if(!dt||dt.calculatedFrom!==getCurrentWeight())applyDynamicTargets();

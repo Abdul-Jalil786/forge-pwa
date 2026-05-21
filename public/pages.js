@@ -132,10 +132,15 @@ function renderToday(){
 
   document.getElementById('page-today').innerHTML=`
     <div style="margin-bottom:14px;">
-      <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;">${dayName()} ${new Date().getDate()} ${new Date().toLocaleDateString('en-GB',{month:'short'})}</div>
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;">
-        <div class="pg-title">Day ${dayOfCut}</div>
-        <div style="font-size:11px;color:var(--text3);">of your cut</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;">${dayName()} ${new Date().getDate()} ${new Date().toLocaleDateString('en-GB',{month:'short'})}</div>
+          <div style="display:flex;align-items:flex-end;gap:8px;">
+            <div class="pg-title">Day ${dayOfCut}</div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">of your cut</div>
+          </div>
+        </div>
+        ${renderNotificationBell()}
       </div>
     </div>
 
@@ -2197,12 +2202,50 @@ function renderSupplementsCoach(){
 // ============================================================
 // COACH PAGE (AI Analysis + Report Card + Supplements)
 // ============================================================
+function renderCoachTransformationCard(){
+  const p=getActive(); if(!p)return '';
+  const start=STATE.trainingStartDate||p.startDate||STATE.planStartDate;
+  if(!start)return '';
+  const days=Math.max(1,Math.floor((Date.now()-new Date(start+'T12:00:00').getTime())/86400000));
+  const cw=getCurrentWeight(),sw=p.startWeight||cw;
+  const lost=Math.max(0,sw-cw);
+  const lostPct=sw?((lost/sw)*100):0;
+  const cbf=getCurrentBf(),sbf=p.startBF;
+  const clbm=(typeof getCurrentLBM==='function')?getCurrentLBM():null;
+  const slbm=p.startLBM;
+  const fatLost=(sbf!=null&&cbf!=null)?(sw*(sbf/100)-cw*(cbf/100)):null;
+  const gymStreak=(typeof calcStreak==='function')?calcStreak('gym'):0;
+  const sessions=Object.keys(STATE.exLog||{}).filter(d=>{const l=STATE.exLog[d]||{};return Object.values(l).filter(e=>e&&e.done).length>=4;}).length;
+  const phase=(typeof getSkinPhase==='function'&&isOwner())?getSkinPhase().n:null;
+  const now=new Date();
+  let daysToSun=(7-now.getDay())%7; if(daysToSun===0&&now.getHours()>=9)daysToSun=7;
+  return `<div class="sec-label">Transformation</div>
+  <div class="card hi" style="margin-bottom:10px;">
+    <div style="font-size:11px;color:var(--text3);margin-bottom:10px;">Day ${days} · since ${fmtDate(start)}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+      <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Weight lost</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--lime);">${lost.toFixed(1)}<span style="font-size:11px;">kg</span></div><div style="font-size:9px;color:var(--text3);">${lostPct.toFixed(1)}%</div></div>
+      <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Fat lost</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--orange);">${fatLost!=null?fatLost.toFixed(1):'—'}<span style="font-size:11px;">kg</span></div></div>
+      <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Lean mass</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--cyan);">${clbm!=null?clbm.toFixed(1):'—'}<span style="font-size:11px;">kg</span></div>${(slbm!=null&&clbm!=null)?`<div style="font-size:9px;color:${clbm>=slbm-0.5?'var(--green)':'var(--orange)'};">${clbm>=slbm?'+':''}${(clbm-slbm).toFixed(1)}kg</div>`:''}</div>
+    </div>
+    <div style="display:flex;gap:14px;margin-top:10px;font-size:11px;color:var(--text2);flex-wrap:wrap;">
+      <div>🏋️ ${sessions} sessions</div>
+      <div>🔥 ${gymStreak} day streak</div>
+      ${phase?`<div>🧴 Retinol phase ${phase}/5</div>`:''}
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+      Next report in ${daysToSun===0?'today':daysToSun+' day'+(daysToSun===1?'':'s')} (Sunday 09:00) · <span onclick="generateCoachReportNow().then(()=>renderCoach())" style="color:var(--lime);cursor:pointer;font-weight:600;">Generate now</span>
+    </div>
+  </div>`;
+}
+
 function renderCoach(){
   const p=getActive(); if(!p)return;
   const report=getWeeklyReport();
 
   document.getElementById('page-coach').innerHTML=`
     <div class="pg-title" style="margin-bottom:14px;">Coach</div>
+
+    ${renderCoachTransformationCard()}
 
     <div class="sec-label">Weekly Report Card</div>
     ${report?(report.isBaseline?`
@@ -2290,6 +2333,35 @@ function formatCoachingReport(text){
     .replace(/\n/g,'<br>');
 }
 
+const SUGGESTION_TYPE_META={
+  macros:{label:'MACROS',color:'var(--purple)'},
+  reminders:{label:'REMINDER',color:'var(--lime)'},
+  note:{label:'NOTE',color:'var(--text3)'},
+  skincare:{label:'SKIN CARE',color:'var(--cyan)'},
+  'skincare-phase':{label:'RETINOL PHASE',color:'var(--cyan)'},
+  'training-swap':{label:'TRAINING SWAP',color:'var(--blue)'},
+  'injury-flag':{label:'INJURY',color:'var(--orange)'},
+  'fasting-note':{label:'FASTING',color:'#ffc107'},
+  'supplement-reminder':{label:'SUPPLEMENT',color:'var(--red)'},
+};
+function _suggestionDetail(s){
+  const p=s.payload||{};
+  if(s.type==='training-swap'&&(p.currentExercise||p.suggestedExercise)){
+    return `<div style="font-size:11px;color:var(--blue);margin-bottom:6px;">${escapeHtml(p.currentExercise||'?')} → ${escapeHtml(p.suggestedExercise||'?')}</div>`;
+  }
+  if(s.type==='injury-flag'){
+    const sev=(p.severity||'mild').toUpperCase();
+    const col=p.severity==='severe'?'var(--red)':p.severity==='moderate'?'var(--orange)':'#ffc107';
+    return `<div style="font-size:10px;margin-bottom:6px;"><span style="background:${col};color:#000;border-radius:4px;padding:2px 6px;font-weight:700;">${sev}</span> <span style="color:var(--text3);">${escapeHtml(p.action==='resolve'?'resolve':'flag')} · ${escapeHtml(p.exerciseId||'')}</span></div>`;
+  }
+  if(s.type==='supplement-reminder'&&p.missedDays!=null){
+    return `<div style="font-size:11px;color:var(--red);margin-bottom:6px;">${escapeHtml(p.supplementName||'Supplement')} · missed ${p.missedDays} day${p.missedDays===1?'':'s'}</div>`;
+  }
+  if(s.type==='fasting-note'&&p.message){
+    return `<div style="font-size:11px;color:#ffc107;margin-bottom:6px;">${escapeHtml(p.message)}</div>`;
+  }
+  return '';
+}
 function renderSuggestions(report){
   const sugs=(report.suggestions||[]).filter(s=>!s.dismissed);
   if(!sugs.length)return '';
@@ -2297,15 +2369,15 @@ function renderSuggestions(report){
     <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
       <div class="sec-label" style="margin-bottom:8px;">Suggestions</div>
       ${sugs.map(s=>{
-        const typeLabel={macros:'MACROS',reminders:'REMINDER',note:'NOTE',skincare:'SKIN CARE','skincare-phase':'RETINOL PHASE'}[s.type]||s.type.toUpperCase();
-        const typeColor=s.type==='note'?'var(--text3)':'var(--lime)';
+        const meta=SUGGESTION_TYPE_META[s.type]||{label:String(s.type).toUpperCase(),color:'var(--text3)'};
         return `
-          <div style="padding:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px;">
+          <div style="padding:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px;border-left:3px solid ${meta.color};">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-              <div style="font-size:10px;letter-spacing:1px;color:${typeColor};font-weight:700;">${typeLabel}</div>
+              <div style="font-size:10px;letter-spacing:1px;color:${meta.color};font-weight:700;">${meta.label}</div>
               ${s.applied?'<div style="font-size:10px;color:var(--lime);">✓ APPLIED</div>':''}
             </div>
             <div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:4px;">${escapeHtml(s.label)}</div>
+            ${_suggestionDetail(s)}
             <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:${s.applied?'0':'10px'};">${escapeHtml(s.rationale)}</div>
             ${!s.applied?`
               <div style="display:flex;gap:8px;">
@@ -2352,6 +2424,9 @@ function renderMore(){
   const wResult=params.get('withings');
   if(wResult==='connected'){
     showToast('Withings connected');
+    history.replaceState({},'','/');
+  } else if(wResult==='expired'){
+    showToast('Withings sign-in expired — please reconnect');
     history.replaceState({},'','/');
   } else if(wResult==='error'||wResult==='invalid_state'||wResult==='missing_params'){
     showToast('Withings connection failed');
@@ -2683,6 +2758,11 @@ function renderProteinDistribution(){
     </div>
     ${score?`<div style="font-size:11px;color:var(--text2);">${score.label} · ${score.hits}/${score.total} meals ≥40g</div>`:''}
   </div>`;
+}
+
+function renderNotificationBell(){
+  const unread=(typeof getUnreadNotificationCount==='function')?getUnreadNotificationCount():0;
+  return `<button onclick="openNotifications()" aria-label="Notifications" style="position:relative;background:var(--s2);border:1px solid var(--border);border-radius:10px;width:38px;height:38px;cursor:pointer;font-size:17px;color:var(--text2);flex-shrink:0;">🔔${unread>0?`<span style="position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 3px;">${unread>9?'9+':unread}</span>`:''}</button>`;
 }
 
 function renderTrainingNutritionBanners(){

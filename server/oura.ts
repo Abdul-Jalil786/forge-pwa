@@ -1,4 +1,5 @@
 import prisma from "./db";
+import { readToken, isEncryptedToken, writeToken } from "./token-crypto";
 
 const BASE = "https://api.ouraring.com/v2/usercollection";
 
@@ -30,8 +31,12 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { updated: 0, error: "User not found" };
   const state: any = user.state || {};
-  const token = state.ouraToken;
-  if (!token) return { updated: 0, error: "No Oura token configured" };
+  const storedToken = state.ouraToken;
+  if (!storedToken) return { updated: 0, error: "No Oura token configured" };
+  const token = readToken(storedToken);
+  if (!token) return { updated: 0, error: "Oura connection needs refreshing — please reconnect in More settings" };
+  // Lazy migration: re-encrypt any legacy plaintext PAT (persisted by the success-path update below)
+  if (!isEncryptedToken(storedToken)) state.ouraToken = writeToken(token);
 
   const today = new Date();
   const start = new Date(); start.setDate(start.getDate() - 7);

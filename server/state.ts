@@ -625,4 +625,42 @@ router.put("/profile/dynamic-targets", requireAuth, async (req: Request, res: Re
   }
 });
 
+// Phase 40: notifications
+router.put("/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    const state: any = user.state || {};
+    if (Array.isArray(state.notifications)) {
+      const n = state.notifications.find((x: any) => x && x.id === id);
+      if (n) n.read = true;
+    }
+    await prisma.user.update({ where: { id: req.userId }, data: { state } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Mark notification read error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/notifications/expired", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    const state: any = user.state || {};
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    if (Array.isArray(state.notifications)) {
+      state.notifications = state.notifications.filter((n: any) => n && (!n.expiresAt || n.expiresAt >= today));
+    }
+    await prisma.user.update({ where: { id: req.userId }, data: { state } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete expired notifications error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

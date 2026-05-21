@@ -1,4 +1,5 @@
 import prisma from "./db";
+import { readToken, writeToken, isEncryptedToken } from "./token-crypto";
 
 const TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2";
 const MEAS_URL = "https://wbsapi.withings.net/measure";
@@ -60,19 +61,28 @@ async function ensureFreshToken(userId: string): Promise<string> {
   const state: any = user?.state || {};
   const w = state.withings;
   if (!w?.accessToken) throw new Error("Not connected");
+  const access = readToken(w.accessToken);
+  const refresh = readToken(w.refreshToken);
+  if (!access) throw new Error("Withings connection needs refreshing — please reconnect in More settings");
   // Refresh if expiring within 5 mins
   if (Date.now() > (w.expiresAt || 0) - 5 * 60 * 1000) {
-    const fresh = await refreshToken(w.refreshToken);
+    if (!refresh) throw new Error("Withings connection needs refreshing — please reconnect in More settings");
+    const fresh = await refreshToken(refresh);
     state.withings = {
       ...w,
-      accessToken: fresh.access_token,
-      refreshToken: fresh.refresh_token,
+      accessToken: writeToken(fresh.access_token), // encrypted at rest
+      refreshToken: writeToken(fresh.refresh_token),
       expiresAt: Date.now() + fresh.expires_in * 1000,
     };
     await prisma.user.update({ where: { id: userId }, data: { state } });
     return fresh.access_token;
   }
-  return w.accessToken;
+  // Lazy migration: re-encrypt any legacy plaintext tokens
+  if (!isEncryptedToken(w.accessToken) || (w.refreshToken && !isEncryptedToken(w.refreshToken))) {
+    state.withings = { ...w, accessToken: writeToken(access), refreshToken: refresh ? writeToken(refresh) : w.refreshToken };
+    await prisma.user.update({ where: { id: userId }, data: { state } });
+  }
+  return access;
 }
 
 export async function syncWithingsForUser(userId: string): Promise<{ updated: number; error?: string }> {

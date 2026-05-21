@@ -49,6 +49,82 @@ function applySkincarePhase(state: any, payload: any) {
   }
 }
 
+// --- Phase 40: notification helper + new suggestion handlers ---
+function pushNotification(state: any, notif: any) {
+  if (!Array.isArray(state.notifications)) state.notifications = [];
+  const today = new Date().toISOString().slice(0, 10);
+  const expires = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  state.notifications.unshift({
+    id: "notif_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+    read: false,
+    date: today,
+    expiresAt: expires,
+    ...notif,
+  });
+  if (state.notifications.length > 10) state.notifications = state.notifications.slice(0, 10);
+}
+
+function applyTrainingSwap(state: any, payload: any) {
+  if (!payload?.exerciseId) throw new Error("training-swap payload needs exerciseId");
+  if (!state.exerciseNotes || typeof state.exerciseNotes !== "object" || Array.isArray(state.exerciseNotes)) {
+    state.exerciseNotes = {};
+  }
+  const swap = payload.suggestedExercise ? `swap toward ${payload.suggestedExercise}` : "consider an alternative";
+  state.exerciseNotes[payload.exerciseId] = {
+    note: `Coach: ${swap} — ${payload.reason || "see weekly report"}`,
+    addedAt: new Date().toISOString(),
+  };
+}
+
+function applyInjuryFlag(state: any, payload: any) {
+  if (!payload?.exerciseId) throw new Error("injury-flag payload needs exerciseId");
+  if (!state.injuries || typeof state.injuries !== "object" || Array.isArray(state.injuries)) {
+    state.injuries = {};
+  }
+  const action = payload.action === "resolve" ? "resolve" : "flag";
+  if (action === "resolve") {
+    let found = false;
+    for (const j of Object.values(state.injuries) as any[]) {
+      if (j && j.status !== "resolved" && Array.isArray(j.affectedExercises) && j.affectedExercises.includes(payload.exerciseId)) {
+        j.status = "resolved";
+        j.resolvedAt = new Date().toISOString().slice(0, 10);
+        found = true;
+      }
+    }
+    if (!found) throw new Error("no active injury found for that exercise");
+  } else {
+    const id = "inj_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+    const sev = ["mild", "moderate", "severe"].includes(payload.severity) ? payload.severity : "mild";
+    state.injuries[id] = {
+      id,
+      name: (payload.notes ? String(payload.notes).slice(0, 60) : "Coach-flagged injury"),
+      bodyPart: "",
+      severity: sev,
+      affectedExercises: [String(payload.exerciseId)],
+      status: "active",
+      notes: String(payload.notes || "").slice(0, 400),
+      createdAt: new Date().toISOString().slice(0, 10),
+      resolvedAt: null,
+    };
+  }
+}
+
+function applyFastingNote(state: any, payload: any) {
+  pushNotification(state, {
+    type: "nutrition",
+    title: "Fasting reminder",
+    message: String(payload?.suggestion || payload?.message || "Keep your eating window 12:00-18:00.").slice(0, 240),
+  });
+}
+
+function applySupplementReminder(state: any, payload: any) {
+  pushNotification(state, {
+    type: "medication",
+    title: `Don't miss ${String(payload?.supplementName || "your supplement").slice(0, 60)}`,
+    message: String(payload?.message || "Critical supplement flagged by your coach — log it every day.").slice(0, 240),
+  });
+}
+
 function applyReminders(state: any, payload: any) {
   if (!Array.isArray(state.reminders)) state.reminders = [];
   if (payload?.action === "add" && payload.reminder?.time && payload.reminder?.text) {
@@ -83,6 +159,10 @@ router.post("/:rid/apply/:sid", requireAuth, async (req: Request, res: Response)
         case "reminders": applyReminders(state, sug.payload || {}); break;
         case "skincare": applySkincare(state, sug.payload || {}); break;
         case "skincare-phase": applySkincarePhase(state, sug.payload || {}); break;
+        case "training-swap": applyTrainingSwap(state, sug.payload || {}); break;
+        case "injury-flag": applyInjuryFlag(state, sug.payload || {}); break;
+        case "fasting-note": applyFastingNote(state, sug.payload || {}); break;
+        case "supplement-reminder": applySupplementReminder(state, sug.payload || {}); break;
         case "note": break;
         default: res.status(400).json({ error: "Unknown suggestion type" }); return;
       }

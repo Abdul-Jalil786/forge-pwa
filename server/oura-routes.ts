@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import prisma from "./db";
 import { requireAuth } from "./auth";
 import { syncOuraForUser } from "./oura";
+import { writeToken } from "./token-crypto";
 
 const router = Router();
 
@@ -14,7 +15,7 @@ router.put("/token", requireAuth, async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId } });
     if (!user) { res.status(404).json({ error: "User not found" }); return; }
     const state: any = user.state || {};
-    state.ouraToken = token.trim();
+    state.ouraToken = writeToken(token.trim()); // encrypted at rest (AES-256-GCM)
     await prisma.user.update({ where: { id: req.userId }, data: { state } });
     res.json({ success: true });
   } catch (err) {

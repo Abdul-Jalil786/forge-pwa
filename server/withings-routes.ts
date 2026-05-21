@@ -3,6 +3,9 @@ import crypto from "crypto";
 import prisma from "./db";
 import { requireAuth } from "./auth";
 import { getAuthUrl, exchangeCodeForToken, syncWithingsForUser } from "./withings";
+import { writeToken } from "./token-crypto";
+
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // OAuth state valid for 10 minutes
 
 const router = Router();
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
@@ -50,13 +53,22 @@ router.get("/callback", async (req: Request, res: Response) => {
       res.redirect(`/?withings=invalid_state`);
       return;
     }
+    // Reject expired OAuth sessions (state older than 10 minutes)
+    const oauthCreatedAt = (matchedUser.state as any)?.withingsOAuthState?.createdAt || 0;
+    if (Date.now() - oauthCreatedAt > OAUTH_STATE_TTL_MS) {
+      const expiredState: any = matchedUser.state;
+      delete expiredState.withingsOAuthState;
+      await prisma.user.update({ where: { id: matchedUser.id }, data: { state: expiredState } });
+      res.redirect(`/?withings=expired`);
+      return;
+    }
 
     const tokens = await exchangeCodeForToken(code, REDIRECT_URI);
     const userState: any = matchedUser.state;
     delete userState.withingsOAuthState;
     userState.withings = {
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
+      accessToken: writeToken(tokens.access_token),  // encrypted at rest
+      refreshToken: writeToken(tokens.refresh_token),
       expiresAt: Date.now() + tokens.expires_in * 1000,
       withingsUserId: tokens.userid,
       scope: tokens.scope,

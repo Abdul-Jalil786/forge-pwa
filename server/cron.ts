@@ -21,6 +21,26 @@ function ukDaysAgo(n: number): string {
   }).format(d);
 }
 
+// Phase 40: push an in-app notification onto a user's state (deduped per day).
+function addStateNotification(state: any, notif: { type: string; title: string; message: string }): boolean {
+  if (!Array.isArray(state.notifications)) state.notifications = [];
+  const today = ukToday();
+  const key = `${notif.type}:${notif.title}:${today}`;
+  if (state.notifications.some((n: any) => n && n._key === key)) return false;
+  state.notifications.unshift({
+    id: "notif_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+    _key: key,
+    type: notif.type,
+    title: notif.title,
+    message: notif.message,
+    date: today,
+    read: false,
+    expiresAt: ukDaysAgo(-1), // expires tomorrow
+  });
+  if (state.notifications.length > 10) state.notifications = state.notifications.slice(0, 10);
+  return true;
+}
+
 async function sendPushToUser(userId: string, payload: { title: string; body: string }): Promise<void> {
   const subs = await prisma.pushSubscription.findMany({ where: { userId } });
   const data = JSON.stringify(payload);
@@ -284,6 +304,63 @@ export function startCron() {
     }
   }, { timezone: "Europe/London" });
 
+  // Phase 40: Wednesday 14:00 UK — Mounjaro injection reminder
+  cron.schedule("0 14 * * 3", async () => {
+    console.log("Running Wednesday Mounjaro reminder...");
+    try {
+      const users = await prisma.user.findMany();
+      for (const user of users) {
+        const state: any = user.state || {};
+        const supps = state.supplements || [];
+        const hasMounjaro = Array.isArray(supps) && supps.some((s: any) =>
+          /mounjaro|tirzepatide/i.test(s?.name || "") || s?.frequency === "weekly-wednesday");
+        if (!hasMounjaro) continue;
+        const added = addStateNotification(state, {
+          type: "medication",
+          title: "💉 Mounjaro injection due today",
+          message: "Inject after meal 2 (around 3pm). Have ginger tea ready, and Omeprazole if reflux is an issue.",
+        });
+        if (added) {
+          await prisma.user.update({ where: { id: user.id }, data: { state } });
+          await sendPushToUser(user.id, {
+            title: "💉 Mounjaro injection due today",
+            body: "Inject after meal 2 (~3pm). Ginger tea ready?",
+          });
+        }
+      }
+      console.log("Wednesday Mounjaro reminder complete");
+    } catch (err) {
+      console.error("Wednesday Mounjaro reminder error:", err);
+    }
+  }, { timezone: "Europe/London" });
+
+  // Phase 40: daily 08:00 UK — yesterday's missed critical supplements
+  cron.schedule("0 8 * * *", async () => {
+    console.log("Running daily missed-critical-supplement check...");
+    try {
+      const yesterday = ukDaysAgo(1);
+      const users = await prisma.user.findMany();
+      for (const user of users) {
+        const state: any = user.state || {};
+        const supps = state.supplements || [];
+        const critical = Array.isArray(supps) ? supps.filter((s: any) => s?.critical) : [];
+        if (!critical.length) continue;
+        const log = (state.supplementLog || {})[yesterday] || {};
+        const missed = critical.filter((s: any) => log[s.id] !== true);
+        if (!missed.length) continue;
+        const added = addStateNotification(state, {
+          type: "medication",
+          title: `${missed.length} critical supplement${missed.length > 1 ? "s" : ""} missed yesterday`,
+          message: `${missed.map((s: any) => s.name).join(", ")} — don't miss them again today.`,
+        });
+        if (added) await prisma.user.update({ where: { id: user.id }, data: { state } });
+      }
+      console.log("Daily missed-supplement check complete");
+    } catch (err) {
+      console.error("Daily missed-supplement check error:", err);
+    }
+  }, { timezone: "Europe/London" });
+
   // Phase 23: BYOK coaching report — Sunday 09:00 UK
   cron.schedule("0 9 * * 0", async () => {
     console.log("Running Sunday BYOK coaching reports...");
@@ -308,6 +385,22 @@ export function startCron() {
           console.log(`[coach] Report generated for ${user.email}`);
         } catch (e: any) {
           console.error(`[coach] Failed for ${user.email}:`, e?.message || e);
+          // Phase 40: record a non-fatal error entry so the user sees what happened
+          try {
+            const fresh = await prisma.user.findUnique({ where: { id: user.id } });
+            const st: any = fresh?.state || {};
+            if (!Array.isArray(st.coachingReports)) st.coachingReports = [];
+            st.coachingReports.unshift({
+              id: "rpt_err_" + Date.now(),
+              createdAt: new Date().toISOString(),
+              type: "error",
+              title: "Report generation failed",
+              content: "This week's coaching report could not be generated. Forge will retry next Sunday. If this keeps happening, check your Anthropic API key in More settings.",
+              suggestions: [],
+            });
+            if (st.coachingReports.length > 50) st.coachingReports.length = 50;
+            await prisma.user.update({ where: { id: user.id }, data: { state: st } });
+          } catch { /* swallow — never crash the cron */ }
         }
 
         // Phase 26a: refresh meal-plan macros (items locked) based on cadence.
