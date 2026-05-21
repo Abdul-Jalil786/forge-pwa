@@ -1710,40 +1710,75 @@ function renderSkinProductsList(){
     </div>`).join('');
 }
 
+const _SKIN_IRRITATION_OPTS=[
+  {v:'none',         emoji:'😊',label:'No reaction'},
+  {v:'mild-dryness', emoji:'😐',label:'Mild dryness'},
+  {v:'peeling',      emoji:'🟡',label:'Peeling'},
+  {v:'redness',      emoji:'🟠',label:'Redness'},
+  {v:'burning',      emoji:'🔴',label:'Burning'},
+];
+
 function renderSkinChecklist(){
   if(!isOwner())return '';
   const products=getSkinProducts();
   if(products.length===0)return '';
   const today=todayStr();
   const log=getSkinCareLog(today);
-  const dueToday=products.filter(p=>skinDueOn(p,today));
-  if(dueToday.length===0)return '';
-  const amItems=dueToday.filter(p=>p.slot==='am'||p.slot==='both');
-  const pmItems=dueToday.filter(p=>p.slot==='pm'||p.slot==='both');
+  const {am,pm,retinolNight}=getSkinVisibleItems(today);
+  if(am.length===0&&pm.length===0)return '';
+  const comp=getTodaySkinCompliance();
+  const compColor=comp.pct>=100?'var(--green)':comp.pct>=75?'var(--orange)':'var(--red)';
   const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
-  const row=(p,slotKey)=>{
-    const itemId=`${p.id}_${slotKey}`;
-    const on=log[itemId]===true;
-    return `<div onclick="toggleSkinItem('${itemId}')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border);cursor:pointer;min-height:42px;">
+
+  const row=(it)=>{
+    const p=it.product, on=log[it.itemId]===true;
+    const spfTag=p.type==='spf'?'<span style="font-size:9px;color:var(--lime);font-weight:700;letter-spacing:1px;margin-left:6px;">LAST STEP</span>':'';
+    return `<div onclick="toggleSkinItem('${it.itemId}')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border);cursor:pointer;min-height:42px;">
       <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--lime)':'var(--border)'};background:${on?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
-      <div style="flex:1;font-size:13px;color:${on?'var(--text3)':'var(--text)'};${on?'text-decoration:line-through;':''}">${escapeHtml(p.name)}${p.concentration?` <span style="font-size:10px;color:var(--text3);">${escapeHtml(p.concentration)}</span>`:''}</div>
+      <div style="flex:1;font-size:13px;color:${on?'var(--text3)':'var(--text)'};${on?'text-decoration:line-through;':''}">${escapeHtml(p.name)}${p.concentration?` <span style="font-size:10px;color:var(--text3);">${escapeHtml(p.concentration)}</span>`:''}${spfTag}</div>
     </div>`;
   };
-  const hasRetinolPM=pmItems.some(p=>p.type==='retinol');
+
+  // Rule 4 — Mounjaro Wednesday banner
+  const mjBanner=isMounjaroDay()?`<div style="background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:8px;padding:9px 11px;margin-bottom:10px;font-size:11px;color:#ffc107;line-height:1.5;">💉 <strong>Mounjaro injection day</strong> — skin may be more sensitive. Use the sandwich method for retinol if it's due tonight.</div>`:'';
+  // Rule 1 — retinol night banner
+  const retBanner=retinolNight?`<div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.25);border-radius:8px;padding:9px 11px;margin-bottom:10px;font-size:11px;color:var(--lime);line-height:1.5;">🌙 <strong>Retinol night</strong> — Alpha Arbutin and Niacinamide skipped automatically.</div>`:'';
+  // Rule 5 — CE Ferulic ticked, SPF not yet → reminder
+  const ce=am.find(it=>it.product.type==='vitamin-c');
+  const spf=am.find(it=>it.product.type==='spf');
+  const spfReminder=(ce&&log[ce.itemId]===true&&spf&&log[spf.itemId]!==true)
+    ?`<div style="font-size:11px;color:var(--orange);padding:6px 0 0;">⤷ Remember: SPF is your next and final morning step.</div>`:'';
+
+  // Irritation selector (retinol nights) — 5-level
   const irrit=log._irritation;
-  const irritBlock=hasRetinolPM?`
-    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Skin after retinol?</div>
-      <div style="display:flex;gap:8px;">
-        <button onclick="setTodaySkinIrritation('fine')" class="btn btn-sm ${irrit==='fine'?'btn-lime':'btn-ghost'}" style="flex:1;font-size:12px;">😊 Fine</button>
-        <button onclick="setTodaySkinIrritation('irritated')" class="btn btn-sm ${irrit==='irritated'?'btn-ghost':'btn-ghost'}" style="flex:1;font-size:12px;${irrit==='irritated'?'color:var(--orange);border-color:var(--orange);':''}">😬 Irritated</button>
-      </div>
-    </div>`:'';
+  const retDone=retinolNight&&pm.some(it=>it.product.type==='retinol'&&log[it.itemId]===true);
+  let irritBlock='';
+  if(retinolNight){
+    irritBlock=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">How does your skin feel after retinol?</div>
+      ${retDone&&!irrit?`<div style="font-size:11px;color:var(--orange);margin-bottom:6px;">👆 Please log this — it's what lets the coach ramp retinol safely.</div>`:''}
+      ${_SKIN_IRRITATION_OPTS.map(o=>{
+        const sel=irrit===o.v;
+        return `<div onclick="setTodaySkinIrritation('${o.v}')" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;margin-bottom:5px;cursor:pointer;border:1px solid ${sel?'var(--lime)':'var(--border)'};background:${sel?'rgba(200,255,0,.08)':'var(--bg2)'};">
+          <span style="font-size:16px;">${o.emoji}</span>
+          <span style="flex:1;font-size:13px;color:${sel?'var(--text)':'var(--text2)'};font-weight:${sel?'600':'400'};">${o.label}</span>
+          ${sel?'<span style="font-size:11px;color:var(--lime);">✓</span>':''}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
   return `
     <div class="sec-label">Skin Care</div>
     <div class="card" style="margin-bottom:10px;">
-      ${amItems.length?`<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">☀️ AM</div>${amItems.map(p=>row(p,'am')).join('')}`:''}
-      ${pmItems.length?`<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:${amItems.length?'12px':'0'};">🌙 PM</div>${pmItems.map(p=>row(p,'pm')).join('')}`:''}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-size:11px;color:var(--text2);">Today's routine</div>
+        <div style="font-size:12px;color:${compColor};font-weight:700;">${comp.done}/${comp.total} · ${comp.pct}%</div>
+      </div>
+      ${mjBanner}
+      ${retBanner}
+      ${am.length?`<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">☀️ AM</div>${am.map(row).join('')}${spfReminder}`:''}
+      ${pm.length?`<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:${am.length?'14px':'0'};">🌙 PM</div>${pm.map(row).join('')}`:''}
       ${irritBlock}
     </div>`;
 }

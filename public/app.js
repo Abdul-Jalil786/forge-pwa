@@ -514,7 +514,14 @@ function toggleSkinItem(itemId){
 function setTodaySkinIrritation(level){
   setSkinIrritation(todayStr(),level);
   renderToday();
-  showToast(level==='irritated'?'Logged — AI will ramp slower':'Logged ✓');
+  const msg={
+    'none':'Logged — no reaction ✓',
+    'mild-dryness':'Logged — mild dryness is normal',
+    'peeling':'Logged — coach will hold your retinol frequency',
+    'redness':'Logged — coach will ease off retinol',
+    'burning':'Logged — rest retinol for 5 days. Coach will advise.',
+  }[level]||'Logged ✓';
+  showToast(msg);
 }
 
 // ---- BLOOD MARKERS (Phase 29a) ----
