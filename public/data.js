@@ -91,6 +91,9 @@ let STATE = {
   skinCare: { products: [], phase: 1, phaseStartDate: null, tretinoinReady: false, weeklyCheckIn: {} },
   skinCareLog: {},
   injuries: {},
+  waterLog: {},
+  fastingLog: {},
+  mounjaroLog: {},
 };
 
 // ---- OWNER GATE (Phase 35) — some features are personal to the owner only ----
@@ -489,6 +492,8 @@ function saveWeightEntry(kg){
   STATE.weightLog=log;
   updateLocalCache();
   saveFieldToServer('/api/state/weight',{date:todayStr(),weight:kg});
+  // Phase 39: recalculate calorie + macro targets for the new weight
+  if(typeof applyDynamicTargets==='function')applyDynamicTargets();
 }
 
 // ============================================================
@@ -515,6 +520,7 @@ function saveFoodEntry(entry,date=todayStr()){
   STATE.foods=all;
   updateLocalCache();
   saveFieldToServer(`/api/state/foods/${date}`,{value:all[date]});
+  if(typeof recomputeFastingLog==='function')recomputeFastingLog(date);
   if(!STATE.planStartDate){
     STATE.planStartDate=todayStr();
     pSet('planStartDate',todayStr());
@@ -526,6 +532,7 @@ function deleteFoodEntry(idx,date=todayStr()){
   STATE.foods=all;
   updateLocalCache();
   saveFieldToServer(`/api/state/foods/${date}`,{value:all[date]||[]});
+  if(typeof recomputeFastingLog==='function')recomputeFastingLog(date);
 }
 function getTodayTotals(){
   const foods=getFoods();
@@ -836,13 +843,18 @@ function getMealSupplements(meal){
 }
 
 function getSupplementLog(date){return(pGet('supplementLog',{})[date])||{};}
+let _suppLogSaveTimer=null;
 function setSupplementTaken(date,suppId,taken){
   const log=pGet('supplementLog',{});
   if(!log[date])log[date]={};
   log[date][suppId]=taken;
   STATE.supplementLog=log;
   updateLocalCache();
-  saveStateDebounced();
+  // Debounced — collapses the meal-modal's N rapid toggles into one atomic PUT
+  if(_suppLogSaveTimer)clearTimeout(_suppLogSaveTimer);
+  _suppLogSaveTimer=setTimeout(()=>{
+    saveFieldToServer(`/api/state/supplement-log/${date}`,{value:(STATE.supplementLog||{})[date]||{}});
+  },350);
 }
 
 // ============================================================
@@ -1145,4 +1157,348 @@ function gradeClass(pct){
   if(pct>=75)return'b';
   if(pct>=60)return'c';
   return'f';
+}
+
+// ============================================================
+// PHASE 39 — NUTRITION SYSTEM
+// ============================================================
+const EATING_WINDOW_START=12;   // 12:00
+const EATING_WINDOW_END=18;     // 18:00
+
+// ---- S1: Dynamic calorie targets (Mifflin-St Jeor) ----
+function getCurrentLeanMass(){
+  const lbm=(typeof getCurrentLBM==='function')?getCurrentLBM():null;
+  if(lbm)return lbm;
+  const w=getCurrentWeight(),bf=getCurrentBf();
+  if(w&&bf)return Math.round(w*(1-bf/100)*10)/10;
+  return null;
+}
+function calculateDynamicTargets(weight,leanMass,sessionType){
+  const personal=(STATE.profile&&STATE.profile.personal)||{};
+  const age=personal.age||52;
+  const heightCm=personal.heightCm||180;
+  const sexConst=(personal.sex==='female')?-161:5;
+  const bmr=(10*weight)+(6.25*heightCm)-(5*age)+sexConst;
+  const tdee=bmr*1.55;
+  const deficit=500;
+  const sessionBonus=sessionType==='lower'?150:sessionType==='upper'?100:0;
+  const calsTarget=tdee-deficit+sessionBonus;
+  const proteinTarget=Math.max((leanMass||weight*0.7)*2.2,180);
+  const fatTarget=(calsTarget*0.30)/9;
+  const carbTarget=Math.max(0,(calsTarget-(proteinTarget*4)-(calsTarget*0.30))/4);
+  return {
+    calories:Math.round(calsTarget),
+    protein:Math.round(proteinTarget),
+    carbs:Math.round(carbTarget),
+    fat:Math.round(fatTarget),
+    bmr:Math.round(bmr),
+    tdee:Math.round(tdee),
+    sessionType,
+  };
+}
+// Recompute targets for all three session types + persist to profile
+function applyDynamicTargets(){
+  if(!STATE.profile)return null;
+  const weight=getCurrentWeight();
+  if(!weight)return null;
+  const lean=getCurrentLeanMass();
+  const dt={
+    rest:calculateDynamicTargets(weight,lean,'rest'),
+    upper:calculateDynamicTargets(weight,lean,'upper'),
+    lower:calculateDynamicTargets(weight,lean,'lower'),
+    calculatedFrom:weight,
+    calculatedAt:new Date().toISOString(),
+  };
+  const start=STATE.profile.startWeight||weight;
+  dt.milestoneCount=Math.max(0,Math.floor((start-weight)/5));
+  const prev=STATE.profile.dynamicTargets;
+  dt.milestoneJustHit=!!(prev&&typeof prev.milestoneCount==='number'&&dt.milestoneCount>prev.milestoneCount);
+  STATE.profile.dynamicTargets=dt;
+  // keep legacy fields loosely in sync
+  STATE.profile.calsRest=dt.rest.calories;
+  STATE.profile.calsGym=Math.round((dt.upper.calories+dt.lower.calories)/2);
+  STATE.profile.proteinTarget=dt.rest.protein;
+  STATE.profile.carbsTarget=dt.rest.carbs;
+  STATE.profile.fatTarget=dt.rest.fat;
+  if(!STATE.profile.macros)STATE.profile.macros={};
+  STATE.profile.macros.protein=dt.rest.protein;
+  STATE.profile.macros.carbs=dt.rest.carbs;
+  STATE.profile.macros.fat=dt.rest.fat;
+  updateLocalCache();
+  saveFieldToServer('/api/state/profile/dynamic-targets',{dynamicTargets:dt});
+  return dt;
+}
+// Calorie + macro target for a date, session-aware
+function getDynamicTargetForDate(date){
+  const st=(typeof getSessionTypeForDate==='function')?getSessionTypeForDate(date||todayStr()):null;
+  const key=st||'rest';
+  const dt=STATE.profile&&STATE.profile.dynamicTargets;
+  if(dt&&dt[key])return dt[key];
+  const p=STATE.profile||{};
+  return {calories:st?(p.calsGym||2500):(p.calsRest||2400),protein:p.proteinTarget||180,carbs:p.carbsTarget||0,fat:p.fatTarget||0,sessionType:key};
+}
+
+// ---- S2: Fasting window ----
+function getFastingLog(date){
+  const e=pGet('fastingLog',{})[date||todayStr()];
+  return (e&&Object.keys(e).length)?e:null;
+}
+function isFastingWindowOpen(){
+  const h=new Date().getHours()+new Date().getMinutes()/60;
+  return h>=EATING_WINDOW_START&&h<EATING_WINDOW_END;
+}
+// {phase:'before'|'open'|'after', minsToOpen, minsToClose, fastedMins / elapsedMins}
+function getWindowCountdown(){
+  const now=new Date();
+  const h=now.getHours()+now.getMinutes()/60;
+  const minsInDay=now.getHours()*60+now.getMinutes();
+  const openMin=EATING_WINDOW_START*60, closeMin=EATING_WINDOW_END*60;
+  if(h<EATING_WINDOW_START){
+    return {phase:'before',minsToOpen:openMin-minsInDay,minsToClose:closeMin-minsInDay,fastedMins:minsInDay+(24*60-closeMin)};
+  }
+  if(h<EATING_WINDOW_END){
+    return {phase:'open',minsToOpen:0,minsToClose:closeMin-minsInDay,elapsedMins:minsInDay-openMin,windowMins:closeMin-openMin};
+  }
+  return {phase:'after',minsToOpen:(24*60-minsInDay)+openMin,minsToClose:0,fastedMins:minsInDay-closeMin};
+}
+// Recompute today's fasting log from logged foods (called on each food change)
+function recomputeFastingLog(date){
+  date=date||todayStr();
+  const foods=(pGet('foods',{})[date]||[]).filter(f=>f);
+  const log=pGet('fastingLog',{});
+  if(foods.length===0){
+    if(log[date]){delete log[date];STATE.fastingLog=log;updateLocalCache();saveFieldToServer(`/api/state/fasting-log/${date}`,{value:{}});}
+    return;
+  }
+  const times=foods.map(f=>{
+    if(f.loggedAt){const d=new Date(f.loggedAt);return d.getHours()*60+d.getMinutes();}
+    if(f.time){const [h,m]=String(f.time).split(':').map(Number);return (h||0)*60+(m||0);}
+    return null;
+  }).filter(t=>t!=null).sort((a,b)=>a-b);
+  if(!times.length)return;
+  const first=times[0],last=times[times.length-1];
+  const openMin=EATING_WINDOW_START*60,closeMin=EATING_WINDOW_END*60;
+  const broken=first<openMin||last>closeMin;
+  const fmt=t=>String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
+  const entry={
+    windowMaintained:!broken,
+    firstFoodTime:fmt(first),
+    lastFoodTime:fmt(last),
+    fastDurationHours:Math.round(((24*60-closeMin)+first)/60*10)/10,
+    windowBroken:broken,
+    windowBrokenAt:broken?(first<openMin?fmt(first):fmt(last)):null,
+  };
+  log[date]=entry;
+  STATE.fastingLog=log;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/fasting-log/${date}`,{value:entry});
+}
+function getFastingStreak(){
+  const log=pGet('fastingLog',{});
+  let streak=0;
+  for(let i=0;i<400;i++){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const e=log[_ukDate(d)];
+    if(!e||(!e.windowMaintained&&!e.windowBroken)){ if(i===0)continue; break; }
+    if(e.windowBroken)break;
+    streak++;
+  }
+  return streak;
+}
+
+// ---- S3: Mounjaro mode ----
+function isPostInjectionDay(){return new Date().getDay()===4;} // Thursday
+const MOUNJARO_PRIORITY_FOODS=[
+  {name:'Protein shake',protein:20,cals:85,note:'easy on the stomach'},
+  {name:'Greek yoghurt 200g',protein:20,cals:120,note:'cold, soothing'},
+  {name:'Cottage cheese 150g',protein:19,cals:130,note:'slow protein'},
+  {name:'Boiled eggs ×3',protein:18,cals:210,note:'choline supports the liver'},
+  {name:'Sidr honey + warm water',protein:0,cals:60,note:'settles the stomach'},
+  {name:'Ginger tea',protein:0,cals:0,note:'nausea relief'},
+];
+function getMounjaroLog(date){return (pGet('mounjaroLog',{})[date||todayStr()])||null;}
+function setMounjaroLog(date,patch){
+  date=date||todayStr();
+  const log=pGet('mounjaroLog',{});
+  log[date]={...(log[date]||{}),...patch};
+  STATE.mounjaroLog=log;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/mounjaro-log/${date}`,{value:log[date]});
+  return log[date];
+}
+
+// ---- S4: Per-meal protein threshold ----
+const PROTEIN_THRESHOLD=40;
+function getMealProteinStatus(grams){
+  const g=Math.round(grams||0);
+  if(g>=PROTEIN_THRESHOLD)return{band:'met',color:'var(--green)',label:`✓ ${g}g — 40g+ threshold met`};
+  if(g>=30)return{band:'near',color:'var(--orange)',label:`⚠️ ${g}g — just below threshold`};
+  return{band:'low',color:'var(--red)',label:`❌ ${g}g — below 40g threshold`};
+}
+// Per-meal logged protein for a date (foods grouped by mealId)
+function getProteinDistribution(date){
+  date=date||todayStr();
+  const plan=STATE.mealPlan;
+  const foods=pGet('foods',{})[date]||[];
+  const meals=(plan&&plan.meals)||[];
+  return meals.map(m=>{
+    const logged=foods.filter(f=>f.mealId===m.id).reduce((s,f)=>s+(f.protein||0),0);
+    return {id:m.id,name:m.name,planned:Math.round(m.protein||0),protein:Math.round(logged||0)};
+  });
+}
+function getProteinDistributionScore(date){
+  const rows=getProteinDistribution(date).slice(0,3);
+  if(!rows.length)return null;
+  const hits=rows.filter(r=>r.protein>=PROTEIN_THRESHOLD).length;
+  const labels=['Critical — no meals hit threshold','Needs improvement','Good — one meal below threshold','Optimal protein distribution'];
+  return {hits,total:rows.length,label:labels[hits]||labels[0]};
+}
+
+// ---- S5: Supplement timing groups ----
+const SUPP_TIMING_GROUPS=[
+  {key:'on-waking',label:'Morning · on waking'},
+  {key:'meal-1',label:'Meal 1 · 12:00'},
+  {key:'meal-2',label:'Meal 2 · 15:00'},
+  {key:'meal-3',label:'Meal 3 · 17:30'},
+  {key:'with-food',label:'Medications · with food'},
+  {key:'wednesday-meal-2',label:'Weekly · Wednesday'},
+  {key:'bedtime',label:'Bedtime'},
+];
+function getSupplementTiming(s){return s.timing||(s.mealId?'meal-1':'meal-1');}
+function getMissedCriticalSupplements(date){
+  date=date||todayStr();
+  const log=getSupplementLog(date);
+  const dow=new Date(date+'T12:00:00').getDay();
+  return getSupplements().filter(s=>{
+    if(!s.critical)return false;
+    if(s.frequency==='weekly-wednesday'&&dow!==3)return false;
+    return log[s.id]!==true;
+  });
+}
+function getSupplementCompliance(days){return getSupplementAdherence(days);}
+// Canonical supplement list for Jay (Phase 39)
+function JAY_SUPPLEMENTS_V39(){
+  return [
+    {id:'supp-sidr-honey',name:'Sidr Honey',dose:'1 tsp in warm water',time:'07:30',mealId:'',timing:'on-waking',withFood:false,critical:true,notes:'Morning ritual'},
+    {id:'supp-multivitamin',name:'Multivitamin',dose:'2 tablets',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:false,notes:''},
+    {id:'vit-d',name:'Vitamin D3',dose:'4,000 IU',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:true,notes:'Fat-soluble — take with food'},
+    {id:'omega-3',name:'Omega 3',dose:'2 capsules',time:'15:00',mealId:'',timing:'meal-2',withFood:true,critical:true,notes:'Anti-inflammatory'},
+    {id:'supp-omega3-2',name:'Omega 3 (2nd dose)',dose:'2 capsules',time:'17:30',mealId:'',timing:'meal-3',withFood:true,critical:true,notes:'Anti-inflammatory'},
+    {id:'creatine',name:'Creatine',dose:'5g',time:'15:00',mealId:'',timing:'meal-2',withFood:true,critical:false,notes:''},
+    {id:'supp-magnesium',name:'Magnesium Glycinate',dose:'300mg',time:'22:00',mealId:'',timing:'bedtime',withFood:false,critical:true,notes:'Sleep support'},
+    {id:'metformin-am',name:'Metformin',dose:'1000mg',time:'12:00',mealId:'',timing:'with-food',withFood:true,critical:true,notes:'Medication — take with food'},
+    {id:'supp-mounjaro',name:'Mounjaro',dose:'5mg',time:'15:00',mealId:'',timing:'wednesday-meal-2',withFood:true,critical:true,frequency:'weekly-wednesday',notes:'GLP-1 — Wednesday injection after meal 2'},
+  ];
+}
+
+// ---- S6: Water tracker (ml) ----
+const WATER_TARGET_BASE=3000, WATER_TARGET_GYM=3500;
+function getWaterLog(date){
+  const log=pGet('waterLog',{});
+  return log[date||todayStr()]||{entries:[],total:0};
+}
+function getWaterTarget(date){
+  const st=(typeof getSessionTypeForDate==='function')?getSessionTypeForDate(date||todayStr()):null;
+  return st?WATER_TARGET_GYM:WATER_TARGET_BASE;
+}
+function getWaterTotal(date){return getWaterLog(date).total||0;}
+function _saveWaterLog(date,entry){
+  const log=pGet('waterLog',{});
+  log[date]=entry;
+  STATE.waterLog=log;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/water-log/${date}`,{value:entry});
+}
+function addWaterEntry(date,amount,type){
+  date=date||todayStr();
+  const entries=[...(getWaterLog(date).entries||[])];
+  entries.push({amount:Math.round(amount),time:fmtNow(),type:type||'custom'});
+  _saveWaterLog(date,{entries,total:entries.reduce((s,e)=>s+(e.amount||0),0),target:getWaterTarget(date)});
+}
+function removeLastWaterEntry(date){
+  date=date||todayStr();
+  const entries=[...(getWaterLog(date).entries||[])];
+  entries.pop();
+  _saveWaterLog(date,{entries,total:entries.reduce((s,e)=>s+(e.amount||0),0),target:getWaterTarget(date)});
+}
+function getWaterCompliance(days){
+  const log=pGet('waterLog',{});
+  let hit=0,counted=0,sum=0,lo=null,hi=null;
+  for(let i=0;i<days;i++){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const e=log[_ukDate(d)];
+    if(!e)continue;
+    counted++;sum+=e.total||0;
+    if((e.total||0)>=(e.target||WATER_TARGET_BASE))hit++;
+    if(lo==null||e.total<lo)lo=e.total||0;
+    if(hi==null||e.total>hi)hi=e.total||0;
+  }
+  return{hit,counted,avg:counted?Math.round(sum/counted):0,low:lo||0,high:hi||0,days};
+}
+// One-shot: migrate old cup tracker (×250ml) into waterLog (local only)
+function migrateWaterCups(){
+  if(STATE._waterMigrated)return;
+  const cups=pGet('water',{});
+  const wl=pGet('waterLog',{});
+  Object.keys(cups).forEach(date=>{
+    if(wl[date])return;
+    const n=cups[date]||0;
+    if(n>0)wl[date]={entries:[{amount:n*250,time:'12:00',type:'migrated'}],total:n*250,target:WATER_TARGET_BASE};
+  });
+  STATE.waterLog=wl;
+  STATE._waterMigrated=true;
+  updateLocalCache();
+}
+
+// ---- S7: Glycaemic index estimate (keyword-based) ----
+const _GI_HIGH=['white rice','jasmine rice','white bread','bagel','mashed potato','potato','cornflakes','rice cake','watermelon','dates','sugar','glucose','soda','cola','fruit juice','crisps','chips','pretzel','doughnut','donut','cereal'];
+const _GI_MOD=['basmati','brown rice','wholemeal','whole wheat','wholewheat','oats','porridge','sweet potato','banana','pasta','couscous','honey','pitta','popcorn','mango','raisin'];
+const _GI_LOW=['chicken','turkey','beef','egg','salmon','fish','tuna','yoghurt','yogurt','greek','cottage cheese','cheese','lentil','chickpea','bean','berry','berries','blueberr','strawberr','raspberr','apple','pear','broccoli','spinach','salad','vegetable','veg ','nuts','almond','peanut','avocado','milk','protein shake','whey','tofu','barley','quinoa','hummus'];
+function estimateGI(name){
+  const n=String(name||'').toLowerCase();
+  if(_GI_HIGH.some(k=>n.includes(k)))return{gi:70,band:'high',label:'🔴 Higher GI — monitor'};
+  if(_GI_MOD.some(k=>n.includes(k)))return{gi:50,band:'moderate',label:'🟡 Moderate GI'};
+  if(_GI_LOW.some(k=>n.includes(k)))return{gi:30,band:'low',label:'🟢 Low GI'};
+  return{gi:null,band:'unknown',label:''};
+}
+function getBloodMarker(nameKeyword){
+  const arr=(STATE.profile&&STATE.profile.bloodMarkers)||[];
+  if(!Array.isArray(arr))return null;
+  const k=String(nameKeyword).toLowerCase();
+  return arr.find(m=>String(m.name||'').toLowerCase().includes(k))||null;
+}
+
+// ---- S8: Training–nutrition integration ----
+function getMinutesToSession(){
+  const st=(typeof getSessionTypeForDate==='function')?getSessionTypeForDate(todayStr()):null;
+  if(!st)return null;
+  const time=(typeof getSessionTimeForDate==='function')?getSessionTimeForDate(todayStr()):null;
+  if(!time)return null;
+  const [h,m]=time.split(':').map(Number);
+  const now=new Date();
+  return (h*60+(m||0))-(now.getHours()*60+now.getMinutes());
+}
+// {phase:'open'|'done'|'missed', minsLeft}
+function getPostWorkoutWindow(){
+  const day=(pGet('exLog',{})[todayStr()])||{};
+  const sess=day._session;
+  if(!sess||!sess.completedAt)return null;
+  const mins=(Date.now()-sess.completedAt)/60000;
+  const foods=pGet('foods',{})[todayStr()]||[];
+  const shake=foods.some(f=>{
+    const n=(f.name||'').toLowerCase();
+    if(!(n.includes('shake')||n.includes('whey')||n.includes('protein')))return false;
+    if(!f.loggedAt)return true;
+    return new Date(f.loggedAt).getTime()>=sess.completedAt;
+  });
+  if(shake)return{phase:'done',minsLeft:0};
+  if(mins>60)return{phase:'missed',minsLeft:0};
+  return{phase:'open',minsLeft:Math.max(0,Math.round(60-mins))};
+}
+function getSessionCalorieBurn(){
+  const st=(typeof getSessionTypeForDate==='function')?getSessionTypeForDate(todayStr()):null;
+  if(!st)return 0;
+  const cal=(pGet('calorieLog',{})[todayStr()]);
+  if(cal&&cal.workout)return Math.round(cal.workout);
+  return st==='lower'?450:350;
 }

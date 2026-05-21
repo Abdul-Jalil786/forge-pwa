@@ -134,6 +134,16 @@ function saveFood(){
   const entry={name,cals,protein,carbs,fat,time,loggedAt:new Date().toISOString()};
   saveFoodEntry(entry,targetDate);
 
+  // Phase 39: low-GI flag (HbA1c context) + eating-window break warning
+  if(targetDate===todayStr()){
+    if(carbs>=20&&typeof estimateGI==='function'){
+      const gi=estimateGI(name);
+      if(gi&&gi.band==='high')setTimeout(()=>showToast('⚠️ Higher-GI food — consider a lower-GI swap (HbA1c 72)'),900);
+    }
+    const fh=parseInt(String(time).split(':')[0],10);
+    if(!isNaN(fh)&&(fh<12||fh>=18))setTimeout(()=>showToast('⚠️ Logged outside your 12:00–18:00 window — fasting streak affected'),600);
+  }
+
   // Offer to save as template
   const shouldSave=cals>0&&confirm(`Save "${name}" as a template for quick re-use?`);
   if(shouldSave)saveTemplate({name,cals,protein,carbs,fat});
@@ -381,9 +391,60 @@ function confirmDeleteSupplement(id,name){
   renderMore();renderToday();
 }
 
-// ---- WATER ----
+// ---- WATER (legacy cup tracker — kept for backward compat) ----
 function setWater(cups){saveWater(cups);renderMore();renderToday();showToast(`${cups} cups 💧`);}
 function resetWater(){saveWater(0);renderMore();renderToday();}
+
+// ---- WATER (Phase 39 — ml tracker) ----
+function addWater(amount,type){
+  addWaterEntry(todayStr(),amount,type);
+  renderToday();renderMore();
+  showToast(`+${amount}ml 💧`);
+}
+function addWaterCustom(){
+  const v=prompt('Add water (ml):','');
+  if(v==null)return;
+  const ml=parseInt(v,10);
+  if(!ml||ml<=0||ml>3000){showToast('Enter 1–3000ml');return;}
+  addWaterEntry(todayStr(),ml,'custom');
+  renderToday();renderMore();
+  showToast(`+${ml}ml 💧`);
+}
+function undoWater(){
+  const wl=getWaterLog(todayStr());
+  if(!wl.entries||!wl.entries.length){showToast('Nothing to undo');return;}
+  removeLastWaterEntry(todayStr());
+  renderToday();renderMore();
+  showToast('Last entry removed');
+}
+
+// ---- MOUNJARO MODE (Phase 39) ----
+function toggleMounjaroInjected(){
+  const today=todayStr();
+  const cur=getMounjaroLog(today)||{};
+  if(cur.injected)setMounjaroLog(today,{injected:false,injectionTime:null});
+  else setMounjaroLog(today,{injected:true,injectionTime:fmtNow()});
+  renderToday();
+}
+function toggleMounjaroSideEffect(effect){
+  const today=todayStr();
+  const cur=getMounjaroLog(today)||{};
+  const set=new Set(cur.sideEffects||[]);
+  if(set.has(effect))set.delete(effect);else set.add(effect);
+  setMounjaroLog(today,{sideEffects:[...set]});
+  renderToday();
+}
+function openNauseaMode(){
+  setMounjaroLog(todayStr(),{nauseaMode:true});
+  const items=(typeof MOUNJARO_PRIORITY_FOODS!=='undefined'?MOUNJARO_PRIORITY_FOODS:[]);
+  const html=`<div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">Protein first, calories second. Small, cold, bland foods go down easiest. Ginger tea + Sidr honey settle the stomach.</div>`+
+    items.map(f=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);">
+      <div><div style="font-size:13px;font-weight:600;">${f.name}</div><div style="font-size:11px;color:var(--text3);">${f.note}</div></div>
+      <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;color:var(--orange);font-weight:700;">${f.protein}g P</div><div style="font-size:11px;color:var(--text3);">${f.cals} cals</div></div>
+    </div>`).join('');
+  if(typeof _showInfoModal==='function')_showInfoModal('Nausea Mode — Priority Foods',html);
+  else alert(items.map(f=>`${f.name} — ${f.protein}g protein, ${f.cals} cals`).join('\n'));
+}
 
 // ---- PERSONAL PROFILE (Phase 27) ----
 function _personal(){
@@ -1665,16 +1726,10 @@ async function init(){
     if(!STATE.trainingStartDate) STATE.trainingStartDate = earliest;
     saveStateNow();
   }
-  // Phase 19: pre-populate supplements for Jay if empty
+  // Phase 19 + 39: pre-populate supplements for Jay if empty (canonical 9 with timing/critical)
   if(STATE.profile && !STATE.supplements){
     if(STATE.profile.email==='jay@afjltd.co.uk' || (STATE.profile.name && STATE.profile.name.toLowerCase().startsWith('jay'))){
-      STATE.supplements=[
-        {id:'vit-d',name:'Vitamin D',dose:'4000 IU',time:'12:00',mealId:'breakfast',notes:''},
-        {id:'omega-3',name:'Omega 3',dose:'2 caps',time:'12:00',mealId:'breakfast',notes:''},
-        {id:'metformin-am',name:'Metformin',dose:'1000mg',time:'12:00',mealId:'breakfast',notes:'With first meal'},
-        {id:'statin-pm',name:'Statin',dose:'20mg',time:'17:50',mealId:'last-meal',notes:'With last meal'},
-        {id:'creatine',name:'Creatine',dose:'5g',time:'17:15',mealId:'post-workout-shake',notes:'In post-workout shake'},
-      ];
+      STATE.supplements=JAY_SUPPLEMENTS_V39();
       saveStateNow();
     } else {
       STATE.supplements=[];
@@ -1700,6 +1755,17 @@ async function init(){
 
   // Phase 20: migrate time-based exercise sets
   runPhase20Migration();
+
+  // Phase 39: water migration + dynamic calorie targets
+  if(typeof migrateWaterCups==='function')migrateWaterCups();
+  if(STATE.profile && typeof applyDynamicTargets==='function'){
+    const dt=STATE.profile.dynamicTargets;
+    if(!dt||dt.calculatedFrom!==getCurrentWeight())applyDynamicTargets();
+    if(STATE.profile.dynamicTargets&&STATE.profile.dynamicTargets.milestoneJustHit){
+      const mc=STATE.profile.dynamicTargets.milestoneCount;
+      setTimeout(()=>showToast(`🎉 ${mc*5}kg milestone! Targets recalculated for your new weight.`),1200);
+    }
+  }
 
   if(STATE.profile && STATE.profile.name){
     document.getElementById('onboarding').style.display='none';

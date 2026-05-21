@@ -565,4 +565,64 @@ router.put("/sleep/:date", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// --- Phase 39: nutrition system field-scoped endpoints ---
+
+// Generic date-keyed jsonb_set helper for the new nutrition logs
+function dateKeyedRoute(path: string, stateKey: string) {
+  router.put(path, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const date = req.params.date as string;
+      if (!DATE_RE.test(date)) { res.status(400).json({ error: "Invalid date" }); return; }
+      const valueJson = JSON.stringify(req.body.value ?? {});
+      if (valueJson.length > 60000) { res.status(413).json({ error: "Value too large" }); return; }
+      await prisma.$executeRaw`
+        UPDATE "User"
+        SET state = jsonb_set(
+          jsonb_set(COALESCE(state, '{}')::jsonb, ARRAY[${stateKey}], COALESCE(state->${stateKey}, '{}'), true),
+          ARRAY[${stateKey}, ${date}],
+          ${valueJson}::jsonb,
+          true
+        ),
+        "updatedAt" = NOW()
+        WHERE id = ${req.userId}
+      `;
+      res.json({ success: true });
+    } catch (err) {
+      console.error(`Put ${stateKey} error:`, err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+}
+dateKeyedRoute("/fasting-log/:date", "fastingLog");
+dateKeyedRoute("/mounjaro-log/:date", "mounjaroLog");
+dateKeyedRoute("/water-log/:date", "waterLog");
+dateKeyedRoute("/supplement-log/:date", "supplementLog");
+
+// Phase 39: dynamic calorie/macro targets (subfield of profile)
+router.put("/profile/dynamic-targets", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { dynamicTargets } = req.body || {};
+    if (!dynamicTargets || typeof dynamicTargets !== "object" || Array.isArray(dynamicTargets)) {
+      res.status(400).json({ error: "dynamicTargets object required" }); return;
+    }
+    const valueJson = JSON.stringify(dynamicTargets);
+    if (valueJson.length > 20000) { res.status(413).json({ error: "dynamicTargets too large" }); return; }
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+        '{profile,dynamicTargets}',
+        ${valueJson}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put dynamic-targets error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

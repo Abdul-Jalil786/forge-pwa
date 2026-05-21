@@ -62,7 +62,9 @@ function renderToday(){
   const toGo=Math.max(0,cw-p.targetWeight);
   const pct=Math.max(0,Math.min(100,Math.round((lost/(p.startWeight-p.targetWeight))*100)));
   const totals=getTodayTotals();
-  const calTarget=session?p.calsGym:p.calsRest;
+  const _dynT=(typeof getDynamicTargetForDate==='function')?getDynamicTargetForDate(todayStr()):null;
+  const calTarget=_dynT?_dynT.calories:(session?p.calsGym:p.calsRest);
+  const proteinTarget=_dynT?_dynT.protein:p.proteinTarget;
   const steps=getTodaySteps();
   const sleepLog=getSleepLog();
   const lastSleep=sleepLog[todayStr()]?.hours||sleepLog[Object.keys(sleepLog).sort().pop()]?.hours||0;
@@ -146,6 +148,7 @@ function renderToday(){
       `}
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">${nextMealStr}</div>
       ${readiness?`<div style="font-size:12px;color:${recColor};font-weight:600;">${recRec} · Readiness ${readiness}</div>`:''}
+      ${(()=>{const fs=(typeof getFastingStreak==='function')?getFastingStreak():0;return fs>0?`<div style="font-size:12px;color:var(--cyan);font-weight:600;margin-top:2px;">🔥 ${fs} day fasting streak</div>`:'';})()}
     </div>
 
     <div class="sec-label">Progress to Goal</div>
@@ -230,15 +233,18 @@ function renderToday(){
     </div>
     `:''}
 
-    <div class="sec-label">Today's Targets</div>
+    <div class="sec-label" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Today's Targets</span>
+      ${_dynT?`<span style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;">↻ ${(STATE.profile.dynamicTargets&&STATE.profile.dynamicTargets.calculatedFrom)||cw}kg · ${session?(session==='lower'?'Lower':'Upper')+' day':'Rest day'}</span>`:''}
+    </div>
     <div class="sg sg2" style="margin-bottom:6px;">
       <div class="sb${totals.cals>=calTarget?' green':' lime'}">
         <div class="l">Calories</div>
         <div class="v">${totals.cals}<span class="u">/${calTarget}</span></div>
       </div>
-      <div class="sb${totals.protein>=p.proteinTarget?' green':' orange'}">
+      <div class="sb${totals.protein>=proteinTarget?' green':' orange'}">
         <div class="l">Protein</div>
-        <div class="v">${totals.protein}<span class="u">/${p.proteinTarget}g</span></div>
+        <div class="v">${totals.protein}<span class="u">/${proteinTarget}g</span></div>
       </div>
     </div>
     <div class="sg sg2" style="margin-bottom:10px;">
@@ -261,7 +267,11 @@ function renderToday(){
     </div>
     `:''}
 
+    ${renderMounjaroToday()}
+
     ${renderSupplementsToday()}
+
+    ${renderWaterToday()}
 
     ${renderSkinSection()}
 
@@ -282,27 +292,108 @@ function renderSupplementsToday(){
   if(!supps.length)return '';
   const today=todayStr();
   const log=getSupplementLog(today);
-  const taken=supps.filter(s=>log[s.id]===true).length;
+  const dow=new Date().getDay();
+  // hide weekly supplements that aren't due today
+  const due=supps.filter(s=>!(s.frequency==='weekly-wednesday'&&dow!==3));
+  const taken=due.filter(s=>log[s.id]===true).length;
   const adh=getSupplementAdherence(7);
   const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
+  // group by timing
+  const groups=(typeof SUPP_TIMING_GROUPS!=='undefined'?SUPP_TIMING_GROUPS:[]).map(g=>({
+    label:g.label,items:due.filter(s=>getSupplementTiming(s)===g.key)
+  })).filter(g=>g.items.length);
+  const groupedIds=new Set(groups.flatMap(g=>g.items.map(s=>s.id)));
+  const ungrouped=due.filter(s=>!groupedIds.has(s.id));
+  if(ungrouped.length)groups.push({label:'Other',items:ungrouped});
+  const missedCrit=(typeof getMissedCriticalSupplements==='function')?getMissedCriticalSupplements(today):[];
+  const row=s=>{
+    const on=log[s.id]===true;
+    const crit=s.critical&&!on;
+    return `<div onclick="toggleSuppToday('${s.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;min-height:42px;">
+      <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--lime)':crit?'var(--orange)':'var(--border)'};background:${on?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:${on?'var(--text)':'var(--text2)'};">${s.name}${crit?' <span style="color:var(--orange);font-size:11px;">⚠️</span>':''}</div>
+        <div style="font-size:11px;color:var(--text3);">${s.dose}${s.withFood?' · with food':''}</div>
+      </div>
+      ${s.time?`<div style="font-size:11px;font-family:monospace;color:var(--text3);flex-shrink:0;">${s.time}</div>`:''}
+    </div>`;
+  };
   return `
     <div class="sec-label" style="display:flex;justify-content:space-between;align-items:center;">
       <span>Supplements Today</span>
-      <span style="font-size:11px;color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;">${taken}/${supps.length} taken</span>
+      <span style="font-size:11px;color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;">${taken}/${due.length} taken</span>
     </div>
     <div class="card" style="margin-bottom:10px;border-color:var(--orange);background:linear-gradient(135deg,rgba(255,85,0,.03),transparent);">
-      ${supps.map(s=>{
-        const on=log[s.id]===true;
-        return `<div onclick="toggleSuppToday('${s.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;min-height:44px;">
-          <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--lime)':'var(--border)'};background:${on?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:13px;font-weight:600;color:${on?'var(--text)':'var(--text2)'};">${s.name}</div>
-            <div style="font-size:11px;color:var(--text3);">${s.dose}</div>
-          </div>
-          ${s.time?`<div style="font-size:11px;font-family:monospace;color:var(--text3);flex-shrink:0;">${s.time}</div>`:''}
-        </div>`;
-      }).join('')}
+      ${groups.map(g=>`<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:6px 0 0;">${g.label}</div>${g.items.map(row).join('')}`).join('')}
+      ${missedCrit.length?`<div style="font-size:11px;color:var(--orange);margin-top:8px;line-height:1.5;">⚠️ ${missedCrit.length} critical ${missedCrit.length>1?'supplements':'supplement'} still due: ${missedCrit.map(s=>s.name).join(', ')}</div>`:''}
       <div onclick="nav('coach')" style="padding:8px 0 2px;cursor:pointer;font-size:11px;color:var(--text3);">Adherence this week: ${adh.pct}% · <span style="color:var(--orange);">view details</span></div>
+    </div>`;
+}
+
+// Phase 39: water tracker card (Today page)
+function renderWaterToday(){
+  const total=getWaterTotal();
+  const target=getWaterTarget();
+  const pct=Math.min(100,Math.round((total/target)*100));
+  const isGym=!!getSessionTypeForDate(todayStr());
+  const color=pct>=75?'var(--green)':pct>=40?'var(--orange)':'var(--red)';
+  const remaining=Math.max(0,target-total);
+  const circ=2*Math.PI*42;
+  const dash=circ*(pct/100);
+  const now=new Date().getHours();
+  const eodWarn=now>=17&&pct<50;
+  return `
+    <div class="sec-label">Water</div>
+    <div class="card" style="margin-bottom:10px;">
+      ${isGym?`<div style="font-size:11px;color:var(--cyan);margin-bottom:8px;">Training day — target raised to 3.5L</div>`:''}
+      <div style="display:flex;align-items:center;gap:16px;">
+        <svg width="100" height="100" viewBox="0 0 100 100" style="flex-shrink:0;">
+          <circle cx="50" cy="50" r="42" fill="none" stroke="var(--border)" stroke-width="8"/>
+          <circle cx="50" cy="50" r="42" fill="none" stroke="${color}" stroke-width="8" stroke-linecap="round"
+            stroke-dasharray="${dash} ${circ}" transform="rotate(-90 50 50)"/>
+          <text x="50" y="48" text-anchor="middle" font-size="20" font-weight="700" fill="var(--text)" font-family="'Archivo Black',sans-serif">${pct}%</text>
+          <text x="50" y="64" text-anchor="middle" font-size="9" fill="var(--text3)">${(total/1000).toFixed(2)}L</text>
+        </svg>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;">${total}ml <span style="color:var(--text3);font-weight:400;">of ${target}ml</span></div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">${remaining}ml to go</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:6px 8px;" onclick="addWater(250,'glass')">+250</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:6px 8px;" onclick="addWater(500,'bottle')">+500</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:6px 8px;" onclick="addWater(750,'large')">+750</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:6px 8px;" onclick="addWaterCustom()">+</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:6px 8px;color:var(--text3);" onclick="undoWater()">↩</button>
+          </div>
+        </div>
+      </div>
+      ${eodWarn?`<div style="font-size:11px;color:var(--orange);margin-top:10px;line-height:1.5;">Only ${total}ml today — drink ${remaining}ml more before your eating window closes at 18:00.</div>`:''}
+    </div>`;
+}
+
+// Phase 39: Mounjaro injection tick (Today page, Wednesdays only)
+function renderMounjaroToday(){
+  if(!isMounjaroDay())return '';
+  const today=todayStr();
+  const mlog=getMounjaroLog(today)||{};
+  const injected=!!mlog.injected;
+  const effects=['Nausea','Acid reflux','Fatigue','Headache','Vomiting'];
+  const sel=new Set(mlog.sideEffects||[]);
+  const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
+  return `
+    <div class="sec-label">Mounjaro</div>
+    <div class="card" style="margin-bottom:10px;border-color:#ffc107;background:linear-gradient(135deg,rgba(255,193,7,.05),transparent);">
+      <div onclick="toggleMounjaroInjected()" style="display:flex;align-items:center;gap:10px;cursor:pointer;min-height:44px;">
+        <div style="width:22px;height:22px;border-radius:5px;border:2px solid ${injected?'var(--lime)':'#ffc107'};background:${injected?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${injected?chk:''}</div>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:600;">💉 Mounjaro injected today</div>
+          <div style="font-size:11px;color:var(--text3);">${injected&&mlog.injectionTime?'Logged at '+mlog.injectionTime:'5mg after meal 2 (~3pm)'}</div>
+        </div>
+      </div>
+      ${injected?`
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:12px 0 6px;">Side effects (tap all that apply)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${effects.map(e=>`<button onclick="toggleMounjaroSideEffect('${e}')" style="font-size:11px;padding:6px 12px;border-radius:14px;cursor:pointer;border:1px solid ${sel.has(e)?'var(--orange)':'var(--border)'};background:${sel.has(e)?'rgba(255,85,0,.15)':'transparent'};color:${sel.has(e)?'var(--orange)':'var(--text2)'};">${e}</button>`).join('')}
+      </div>`:''}
     </div>`;
 }
 
@@ -337,7 +428,9 @@ function renderFood(){
 
   // Determine if this view date was a gym day
   const session=getSessionTypeForDate(viewDate);
-  const calTarget=session?p.calsGym:p.calsRest;
+  const _dt=(typeof getDynamicTargetForDate==='function')?getDynamicTargetForDate(viewDate):null;
+  const calTarget=_dt?_dt.calories:(session?p.calsGym:p.calsRest);
+  const proteinTgt=(_dt&&_dt.protein)||p.proteinTarget||180;
 
   const foods=getFoods(viewDate).sort((a,b)=>a.time.localeCompare(b.time));
   const totals={
@@ -346,8 +439,8 @@ function renderFood(){
     carbs:foods.reduce((s,f)=>s+(f.carbs||0),0),
     fat:foods.reduce((s,f)=>s+(f.fat||0),0),
   };
-  const carbTarget=p.carbsTarget||Math.round((calTarget*0.38)/4);
-  const fatTarget=p.fatTarget||Math.round((calTarget*0.28)/9);
+  const carbTarget=(_dt&&_dt.carbs)||p.carbsTarget||Math.round((calTarget*0.38)/4);
+  const fatTarget=(_dt&&_dt.fat)||p.fatTarget||Math.round((calTarget*0.28)/9);
   const templates=getTemplates();
 
   // Group foods by mealId for display
@@ -378,6 +471,10 @@ function renderFood(){
       <button onclick="shiftFoodDate(1)" style="background:none;border:none;color:${isToday?'var(--text3)':'var(--text)'};font-size:18px;cursor:pointer;padding:4px 8px;" ${isToday?'disabled':''}>›</button>
     </div>
 
+    ${isToday?renderFastingCard():''}
+    ${isToday?renderMounjaroBanner():''}
+    ${isToday?renderTrainingNutritionBanners():''}
+    ${isToday?renderProteinDistribution():''}
     ${isToday && STATE.mealPlan?renderTodaysPlan():''}
 
     <div class="card hi">
@@ -402,7 +499,7 @@ function renderFood(){
     </div>
 
     <div class="card" style="margin-bottom:10px;">
-      <div class="macro-row"><div class="macro-hdr"><span class="macro-name" style="color:var(--orange);">Protein</span><span class="macro-amt">${totals.protein}g / ${p.proteinTarget}g</span></div><div class="macro-bar"><div class="macro-fill mf-p" style="width:${Math.min(100,(totals.protein/p.proteinTarget)*100)}%"></div></div></div>
+      <div class="macro-row"><div class="macro-hdr"><span class="macro-name" style="color:var(--orange);">Protein</span><span class="macro-amt">${totals.protein}g / ${proteinTgt}g</span></div><div class="macro-bar"><div class="macro-fill mf-p" style="width:${Math.min(100,(totals.protein/proteinTgt)*100)}%"></div></div></div>
       <div class="macro-row"><div class="macro-hdr"><span class="macro-name" style="color:var(--blue);">Carbs</span><span class="macro-amt">${totals.carbs}g / ${carbTarget}g</span></div><div class="macro-bar"><div class="macro-fill mf-c" style="width:${Math.min(100,(totals.carbs/carbTarget)*100)}%"></div></div></div>
       <div class="macro-row" style="margin-bottom:0;"><div class="macro-hdr"><span class="macro-name" style="color:var(--purple);">Fat</span><span class="macro-amt">${totals.fat}g / ${fatTarget}g</span></div><div class="macro-bar"><div class="macro-fill mf-f" style="width:${Math.min(100,(totals.fat/fatTarget)*100)}%"></div></div></div>
     </div>
@@ -519,6 +616,7 @@ function renderTodaysPlan(){
               <div style="font-weight:600;font-size:14px;${isLogged?'color:var(--text3);text-decoration:line-through;':''}">${m.name}${suppBadge}</div>
             </div>
             <div style="font-size:11px;color:var(--text2);margin-top:3px;">${m.cals||0} kcal · ${m.protein||0}g P · ${m.carbs||0}g C · ${m.fat||0}g F${isPartial?` · <span style="color:var(--orange);">${loggedCount} of ${total} logged</span>`:''}</div>
+            ${(()=>{const ps=getMealProteinStatus(m.protein||0);return `<div style="font-size:10px;color:${ps.color};margin-top:3px;font-weight:600;">${ps.label}</div>`;})()}
           </div>
           <button class="btn ${isLogged?'btn-ghost':isPartial?'btn-ghost':'btn-lime'} btn-sm" style="font-size:11px;padding:8px 14px;flex-shrink:0;${isPartial?'color:var(--orange);border-color:var(--orange);':''}" onclick="openMealDetail('${m.id}')">${isLogged?'✓':isPartial?'◐':'+ Log'}</button>
         </div>`;
@@ -667,7 +765,7 @@ function _renderMealDetail(){
             <div onclick="openIngredientEdit(${i})" style="flex:1;font-size:13px;color:${dim?'var(--text3)':'var(--text)'};${dim?'text-decoration:line-through;':''}cursor:pointer;">${ing.name}${ing.edited?' <span style="font-size:10px;color:var(--orange);">✏️</span>':''}</div>
             <div style="font-size:11px;color:var(--text3);flex-shrink:0;text-align:right;">${dim?'—':`${ingCals} kcal`}</div>
           </div>
-          <div style="font-size:10px;color:var(--text3);margin-bottom:8px;">${dim?'skipped':`${ingP}g P · ${ingC}g C · ${ingF}g F`}</div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:8px;">${dim?'skipped':`${ingP}g P · ${ingC}g C · ${ingF}g F`}${(()=>{const gi=(typeof estimateGI==='function')?estimateGI(ing.name):null;return (gi&&gi.label)?` · <span style="color:${gi.band==='high'?'var(--red)':gi.band==='moderate'?'var(--orange)':'var(--green)'};">${gi.label}</span>`:'';})()}</div>
           <div style="display:flex;gap:4px;">
             ${PORTION_OPTIONS.map(opt=>{
               const active=Math.abs((q||0)-opt.qty)<0.01;
@@ -730,6 +828,7 @@ function logMealFromModal(){
   STATE.foods=all;
   updateLocalCache();
   saveFieldToServer(`/api/state/foods/${targetDate}`,{value:finalFoods});
+  if(typeof recomputeFastingLog==='function')recomputeFastingLog(targetDate);
 
   // Supplements (separate endpoint, no race)
   s.supplements.forEach((supp,i)=>setSupplementTaken(targetDate,supp.id,s.suppChecked[i]));
@@ -2262,20 +2361,7 @@ function renderMore(){
   document.getElementById('page-more').innerHTML=`
     <div class="pg-title" style="margin-bottom:14px;">More</div>
 
-    <div class="sec-label">Water Intake</div>
-    <div class="card" style="margin-bottom:10px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div>
-          <div style="font-family:'Archivo Black',sans-serif;font-size:36px;color:var(--cyan);letter-spacing:-2px;">${water}<span style="font-size:18px;color:var(--text2);">/${waterTarget}</span></div>
-          <div style="font-size:11px;color:var(--text2);">cups today · Target 8 cups (2L)</div>
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="resetWater()">Reset</button>
-      </div>
-      <div class="water-cups">
-        ${Array(waterTarget).fill(0).map((_,i)=>`<div class="wcup${i<water?' filled':''}" onclick="setWater(${i+1})">💧</div>`).join('')}
-      </div>
-      <div class="pb" style="margin-top:10px;"><div class="pb-fill" style="width:${Math.min(100,(water/waterTarget)*100)}%;background:linear-gradient(90deg,var(--blue),var(--cyan));"></div></div>
-    </div>
+    ${renderWaterToday()}
 
     <div class="sec-label">Quick Actions</div>
     <div class="sg sg2" style="margin-bottom:10px;">
@@ -2509,4 +2595,128 @@ function renderMore(){
   renderBloodMarkersList();
   loadSessionTimesUI();
   renderInjuryList();
+}
+
+// ============================================================
+// PHASE 39 — FOOD PAGE NUTRITION CARDS
+// ============================================================
+function _fmtHM(mins){
+  mins=Math.max(0,Math.round(mins));
+  const h=Math.floor(mins/60),m=mins%60;
+  return h>0?`${h}h ${m}m`:`${m}m`;
+}
+
+function renderFastingCard(){
+  if(typeof getWindowCountdown!=='function')return '';
+  const c=getWindowCountdown();
+  let title,sub,detail,color,bg,pct;
+  if(c.phase==='before'){
+    title='Fasting Window Active';
+    sub=`Window opens in ${_fmtHM(c.minsToOpen)}`;
+    detail=`You have fasted for ${_fmtHM(c.fastedMins)}`;
+    color='var(--blue)';bg='rgba(61,155,255,.06)';
+    pct=Math.round((c.fastedMins/(18*60))*100);
+  }else if(c.phase==='open'){
+    title='Eating Window Open';
+    sub=`Window closes in ${_fmtHM(c.minsToClose)}`;
+    detail=`${_fmtHM(c.elapsedMins)} into your 6-hour window`;
+    color='var(--green)';bg='rgba(0,232,122,.06)';
+    pct=Math.round((c.elapsedMins/c.windowMins)*100);
+  }else{
+    title='Eating Window Closed';
+    sub='Fast resumed · next window opens 12:00';
+    detail=`${_fmtHM(c.fastedMins)} into tonight's fast`;
+    color='var(--blue)';bg='rgba(61,155,255,.06)';
+    pct=Math.round((c.fastedMins/(18*60))*100);
+  }
+  pct=Math.max(0,Math.min(100,pct));
+  const log=getFastingLog(todayStr());
+  const broken=log&&log.windowBroken;
+  return `
+    <div class="card" style="margin-bottom:10px;border-color:${color};background:linear-gradient(135deg,${bg},transparent);">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:${color};">${title}</div>
+        <div style="font-size:11px;color:var(--text3);">12:00–18:00</div>
+      </div>
+      <div style="font-size:13px;color:var(--text);margin:6px 0 2px;font-weight:600;">${sub}</div>
+      <div style="font-size:11px;color:var(--text2);">${detail}</div>
+      <div class="pb" style="margin-top:8px;"><div class="pb-fill" style="width:${pct}%;background:${color};"></div></div>
+      ${broken?`<div style="font-size:11px;color:var(--orange);margin-top:8px;line-height:1.5;">⚠️ Food logged outside your window (12:00–18:00). Fasting streak affected.</div>`:''}
+    </div>`;
+}
+
+function renderMounjaroBanner(){
+  if(typeof isMounjaroDay!=='function')return '';
+  if(isMounjaroDay()){
+    return `<div class="card" style="margin-bottom:10px;border-color:#ffc107;background:rgba(255,193,7,.06);">
+      <div style="font-size:13px;color:#ffc107;font-weight:700;margin-bottom:4px;">💉 Mounjaro injection day</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;">Minimum targets active — protein is the priority. Inject after meal 2 (~3pm). Calories 1,600–1,900 · protein 150g floor. Calories are secondary today.</div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="openNauseaMode()">🤢 Nausea Mode — priority foods</button>
+    </div>`;
+  }
+  if(isPostInjectionDay()){
+    return `<div class="card" style="margin-bottom:10px;border-color:var(--orange);background:rgba(255,85,0,.05);">
+      <div style="font-size:13px;color:var(--orange);font-weight:700;margin-bottom:4px;">Post-injection day</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;">Appetite likely suppressed — eat by the clock, not by hunger. Minimum 150g protein today regardless of appetite. Calories 1,600–1,900.</div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="openNauseaMode()">🤢 Nausea Mode — priority foods</button>
+    </div>`;
+  }
+  return '';
+}
+
+function renderProteinDistribution(){
+  if(typeof getProteinDistribution!=='function')return '';
+  const rows=getProteinDistribution().slice(0,3);
+  if(!rows.length)return '';
+  const score=getProteinDistributionScore();
+  return `<div class="card" style="margin-bottom:10px;">
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Protein Distribution Today</div>
+    <div style="display:flex;gap:6px;margin-bottom:8px;">
+      ${rows.map(r=>{
+        const st=getMealProteinStatus(r.protein);
+        return `<div style="flex:1;text-align:center;">
+          <div style="height:8px;border-radius:4px;background:${st.color};"></div>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.name}</div>
+          <div style="font-size:12px;font-weight:700;color:${st.color};">${r.protein}g</div>
+        </div>`;
+      }).join('')}
+    </div>
+    ${score?`<div style="font-size:11px;color:var(--text2);">${score.label} · ${score.hits}/${score.total} meals ≥40g</div>`:''}
+  </div>`;
+}
+
+function renderTrainingNutritionBanners(){
+  let html='';
+  const mins=(typeof getMinutesToSession==='function')?getMinutesToSession():null;
+  if(mins!=null&&mins>0&&mins<=90){
+    if(mins>60){
+      html+=`<div class="card" style="margin-bottom:10px;border-color:var(--lime);background:rgba(200,255,0,.05);">
+        <div style="font-size:12px;color:var(--lime);font-weight:700;">🏋️ Training in ~${mins} mins</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:3px;">Pre-workout meal should be finishing now. Have you had your carbs and protein?</div></div>`;
+    }else{
+      html+=`<div class="card" style="margin-bottom:10px;border-color:var(--orange);background:rgba(255,85,0,.05);">
+        <div style="font-size:12px;color:var(--orange);font-weight:700;">🏋️ Training in ~${mins} mins</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:3px;">Time to wrap up eating — last meal before your session.</div></div>`;
+    }
+  }
+  const pw=(typeof getPostWorkoutWindow==='function')?getPostWorkoutWindow():null;
+  if(pw&&pw.phase==='open'){
+    html+=`<div class="card" style="margin-bottom:10px;border-color:var(--lime);background:rgba(200,255,0,.06);">
+      <div style="font-size:12px;color:var(--lime);font-weight:700;">⚡ Post-workout window open · ${pw.minsLeft} min left</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:3px;">Get protein in within the hour — log your Clear Whey shake. Session burned ~${getSessionCalorieBurn()} cals.</div></div>`;
+  }else if(pw&&pw.phase==='missed'){
+    html+=`<div class="card" style="margin-bottom:10px;border-color:var(--orange);background:rgba(255,85,0,.05);">
+      <div style="font-size:12px;color:var(--orange);font-weight:700;">Post-workout protein window missed</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:3px;">Log your shake now — late protein still beats none.</div></div>`;
+  }
+  const day=(STATE.exLog||{})[todayStr()]||{};
+  if(day._session&&day._session.completedAt){
+    const st=getSessionTypeForDate(todayStr());
+    if(st==='lower'){
+      html+=`<div style="font-size:11px;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px;">🦵 Heavy lower session done — quads &amp; hamstrings need protein. Hit your protein target today.</div>`;
+    }else if(st==='upper'){
+      html+=`<div style="font-size:11px;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px;">💪 Upper session done — chest, back &amp; shoulders need protein. Creatine and Omega 3 taken?</div>`;
+    }
+  }
+  return html;
 }

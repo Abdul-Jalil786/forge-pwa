@@ -440,6 +440,49 @@ async function seedJayInjuryV1() {
   }
 }
 
+// Phase 39: enhance Jay's supplement list with timing + critical metadata.
+// Merges canonical 9 into the existing list: backfills metadata onto matching ids,
+// adds any missing, and leaves custom supplements untouched (no data loss).
+async function seedJayNutritionSuppsV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.nutritionSuppsV1) return;
+    const canonical: any[] = [
+      { id: "supp-sidr-honey", name: "Sidr Honey", dose: "1 tsp in warm water", time: "07:30", mealId: "", timing: "on-waking", withFood: false, critical: true, notes: "Morning ritual" },
+      { id: "supp-multivitamin", name: "Multivitamin", dose: "2 tablets", time: "12:00", mealId: "", timing: "meal-1", withFood: true, critical: false, notes: "" },
+      { id: "vit-d", name: "Vitamin D3", dose: "4,000 IU", time: "12:00", mealId: "", timing: "meal-1", withFood: true, critical: true, notes: "Fat-soluble — take with food" },
+      { id: "omega-3", name: "Omega 3", dose: "2 capsules", time: "15:00", mealId: "", timing: "meal-2", withFood: true, critical: true, notes: "Anti-inflammatory" },
+      { id: "supp-omega3-2", name: "Omega 3 (2nd dose)", dose: "2 capsules", time: "17:30", mealId: "", timing: "meal-3", withFood: true, critical: true, notes: "Anti-inflammatory" },
+      { id: "creatine", name: "Creatine", dose: "5g", time: "15:00", mealId: "", timing: "meal-2", withFood: true, critical: false, notes: "" },
+      { id: "supp-magnesium", name: "Magnesium Glycinate", dose: "300mg", time: "22:00", mealId: "", timing: "bedtime", withFood: false, critical: true, notes: "Sleep support" },
+      { id: "metformin-am", name: "Metformin", dose: "1000mg", time: "12:00", mealId: "", timing: "with-food", withFood: true, critical: true, notes: "Medication — take with food" },
+      { id: "supp-mounjaro", name: "Mounjaro", dose: "5mg", time: "15:00", mealId: "", timing: "wednesday-meal-2", withFood: true, critical: true, frequency: "weekly-wednesday", notes: "GLP-1 — Wednesday injection after meal 2" },
+    ];
+    const existing: any[] = Array.isArray(state.supplements) ? state.supplements : [];
+    const byId = new Map(existing.map((s: any) => [s.id, s]));
+    for (const c of canonical) {
+      const e = byId.get(c.id);
+      if (e) {
+        e.timing = c.timing;
+        e.withFood = c.withFood;
+        e.critical = c.critical;
+        if (c.frequency) e.frequency = c.frequency;
+        if (!e.dose) e.dose = c.dose;
+      } else {
+        existing.push(c);
+      }
+    }
+    state.supplements = existing;
+    state.nutritionSuppsV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay supplements enhanced with Phase 39 timing/critical metadata");
+  } catch (err) {
+    console.error("[migration] Jay nutrition supplements seed failed:", err);
+  }
+}
+
 const server = app.listen(PORT, () => {
   console.log(`Forge server running on port ${PORT}`);
   startCron();
@@ -451,6 +494,7 @@ const server = app.listen(PORT, () => {
   fixJayOmega3Dose();
   seedJaySkinCareV1();
   seedJayInjuryV1();
+  seedJayNutritionSuppsV1();
 });
 
 const shutdown = async (signal: string) => {

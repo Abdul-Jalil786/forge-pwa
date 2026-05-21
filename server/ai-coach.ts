@@ -341,6 +341,89 @@ function buildSleepPerformance(state: any): string {
   return ["SLEEP VS PERFORMANCE CORRELATION (last " + rows.length + " sessions — does poor sleep precede weaker sessions?):", ...rows, ""].join("\n");
 }
 
+// Phase 39: nutrition system context — fasting, water, Mounjaro, protein distribution
+function buildNutritionContext(state: any): string {
+  const lines: string[] = [];
+
+  // Fasting compliance (14d)
+  const fl = state.fastingLog || {};
+  let maintained = 0, broken = 0, fastSum = 0, fastN = 0;
+  const brokenDays: string[] = [];
+  for (let i = 0; i < 14; i++) {
+    const e = fl[daysAgoUK(i)];
+    if (!e) continue;
+    if (e.windowMaintained) maintained++;
+    if (e.windowBroken) { broken++; brokenDays.push(daysAgoUK(i)); }
+    if (typeof e.fastDurationHours === "number") { fastSum += e.fastDurationHours; fastN++; }
+  }
+  if (maintained || broken) {
+    lines.push("FASTING COMPLIANCE (12:00-18:00 eating window, last 14d):");
+    lines.push(`  Window maintained: ${maintained} days · broken: ${broken}`);
+    if (fastN) lines.push(`  Average fast duration: ${(fastSum / fastN).toFixed(1)}h`);
+    if (brokenDays.length) lines.push(`  Broken on: ${brokenDays.join(", ")} — check if a specific weekday recurs`);
+    lines.push("");
+  }
+
+  // Water (7d)
+  const wl = state.waterLog || {};
+  let wSum = 0, wN = 0, wHit = 0, wLow: number | null = null, wHigh: number | null = null;
+  for (let i = 0; i < 7; i++) {
+    const e = wl[daysAgoUK(i)];
+    if (!e) continue;
+    wN++; wSum += e.total || 0;
+    if ((e.total || 0) >= (e.target || 3000)) wHit++;
+    if (wLow == null || e.total < wLow) wLow = e.total;
+    if (wHigh == null || e.total > wHigh) wHigh = e.total;
+  }
+  if (wN) {
+    lines.push("WATER INTAKE (last 7d, target 3000ml / 3500ml on gym days):");
+    lines.push(`  Average: ${Math.round(wSum / wN)}ml/day · hit target ${wHit}/${wN} days · low ${wLow}ml · high ${wHigh}ml`);
+    lines.push("");
+  }
+
+  // Mounjaro pattern (last 4 logged injections)
+  const ml = state.mounjaroLog || {};
+  const injDates = Object.keys(ml).filter((d) => ml[d] && ml[d].injected).sort().reverse().slice(0, 4);
+  if (injDates.length) {
+    lines.push(`MOUNJARO PATTERN (last ${injDates.length} injections):`);
+    for (const d of injDates) {
+      const e = ml[d];
+      const fx = (e.sideEffects || []).join(", ") || "none logged";
+      lines.push(`  ${d}: injected${e.injectionTime ? ` ${e.injectionTime}` : ""} · side effects: ${fx}${e.nauseaMode ? " · used nausea mode" : ""}`);
+    }
+    lines.push("");
+  }
+
+  // Protein distribution (7d, 40g/meal threshold)
+  const plan = state.mealPlan;
+  if (plan && Array.isArray(plan.meals) && plan.meals.length) {
+    let allHit = 0, dayN = 0;
+    const mealSums: Record<string, { sum: number; n: number }> = {};
+    for (let i = 0; i < 7; i++) {
+      const foods = (state.foods || {})[daysAgoUK(i)] || [];
+      if (!foods.length) continue;
+      dayN++;
+      let hits = 0;
+      for (const m of plan.meals.slice(0, 3)) {
+        const p = foods.filter((f: any) => f.mealId === m.id).reduce((s: number, f: any) => s + (+f.protein || 0), 0);
+        if (!mealSums[m.name]) mealSums[m.name] = { sum: 0, n: 0 };
+        mealSums[m.name].sum += p; mealSums[m.name].n++;
+        if (p >= 40) hits++;
+      }
+      if (hits === 3) allHit++;
+    }
+    if (dayN) {
+      lines.push("PROTEIN DISTRIBUTION (last 7d — 40g/meal triggers muscle protein synthesis, important at 52yo):");
+      lines.push(`  Days all 3 meals hit 40g: ${allHit}/${dayN}`);
+      const avgs = Object.entries(mealSums).map(([n, v]) => `${n} ${Math.round(v.sum / v.n)}g`).join(" · ");
+      if (avgs) lines.push(`  Avg per meal: ${avgs}`);
+      lines.push("");
+    }
+  }
+
+  return lines.join("\n");
+}
+
 function buildContext(state: any): string {
   const today = ukToday();
   const cutoff14 = daysAgoUK(14);
@@ -546,6 +629,10 @@ function buildContext(state: any): string {
   lines.push("SUPPLEMENT ADHERENCE (last 7d, taken/total):");
   for (const a of suppAdherence) lines.push(`  ${a.date}: ${a.taken}/${a.of}`);
   lines.push("");
+
+  // Phase 39: nutrition system blocks (fasting / water / Mounjaro / protein distribution)
+  const nutritionBlock = buildNutritionContext(state);
+  if (nutritionBlock) lines.push(nutritionBlock);
 
   // Phase 29 + 30: Oura activity. NOTE: total_calories ≈ TDEE (BMR + active);
   // active_calories alone is just movement burn above BMR. Use total for TDEE.
@@ -780,6 +867,18 @@ INTERPRETATION RULES:
   - Ferritin > 30 ng/mL = adequate iron; > 200 with elevated CRP = possible inflammation, not iron overload.
   - Always cite the date of the panel ("from your 08/05/2026 panel: ..."). If the panel is > 6 months old, recommend a re-test.
   - NEVER make a definitive medical diagnosis. Frame everything as "consistent with X, recommend GP discussion" not "you have X".
+- NUTRITION SYSTEM (Phase 39 — fasting / water / Mounjaro / protein distribution data):
+  - FASTING: user runs a 12:00-18:00 eating window (18h fast). If the window is broken on a recurring weekday, name it and propose a fix. Don't moralise occasional breaks.
+  - PROTEIN DISTRIBUTION: at 52, each meal needs >=40g protein to maximally trigger muscle protein synthesis. If "days all 3 meals hit 40g" is low, that is a top-priority fix — identify the consistently-low meal by name.
+  - MOUNJARO (Wednesday injection): expect lower intake Wed/Thu. Judge those days on the 150g protein floor, NOT calories. Correlate logged side effects (nausea/reflux) with intake; if nausea recurs, reinforce the priority-food list rather than pushing calories.
+  - WATER: target 3L (3.5L on gym days). With ALT + CRP elevated, hydration supports the liver — flag if the 7-day average is well under target.
+  - DYNAMIC TARGETS: calorie/macro targets recalculate from current weight (Mifflin-St Jeor minus 500 deficit, +100 upper / +150 lower training day). As weight falls, targets fall — frame this as expected progress, not punishment.
+- BLOOD-MARKER NUTRITION (apply to nutrition advice every report):
+  - HbA1c 72: low-GI carbs are non-negotiable; flag high-GI foods; celebrate any HbA1c drop and tie blood-sugar control to steadier training energy.
+  - ALT 93 (fatty liver likely): never suggest alcohol; reinforce omega-3 compliance and choline from eggs; ALT falls with body fat — credit weight-loss progress.
+  - CRP 4.92: anti-inflammatory foods + omega-3 are therapeutic, not optional; weight loss lowers CRP.
+  - Testosterone 9.55: ensure adequate dietary fat + zinc-rich foods; protect LBM; weight loss raises T naturally.
+  - Vitamin D 47: check D3 compliance, take with a fat-containing meal, encourage daylight on outdoor walks.
 - MEDICATIONS (factor every week):
   - GLP-1 agonists (Mounjaro / Ozempic / Wegovy / semaglutide / tirzepatide): non-linear weight curves, plateau-then-re-accelerate on dose escalations. Injection-day weight differs systematically from mid-cycle. Don't credit week 1 or panic week 3.
   - Statins: muscle soreness common — factor into training feedback before suggesting volume bumps.
