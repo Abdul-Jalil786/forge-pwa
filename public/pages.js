@@ -1700,14 +1700,48 @@ const _SKIN_FREQ_LABEL={daily:'every day','every-2-days':'every 2 days','every-3
 function renderSkinProductsList(){
   const products=getSkinProducts();
   if(products.length===0)return '<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px 0;">No products yet</div>';
-  return products.map(p=>`
-    <div onclick="openSkinProductEdit('${p.id}')" style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(p.name)}${p.concentration?` <span style="font-size:11px;color:var(--text3);font-weight:400;">${escapeHtml(p.concentration)}</span>`:''}</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:2px;">${_SKIN_TYPE_LABEL[p.type]||p.type} · ${p.slot==='both'?'AM+PM':p.slot.toUpperCase()} · ${_SKIN_FREQ_LABEL[p.frequency]||p.frequency}</div>
+  const phase=getSkinCare().phase||1;
+  return products.map(p=>{
+    const lastUsed=getSkinProductLastUsed(p.id);
+    const comp=getSkinProductCompliance(p.id,30);
+    const hist=getSkinProduct7Day(p.id);
+    const compColor=comp==null?'var(--text3)':comp>=80?'var(--green)':comp>=50?'var(--orange)':'var(--red)';
+    const phaseBadge=p.type==='retinol'?`<span style="font-size:9px;color:var(--lime);background:rgba(200,255,0,.12);border-radius:4px;padding:1px 6px;font-weight:700;letter-spacing:.5px;margin-left:6px;">PHASE ${phase}</span>`:'';
+    const histSquares=hist.map(s=>{
+      const bg=s==='done'?'var(--lime)':s==='missed'?'transparent':'transparent';
+      const bd=s==='na'?'1px dashed var(--border)':'1px solid var(--border2)';
+      return `<div style="width:11px;height:11px;border-radius:2px;background:${bg};border:${bd};"></div>`;
+    }).join('');
+    const lastStr=lastUsed?`last used ${new Date(lastUsed).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`:'not used yet';
+    return `<div onclick="openSkinProductEdit('${p.id}')" style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;">
+      <div style="display:flex;align-items:flex-start;gap:8px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(p.name)}${p.concentration?` <span style="font-size:11px;color:var(--text3);font-weight:400;">${escapeHtml(p.concentration)}</span>`:''}${phaseBadge}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;">${_SKIN_TYPE_LABEL[p.type]||p.type} · ${p.slot==='both'?'AM+PM':p.slot.toUpperCase()} · ${_SKIN_FREQ_LABEL[p.frequency]||p.frequency}</div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);">✏️</div>
       </div>
-      <div style="font-size:11px;color:var(--text3);">✏️</div>
-    </div>`).join('');
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+        <div style="font-size:10px;color:var(--text3);">${lastStr}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="display:flex;gap:3px;">${histSquares}</div>
+          ${comp!=null?`<div style="font-size:10px;color:${compColor};font-weight:700;">${comp}%</div>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderSkinRoutineRules(){
+  return `<div class="card" style="margin-bottom:10px;">
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Routine Rules</div>
+    <div style="font-size:11px;color:var(--text2);line-height:1.7;">
+      <div style="margin-bottom:8px;"><strong style="color:var(--lime);">☀️ Morning</strong><br>Cleanser → CE Ferulic → Moisturiser → SPF</div>
+      <div style="margin-bottom:8px;"><strong style="color:var(--lime);">🌙 Retinol nights</strong><br>Cleanser → Moisturiser → Retinol → Moisturiser → Cicaplast</div>
+      <div style="margin-bottom:8px;"><strong style="color:var(--lime);">🌙 Non-retinol nights</strong><br>Cleanser → Alpha Arbutin → Niacinamide → Moisturiser</div>
+      <div style="padding-top:6px;border-top:1px solid var(--border);"><strong style="color:var(--orange);">Never</strong><br>· Niacinamide + CE Ferulic same session<br>· Alpha Arbutin or Niacinamide on retinol nights<br>· Retinol or CE Ferulic without SPF next morning</div>
+    </div>
+  </div>`;
 }
 
 const _SKIN_IRRITATION_OPTS=[
@@ -2361,11 +2395,12 @@ function renderMore(){
     <div class="sec-label">Skin Care Routine</div>
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
-        Your AM/PM products. The checklist on the Today page shows what's due each day. The AI Coach reviews your routine weekly — ramps retinol frequency as your skin builds tolerance.
+        Your AM/PM products. The checklist on the Today page shows what's due each day. The AI Coach reviews your routine weekly — ramps retinol frequency as your skin builds tolerance. Each product shows its last-7-days history and 30-day compliance.
       </div>
       <div id="skin-products-list" style="margin-bottom:10px;">${renderSkinProductsList()}</div>
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openSkinProductEdit(null)">+ Add Product</button>
     </div>
+    ${renderSkinRoutineRules()}
     `:''}
 
     <div class="sec-label">Food Preferences</div>

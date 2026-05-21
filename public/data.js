@@ -278,6 +278,43 @@ function getRetinolPhaseReadiness(){
   const next=SKIN_PHASES.find(p=>p.n===phaseNum+1);
   return{ready,atMax:false,phaseNum,weeksAtPhase,reason:ready?'All conditions met':reasons.join(' · '),nextPhase:next?next.n:null,nextFrequency:next?next.freq:null};
 }
+// Per-product analytics for the More page (Phase 37)
+function getSkinProductLastUsed(productId){
+  const all=pGet('skinCareLog',{});
+  const dates=Object.keys(all).sort().reverse();
+  for(const d of dates){
+    const l=all[d]||{};
+    if(l[`${productId}_am`]===true||l[`${productId}_pm`]===true)return d;
+  }
+  return null;
+}
+function getSkinProductCompliance(productId,days){
+  let due=0,done=0;
+  for(let i=0;i<days;i++){
+    const dt=new Date();dt.setDate(dt.getDate()-i);
+    const ds=dt.toISOString().slice(0,10);
+    const {am,pm}=getSkinVisibleItems(ds);
+    const its=[...am,...pm].filter(it=>it.product.id===productId);
+    if(its.length===0)continue;
+    const log=getSkinCareLog(ds);
+    for(const it of its){due++;if(log[it.itemId]===true)done++;}
+  }
+  return due>0?Math.round((done/due)*100):null;
+}
+function getSkinProduct7Day(productId){
+  const out=[];
+  for(let i=6;i>=0;i--){
+    const dt=new Date();dt.setDate(dt.getDate()-i);
+    const ds=dt.toISOString().slice(0,10);
+    const {am,pm}=getSkinVisibleItems(ds);
+    const its=[...am,...pm].filter(it=>it.product.id===productId);
+    if(its.length===0){out.push('na');continue;}
+    const log=getSkinCareLog(ds);
+    out.push(its.every(it=>log[it.itemId]===true)?'done':'missed');
+  }
+  return out;
+}
+
 function getSkinWeeklyCheckIn(date){return(getSkinCare().weeklyCheckIn||{})[date]||null;}
 function setSkinWeeklyCheckIn(date,data){
   const sc=getSkinCare();
