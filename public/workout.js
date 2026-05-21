@@ -582,6 +582,33 @@ function _renderBriefHTML(brief){
   </div>`;
 }
 
+// Phase 33b: in-workout access to the cached AI brief
+function _wmBrief(){
+  const key=`${todayStr()}_${wm.session}`;
+  return (STATE.sessionBriefs||{})[key]||null;
+}
+function _wmCueHTML(exId){
+  const b=_wmBrief();
+  if(!b)return '';
+  const c=(b.perExercise||[]).find(x=>x.exId===exId);
+  if(!c||!c.cue)return '';
+  return `<div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.25);border-radius:8px;padding:10px 12px;margin-bottom:20px;font-size:12px;color:var(--lime);line-height:1.5;">🧠 ${c.cue.replace(/</g,'&lt;')}</div>`;
+}
+function _wmStrategyBtnHTML(){
+  const b=_wmBrief();
+  if(!b||!b.strategy)return '';
+  return `<button onclick="wmShowStrategy()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);font-size:11px;padding:5px 12px;border-radius:100px;cursor:pointer;">🧠 Session strategy</button>`;
+}
+function wmShowStrategy(){
+  const b=_wmBrief();
+  if(!b||!b.strategy)return;
+  if(typeof _showInfoModal==='function'){
+    _showInfoModal('Session Strategy',`<div style="font-size:13px;line-height:1.7;color:var(--text2);">${b.strategy.replace(/</g,'&lt;')}</div>`);
+  }else{
+    alert(b.strategy);
+  }
+}
+
 function wmStartFirstSet(){
   wm.exIdx=0; wm.setIdx=0; wm.mode='set';
   renderWmSet();
@@ -607,7 +634,11 @@ function renderWmSet(){
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
     <div class="wm-title" style="margin-top:6px;">${ex.name}</div>
     <div class="wm-sub">Set ${wm.setIdx+1} of ${ex.sets} · Target ${ex.reps} reps</div>
-    <a href="${ex.yt}" target="_blank" style="color:var(--blue);font-size:12px;text-decoration:none;display:block;margin-bottom:24px;">🎥 Watch ${ex.name} form →</a>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+      <a href="${ex.yt}" target="_blank" style="color:var(--blue);font-size:12px;text-decoration:none;">🎥 Watch form →</a>
+      ${_wmStrategyBtnHTML()}
+    </div>
+    ${_wmCueHTML(ex.id)}
     <div class="wm-h">Weight</div>
     <div class="wm-stepper">
       <button class="wm-step-btn" onclick="wmStepKg(-2.5)">−</button>
@@ -659,7 +690,11 @@ function renderWmSetTimed(){
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
     <div class="wm-title" style="margin-top:6px;">${ex.name}</div>
     <div class="wm-sub">Set ${wm.setIdx+1} of ${ex.sets} · Target ${ex.reps}</div>
-    <a href="${ex.yt}" target="_blank" style="color:var(--blue);font-size:12px;text-decoration:none;display:block;margin-bottom:24px;">🎥 Watch ${ex.name} form →</a>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+      <a href="${ex.yt}" target="_blank" style="color:var(--blue);font-size:12px;text-decoration:none;">🎥 Watch form →</a>
+      ${_wmStrategyBtnHTML()}
+    </div>
+    ${_wmCueHTML(ex.id)}
     ${sug?`<div class="wm-progress-hint">${sug.reason}</div>`:''}
     <div style="text-align:center;padding:40px 0;">
       <div id="wm-hold-timer" class="wm-hold-timer">${alreadyDone?fmtSec(existingSet.seconds):'0:00'}</div>
