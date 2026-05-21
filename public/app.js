@@ -504,6 +504,47 @@ function deleteSkinProductFromModal(){
   renderMore();renderToday();
 }
 
+// Sunday weekly skin journal
+let _skinJournalTrend=null;
+function openSkinJournal(){
+  _skinJournalTrend=null;
+  const existing=getSkinWeeklyCheckIn(todayStr());
+  document.getElementById('sj-score').value=existing?.score||7;
+  document.getElementById('sj-score-val').textContent=existing?.score||7;
+  document.getElementById('sj-notes').value=existing?.notes||'';
+  if(existing?.trend)selectSkinTrend(existing.trend);
+  else ['better','same','worse'].forEach(t=>{
+    const b=document.getElementById('sj-trend-'+t);
+    if(b){b.className='btn btn-ghost btn-sm';b.style.color='';b.style.borderColor='';}
+  });
+  openModal('modal-skin-journal');
+}
+function selectSkinTrend(trend){
+  _skinJournalTrend=trend;
+  ['better','same','worse'].forEach(t=>{
+    const b=document.getElementById('sj-trend-'+t);
+    if(!b)return;
+    if(t===trend){b.className='btn btn-lime btn-sm';b.style.color='';b.style.borderColor='';}
+    else{b.className='btn btn-ghost btn-sm';b.style.color='';b.style.borderColor='';}
+  });
+}
+function submitSkinJournal(){
+  const score=parseInt(document.getElementById('sj-score').value,10)||7;
+  if(!_skinJournalTrend){showToast('Pick how it compares to last week');return;}
+  const notes=document.getElementById('sj-notes').value.trim().slice(0,200);
+  setSkinWeeklyCheckIn(todayStr(),{score,trend:_skinJournalTrend,notes});
+  closeModal('modal-skin-journal');
+  showToast('Weekly check-in saved ✓');
+  renderToday();
+}
+
+async function advanceSkinPhase(nextPhase){
+  if(!confirm(`Advance retinol to Phase ${nextPhase}? This increases your retinol frequency. Only do this if your skin has been calm.`))return;
+  setSkinPhase(nextPhase);
+  showToast(`Advanced to Phase ${nextPhase} ✓`);
+  renderToday();
+}
+
 function toggleSkinItem(itemId){
   const today=todayStr();
   const log=getSkinCareLog(today);

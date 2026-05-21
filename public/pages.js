@@ -263,7 +263,7 @@ function renderToday(){
 
     ${renderSupplementsToday()}
 
-    ${renderSkinChecklist()}
+    ${renderSkinSection()}
 
     <div class="sec-label">Streaks</div>
     <div class="sg sg3">
@@ -1781,6 +1781,84 @@ function renderSkinChecklist(){
       ${pm.length?`<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:${am.length?'14px':'0'};">🌙 PM</div>${pm.map(row).join('')}`:''}
       ${irritBlock}
     </div>`;
+}
+
+// Phase 37: Sunday weekly skin journal prompt
+function renderSkinJournalPrompt(){
+  if(new Date().getDay()!==0)return ''; // Sunday only
+  if(getSkinWeeklyCheckIn(todayStr()))return ''; // already done this week
+  return `<div class="card" style="margin-bottom:10px;border-color:var(--lime);background:linear-gradient(135deg,rgba(200,255,0,.05),transparent);cursor:pointer;" onclick="openSkinJournal()">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="font-size:20px;">📝</div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:600;color:var(--text);">Weekly skin check-in</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">Rate how your skin feels this week — takes 20 seconds.</div>
+      </div>
+      <div style="font-size:11px;color:var(--lime);">→</div>
+    </div>
+  </div>`;
+}
+
+// Phase 37: Retinol Journey phase tracker
+const SKIN_PHASE_ROADMAP=[
+  {n:1,label:'Every 4 days',     dates:'May 21 – ~Jun 10'},
+  {n:2,label:'Every 3 days',     dates:'~Jun 10 – ~Jul 1'},
+  {n:3,label:'Every other day',  dates:'~Jul 1 – ~Jul 21'},
+  {n:4,label:'5 nights / week',  dates:'~Jul 21 – ~Aug 10'},
+  {n:5,label:'Every night',      dates:'~Aug 10 onwards'},
+  {n:6,label:'Tretinoin 0.025%', dates:'Discuss with coach first'},
+];
+function renderRetinolJourney(){
+  const sc=getSkinCare();
+  const cur=sc.phase||1;
+  const readiness=getRetinolPhaseReadiness();
+  const steps=SKIN_PHASE_ROADMAP.map(ph=>{
+    const done=ph.n<cur, isCur=ph.n===cur, locked=ph.n===6&&cur<5;
+    const marker=done?'✓':locked?'🔒':isCur?'●':'○';
+    const mColor=isCur?'var(--lime)':done?'var(--green)':'var(--text3)';
+    return `<div style="display:flex;gap:10px;padding:7px 0;${isCur?'':done?'opacity:.7;':'opacity:.45;'}">
+      <div style="color:${mColor};font-size:13px;width:18px;text-align:center;flex-shrink:0;">${marker}</div>
+      <div style="flex:1;">
+        <div style="font-size:12px;color:${isCur?'var(--lime)':'var(--text2)'};font-weight:${isCur?'700':'400'};">Phase ${ph.n} — ${ph.label}</div>
+        <div style="font-size:10px;color:var(--text3);">${ph.dates}</div>
+      </div>
+    </div>`;
+  }).join('');
+  let advance='';
+  if(readiness.ready&&readiness.nextPhase){
+    advance=`<div style="background:rgba(0,232,122,.1);border:1px solid var(--green);border-radius:8px;padding:10px;margin-top:10px;">
+      <div style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:8px;">✅ Ready to advance to Phase ${readiness.nextPhase}</div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="advanceSkinPhase(${readiness.nextPhase})">Advance to Phase ${readiness.nextPhase}</button>
+    </div>`;
+  }else if(!readiness.atMax){
+    advance=`<div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.5;border-top:1px solid var(--border);padding-top:8px;">Next phase unlocks when: ${escapeHtml(readiness.reason)}</div>`;
+  }
+  // Tretinoin milestone — phase 5, 3+ weeks, no redness/burning
+  let tret='';
+  if(cur>=5){
+    const phaseStart=sc.phaseStartDate;
+    const weeksAt=phaseStart?((Date.now()-new Date(phaseStart+'T12:00:00').getTime())/(7*86400000)):0;
+    const irr=getSkinIrritationSummary(21);
+    if(cur===5&&weeksAt>=3&&irr.redness===0&&irr.burning===0){
+      tret=`<div style="background:rgba(200,255,0,.08);border:1px solid var(--lime);border-radius:8px;padding:10px;margin-top:10px;">
+        <div style="font-size:12px;color:var(--lime);font-weight:600;margin-bottom:4px;">🎯 Ready to discuss tretinoin</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.5;">You've tolerated nightly retinol for 3+ weeks with no redness. Speak to your coach before switching to tretinoin 0.025% — it's not an automatic step.</div>
+      </div>`;
+    }
+  }
+  return `<div class="sec-label">Retinol Journey</div>
+    <div class="card" style="margin-bottom:10px;">
+      ${steps}
+      ${advance}
+      ${tret}
+    </div>`;
+}
+
+// Phase 37: full skin section on Today page (owner-only) — journal + checklist + journey
+function renderSkinSection(){
+  if(!isOwner())return '';
+  if(getSkinProducts().length===0)return '';
+  return renderSkinJournalPrompt()+renderSkinChecklist()+renderRetinolJourney();
 }
 
 function renderWhereYouStand(){

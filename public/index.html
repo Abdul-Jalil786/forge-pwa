@@ -584,6 +584,29 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
   </div>
 </div>
 
+<div class="modal-bg" id="modal-skin-journal">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">Weekly Skin Check-in</div>
+      <button class="modal-close" onclick="closeModal('modal-skin-journal')">✕</button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:8px;">How does your skin feel this week?</div>
+    <input id="sj-score" type="range" min="1" max="10" value="7" oninput="document.getElementById('sj-score-val').textContent=this.value" style="width:100%;accent-color:var(--lime);margin-bottom:4px;" />
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:16px;">
+      <span>Poor</span><span style="color:var(--lime);font-family:'Archivo Black',sans-serif;font-size:16px;"><span id="sj-score-val">7</span>/10</span><span>Great</span>
+    </div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:8px;">Compared to last week?</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button id="sj-trend-better" class="btn btn-ghost btn-sm" style="flex:1;" onclick="selectSkinTrend('better')">Better</button>
+      <button id="sj-trend-same" class="btn btn-ghost btn-sm" style="flex:1;" onclick="selectSkinTrend('same')">Same</button>
+      <button id="sj-trend-worse" class="btn btn-ghost btn-sm" style="flex:1;" onclick="selectSkinTrend('worse')">Worse</button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:8px;">Any notes? <span style="font-size:11px;color:var(--text3);">(optional)</span></div>
+    <textarea id="sj-notes" rows="3" maxlength="200" placeholder="e.g. forehead a bit dry, less redness around nose" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:14px;"></textarea>
+    <button class="btn btn-lime btn-full" onclick="submitSkinJournal()">Submit Check-in</button>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-set-edit">
   <div class="modal">
     <div class="modal-hdr">
