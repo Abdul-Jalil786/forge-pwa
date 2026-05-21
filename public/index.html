@@ -539,7 +539,7 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
       <div>
         <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Type</div>
-        <select id="skin-type" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+        <select id="skin-type" onchange="onSkinTypeChange()" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
           <option value="cleanser">Cleanser / face wash</option>
           <option value="vitamin-c">Vitamin C</option>
           <option value="retinol">Retinol / retinoid</option>

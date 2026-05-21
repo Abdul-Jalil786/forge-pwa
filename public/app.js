@@ -453,6 +453,26 @@ function openSkinProductEdit(id){
   openModal('modal-skin-edit');
 }
 
+// When the product type changes, suggest a sensible slot + frequency.
+// Only fires on user interaction (programmatic .value sets don't trigger onchange),
+// so editing an existing product without touching the type keeps its saved values.
+function onSkinTypeChange(){
+  const type=document.getElementById('skin-type').value;
+  const defaults={
+    cleanser:    {slot:'both', freq:'daily'},
+    'vitamin-c': {slot:'am',   freq:'daily'},
+    retinol:     {slot:'pm',   freq:'every-4-days'},
+    serum:       {slot:'pm',   freq:'daily'},
+    moisturizer: {slot:'both', freq:'daily'},
+    spf:         {slot:'am',   freq:'daily'},
+    exfoliant:   {slot:'pm',   freq:'weekly'},
+    other:       {slot:'am',   freq:'daily'},
+  }[type];
+  if(!defaults)return;
+  document.getElementById('skin-slot').value=defaults.slot;
+  document.getElementById('skin-freq').value=defaults.freq;
+}
+
 function saveSkinProduct(){
   if(!_skinEdit)return;
   const name=document.getElementById('skin-name').value.trim();
