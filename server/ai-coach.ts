@@ -480,6 +480,32 @@ function buildContext(state: any): string {
   }
   lines.push("");
 
+  // Phase 36: skin care routine
+  const skinCare = state.skinCare || {};
+  const skinProducts = Array.isArray(skinCare.products) ? skinCare.products : [];
+  if (skinProducts.length > 0) {
+    const skinCareLog = state.skinCareLog || {};
+    lines.push("SKIN CARE ROUTINE (review weekly — retinol ramping + routine structure):");
+    for (const p of skinProducts) {
+      const since = p.frequencyStartedAt || p.startedDate;
+      let weeksOn = "?";
+      if (since) weeksOn = ((Date.now() - new Date(since + "T12:00:00").getTime()) / (7 * 86400000)).toFixed(1);
+      lines.push(`  - [id:${p.id}] ${p.name}${p.concentration ? ` ${p.concentration}` : ""} · type:${p.type} · ${p.slot} · ${p.frequency} · ${weeksOn}wk on this frequency${p.notes ? ` · note: ${p.notes}` : ""}`);
+    }
+    let loggedDays = 0, fineFlags = 0, irritatedFlags = 0;
+    for (let i = 0; i < 14; i++) {
+      const d = daysAgoUK(i);
+      const log = skinCareLog[d];
+      if (!log) continue;
+      if (Object.keys(log).some((k) => k !== "_irritation")) loggedDays++;
+      if (log._irritation === "fine") fineFlags++;
+      if (log._irritation === "irritated") irritatedFlags++;
+    }
+    lines.push(`  Routine logged on ${loggedDays}/14 recent days`);
+    lines.push(`  Post-retinol irritation flags (14d): ${fineFlags} fine, ${irritatedFlags} irritated`);
+    lines.push("");
+  }
+
   // Phase 29: previous coaching reports (memory)
   const prevReports = (state.coachingReports || []).slice(0, 4);
   if (prevReports.length > 0) {
@@ -559,6 +585,11 @@ INTERPRETATION RULES:
   - Other meds: read user notes carefully and apply common sense.
 - Ethnicity: South Asian visceral fat threshold ≥ 7 = elevated risk (vs ≥ 10 for European baseline). Calibrate visceral commentary accordingly.
 - Training split (Upper/Rest/Lower/Rest 4-day) is FIXED. Don't suggest split changes. Inside the split, you can suggest volume / intensity tweaks.
+- SKIN CARE (only if a SKIN CARE ROUTINE block is present):
+  - Retinol/retinoid ramping: tolerance builds gradually. Safe practice = hold a frequency 2-4+ weeks, then step up ONLY if no irritation. Progression ladder: weekly → every-4-days → every-3-days → every-2-days → daily. If irritation flags appeared in the last 14d, DO NOT ramp — hold or step back, and say so. If 3+ weeks on current frequency with zero irritation flags, suggesting the next step up is reasonable.
+  - Routine structure rules: vitamin C belongs AM (antioxidant, sits under SPF); retinol belongs PM (photo-sensitising); SPF every AM is non-negotiable; cleanser + moisturiser AM and PM; never have retinol and vitamin C or strong exfoliant in the same slot. If the user's routine violates these, flag it.
+  - Loose skin: this user is losing significant weight. When relevant, give honest, realistic loose-skin guidance — slow loss + muscle preservation + time (skin retracts over 12-24 months post-goal) + topical retinoids genuinely minimise it; creams claiming dramatic "tightening" do not; at this user's age some loose skin is likely and significant cases sometimes only fully resolve surgically. If weekly weight loss is faster than ~1% bodyweight, note that rushing worsens loose skin. Never over-promise.
+  - To suggest a retinol/product frequency change, use a "skincare" suggestion (see below). For routine-structure fixes or loose-skin advice, use a "note".
 
 OUTPUT FORMAT:
 1. Markdown REPORT under 450 words. Sections: ## This week, ## What's working, ## What to fix, ## Next week focus.
@@ -570,13 +601,14 @@ OUTPUT FORMAT:
 Suggestion types:
 - "macros": adjust daily calorie/macro targets. Payload keys (any subset): calsGym, calsRest, protein, carbs, fat. Only suggest if 7-day average is off target rate by >0.2kg/wk AND it isn't explained by medication timing.
 - "reminders": add/change a reminder. Payload: { action: "add" | "remove", reminder: { time: "HH:MM", text: string, days?: number[] } }.
+- "skincare": change a skin product's frequency. Payload: { productId: string (the id: value from the SKIN CARE block), frequency: "daily" | "every-2-days" | "every-3-days" | "every-4-days" | "weekly" }. Only for retinol/active ramping when the ramping rules above are satisfied.
 - "note": directional nudge that doesn't change app state. Payload: {}.
 
 Be direct. Cite the actual numbers. The user wants a coach, not a chatbot.`;
 
 interface Suggestion {
   id: string;
-  type: "macros" | "reminders" | "note";
+  type: "macros" | "reminders" | "note" | "skincare";
   label: string;
   rationale: string;
   payload: any;
@@ -622,7 +654,7 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
             items: {
               type: "object",
               properties: {
-                type: { type: "string", enum: ["macros", "reminders", "note"] },
+                type: { type: "string", enum: ["macros", "reminders", "note", "skincare"] },
                 label: { type: "string", description: "One-line summary shown on the Apply button row" },
                 rationale: { type: "string", description: "1-2 sentence justification referencing the data" },
                 payload: { type: "object", description: "Type-specific change payload, see system prompt" },

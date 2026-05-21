@@ -2050,7 +2050,7 @@ function renderSuggestions(report){
     <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
       <div class="sec-label" style="margin-bottom:8px;">Suggestions</div>
       ${sugs.map(s=>{
-        const typeLabel={macros:'MACROS',reminders:'REMINDER',note:'NOTE'}[s.type]||s.type.toUpperCase();
+        const typeLabel={macros:'MACROS',reminders:'REMINDER',note:'NOTE',skincare:'SKIN CARE'}[s.type]||s.type.toUpperCase();
         const typeColor=s.type==='note'?'var(--text3)':'var(--lime)';
         return `
           <div style="padding:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px;">

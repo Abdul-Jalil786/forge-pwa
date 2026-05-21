@@ -17,6 +17,19 @@ function applyMacros(state: any, payload: any) {
   }
 }
 
+function applySkincare(state: any, payload: any) {
+  const validFreq = ["daily", "every-2-days", "every-3-days", "every-4-days", "weekly"];
+  if (!payload?.productId || !validFreq.includes(payload?.frequency)) {
+    throw new Error("skincare payload needs productId + valid frequency");
+  }
+  const products = state.skinCare?.products;
+  if (!Array.isArray(products)) throw new Error("no skin care products");
+  const p = products.find((x: any) => x.id === payload.productId);
+  if (!p) throw new Error("product not found");
+  p.frequency = payload.frequency;
+  p.frequencyStartedAt = new Date().toISOString().slice(0, 10);
+}
+
 function applyReminders(state: any, payload: any) {
   if (!Array.isArray(state.reminders)) state.reminders = [];
   if (payload?.action === "add" && payload.reminder?.time && payload.reminder?.text) {
@@ -49,6 +62,7 @@ router.post("/:rid/apply/:sid", requireAuth, async (req: Request, res: Response)
       switch (sug.type) {
         case "macros": applyMacros(state, sug.payload || {}); break;
         case "reminders": applyReminders(state, sug.payload || {}); break;
+        case "skincare": applySkincare(state, sug.payload || {}); break;
         case "note": break;
         default: res.status(400).json({ error: "Unknown suggestion type" }); return;
       }
