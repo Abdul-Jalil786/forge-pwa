@@ -136,6 +136,133 @@ function bodyCompAtDate(state: any, date: string): { weight: number | null; bf: 
   return { weight: w, bf: b, lbm, fatMass };
 }
 
+// --- Phase 37: skin care context (server-side conflict engine + analytics) ---
+function skinDueOnSrv(p: any, date: string): boolean {
+  const freq = p.frequency || "daily";
+  if (freq === "daily") return true;
+  if (freq === "5x-week") { const dow = new Date(date + "T12:00:00").getDay(); return dow >= 1 && dow <= 5; }
+  if (!p.startedDate) return true;
+  const days = Math.round((new Date(date + "T12:00:00").getTime() - new Date(p.startedDate + "T12:00:00").getTime()) / 86400000);
+  if (days < 0) return false;
+  const step: Record<string, number> = { "every-2-days": 2, "every-3-days": 3, "every-4-days": 4, "weekly": 7 };
+  return step[freq] ? (days % step[freq] === 0) : true;
+}
+
+function skinVisibleItemsSrv(products: any[], date: string): { items: Array<{ itemId: string; section: string }>; retinolNight: boolean } {
+  const due = products.filter((p) => skinDueOnSrv(p, date));
+  const retinolNight = due.some((p) => p.type === "retinol");
+  const items: Array<{ itemId: string; section: string }> = [];
+  for (const t of ["cleanser", "vitamin-c", "moisturizer", "spf"]) {
+    const p = due.find((x) => (x.slot === "am" || x.slot === "both") && x.type === t);
+    if (p) items.push({ itemId: `${p.id}_am`, section: "am" });
+  }
+  if (retinolNight) {
+    for (const t of ["cleanser", "moisturizer", "retinol"]) {
+      const p = due.find((x) => (x.slot === "pm" || x.slot === "both") && x.type === t);
+      if (p) items.push({ itemId: `${p.id}_pm`, section: "pm" });
+    }
+    const cica = due.find((x) => x.id === "skn-cicaplast");
+    if (cica) items.push({ itemId: `${cica.id}_pm`, section: "pm" });
+  } else {
+    const cl = due.find((x) => (x.slot === "pm" || x.slot === "both") && x.type === "cleanser");
+    if (cl) items.push({ itemId: `${cl.id}_pm`, section: "pm" });
+    const serums = due.filter((x) => x.slot === "pm" && x.type === "serum")
+      .sort((a, b) => (parseFloat(a.concentration) || 0) - (parseFloat(b.concentration) || 0));
+    for (const p of serums) items.push({ itemId: `${p.id}_pm`, section: "pm" });
+    const m = due.find((x) => (x.slot === "pm" || x.slot === "both") && x.type === "moisturizer");
+    if (m) items.push({ itemId: `${m.id}_pm`, section: "pm" });
+    const h = due.find((x) => x.id === "skn-honeymask");
+    if (h) items.push({ itemId: `${h.id}_pm`, section: "pm" });
+  }
+  return { items, retinolNight };
+}
+
+function buildSkinContext(state: any): string {
+  const sc = state.skinCare || {};
+  const products: any[] = Array.isArray(sc.products) ? sc.products : [];
+  if (products.length === 0) return "";
+  const log = state.skinCareLog || {};
+  const L: string[] = [];
+  const phase = sc.phase || 1;
+  const ret = products.find((p) => p.type === "retinol");
+  const retStart = ret?.frequencyStartedAt || ret?.startedDate;
+  const weeksAtPhase = retStart ? ((Date.now() - new Date(retStart + "T12:00:00").getTime()) / (7 * 86400000)) : 0;
+
+  L.push("SKIN CARE ROUTINE (review weekly):");
+  L.push(`  Retinol phase: ${phase} of 6 · ${ret?.frequency || "?"} · ${weeksAtPhase.toFixed(1)} weeks at this frequency`);
+  for (const p of products) {
+    L.push(`  - [id:${p.id}] ${p.name}${p.concentration ? ` ${p.concentration}` : ""} · ${p.type} · ${p.slot} · ${p.frequency}`);
+  }
+  L.push("");
+
+  // 14-day compliance
+  let due = 0, done = 0, amDays = 0, pmDays = 0, streak = 0, bestStreak = 0, retDue = 0, retDone = 0;
+  for (let i = 13; i >= 0; i--) {
+    const d = daysAgoUK(i);
+    const { items } = skinVisibleItemsSrv(products, d);
+    if (items.length === 0) continue;
+    const dlog = log[d] || {};
+    const amItems = items.filter((it) => it.section === "am");
+    const pmItems = items.filter((it) => it.section === "pm");
+    let dayDone = 0;
+    for (const it of items) { due++; if (dlog[it.itemId] === true) { done++; dayDone++; } }
+    if (amItems.length && amItems.every((it) => dlog[it.itemId] === true)) amDays++;
+    if (pmItems.length && pmItems.every((it) => dlog[it.itemId] === true)) pmDays++;
+    if (dayDone === items.length) { streak++; bestStreak = Math.max(bestStreak, streak); } else streak = 0;
+    if (ret && skinDueOnSrv(ret, d)) { retDue++; if (dlog[`${ret.id}_pm`] === true) retDone++; }
+  }
+  L.push("14-DAY COMPLIANCE:");
+  L.push(`  Overall routine: ${due ? Math.round((done / due) * 100) : 0}% (${done}/${due} items)`);
+  L.push(`  Retinol: ${retDue ? Math.round((retDone / retDue) * 100) : 0}% (${retDone}/${retDue} due nights)`);
+  L.push(`  Full AM routine: ${amDays} days · Full PM routine: ${pmDays} days · Longest streak: ${bestStreak} days`);
+  L.push("");
+
+  // 14-day irritation
+  const irr: Record<string, number> = { none: 0, "mild-dryness": 0, peeling: 0, redness: 0, burning: 0 };
+  let mjCorr = 0;
+  for (let i = 0; i < 14; i++) {
+    const d = daysAgoUK(i);
+    const dlog = log[d];
+    if (!dlog) continue;
+    const ir = dlog._irritation;
+    if (ir && irr[ir] !== undefined) irr[ir]++;
+    const dow = new Date(d + "T12:00:00").getDay();
+    if (dow === 4 && (ir === "redness" || ir === "burning" || ir === "peeling")) mjCorr++;
+  }
+  L.push("14-DAY IRRITATION:");
+  L.push(`  none ${irr.none} · mild-dryness ${irr["mild-dryness"]} · peeling ${irr.peeling} · redness ${irr.redness} · burning ${irr.burning}`);
+  if (irr.burning > 0) L.push(`  ⚠️ BURNING logged ${irr.burning}× — HIGH PRIORITY. Instruct 5 rest days before resuming retinol.`);
+  if (mjCorr > 0) L.push(`  ${mjCorr} irritation event(s) on Thursday (day after Mounjaro) — possible injection-sensitivity correlation`);
+  L.push("");
+
+  // Weekly journal — last 4
+  const wci = sc.weeklyCheckIn || {};
+  const jDates = Object.keys(wci).sort().reverse().slice(0, 4);
+  if (jDates.length > 0) {
+    L.push("WEEKLY SKIN JOURNAL (last 4 Sundays):");
+    for (const jd of jDates) {
+      const e = wci[jd];
+      L.push(`  ${jd}: score ${e.score ?? "?"}/10 · trend ${e.trend ?? "?"}${e.notes ? ` · "${e.notes}"` : ""}`);
+    }
+    L.push("");
+  }
+
+  // Phase readiness
+  const badIrr = irr.redness > 0 || irr.burning > 0;
+  const retComplete = retDue > 0 ? (retDone / retDue) : 1;
+  const reasons: string[] = [];
+  if (weeksAtPhase < 3) reasons.push(`only ${weeksAtPhase.toFixed(1)} weeks at phase (need 3+)`);
+  if (badIrr) reasons.push("redness/burning logged in last 14d");
+  if (retComplete < 1) reasons.push(`retinol compliance ${Math.round(retComplete * 100)}% (need 100%)`);
+  L.push("PHASE READINESS:");
+  if (phase >= 6) L.push("  On tretinoin (phase 6).");
+  else if (phase === 5) L.push(`  At final retinol phase (nightly).${weeksAtPhase >= 3 && !badIrr ? " 3+ weeks tolerated nightly with no redness — user may discuss tretinoin." : ""}`);
+  else if (reasons.length === 0) L.push(`  READY to advance to phase ${phase + 1}. If appropriate, emit a "skincare-phase" suggestion.`);
+  else L.push(`  NOT ready to advance: ${reasons.join("; ")}.`);
+
+  return L.join("\n");
+}
+
 function buildContext(state: any): string {
   const today = ukToday();
   const cutoff14 = daysAgoUK(14);
@@ -480,31 +607,9 @@ function buildContext(state: any): string {
   }
   lines.push("");
 
-  // Phase 36: skin care routine
-  const skinCare = state.skinCare || {};
-  const skinProducts = Array.isArray(skinCare.products) ? skinCare.products : [];
-  if (skinProducts.length > 0) {
-    const skinCareLog = state.skinCareLog || {};
-    lines.push("SKIN CARE ROUTINE (review weekly — retinol ramping + routine structure):");
-    for (const p of skinProducts) {
-      const since = p.frequencyStartedAt || p.startedDate;
-      let weeksOn = "?";
-      if (since) weeksOn = ((Date.now() - new Date(since + "T12:00:00").getTime()) / (7 * 86400000)).toFixed(1);
-      lines.push(`  - [id:${p.id}] ${p.name}${p.concentration ? ` ${p.concentration}` : ""} · type:${p.type} · ${p.slot} · ${p.frequency} · ${weeksOn}wk on this frequency${p.notes ? ` · note: ${p.notes}` : ""}`);
-    }
-    let loggedDays = 0, fineFlags = 0, irritatedFlags = 0;
-    for (let i = 0; i < 14; i++) {
-      const d = daysAgoUK(i);
-      const log = skinCareLog[d];
-      if (!log) continue;
-      if (Object.keys(log).some((k) => k !== "_irritation")) loggedDays++;
-      if (log._irritation === "fine") fineFlags++;
-      if (log._irritation === "irritated") irritatedFlags++;
-    }
-    lines.push(`  Routine logged on ${loggedDays}/14 recent days`);
-    lines.push(`  Post-retinol irritation flags (14d): ${fineFlags} fine, ${irritatedFlags} irritated`);
-    lines.push("");
-  }
+  // Phase 37: skin care routine — enhanced context block
+  const skinBlock = buildSkinContext(state);
+  if (skinBlock) lines.push(skinBlock, "");
 
   // Phase 29: previous coaching reports (memory)
   const prevReports = (state.coachingReports || []).slice(0, 4);
@@ -585,11 +690,27 @@ INTERPRETATION RULES:
   - Other meds: read user notes carefully and apply common sense.
 - Ethnicity: South Asian visceral fat threshold ≥ 7 = elevated risk (vs ≥ 10 for European baseline). Calibrate visceral commentary accordingly.
 - Training split (Upper/Rest/Lower/Rest 4-day) is FIXED. Don't suggest split changes. Inside the split, you can suggest volume / intensity tweaks.
-- SKIN CARE (only if a SKIN CARE ROUTINE block is present):
-  - Retinol/retinoid ramping: tolerance builds gradually. Safe practice = hold a frequency 2-4+ weeks, then step up ONLY if no irritation. Progression ladder: weekly → every-4-days → every-3-days → every-2-days → daily. If irritation flags appeared in the last 14d, DO NOT ramp — hold or step back, and say so. If 3+ weeks on current frequency with zero irritation flags, suggesting the next step up is reasonable.
-  - Routine structure rules: vitamin C belongs AM (antioxidant, sits under SPF); retinol belongs PM (photo-sensitising); SPF every AM is non-negotiable; cleanser + moisturiser AM and PM; never have retinol and vitamin C or strong exfoliant in the same slot. If the user's routine violates these, flag it.
-  - Loose skin: this user is losing significant weight. When relevant, give honest, realistic loose-skin guidance — slow loss + muscle preservation + time (skin retracts over 12-24 months post-goal) + topical retinoids genuinely minimise it; creams claiming dramatic "tightening" do not; at this user's age some loose skin is likely and significant cases sometimes only fully resolve surgically. If weekly weight loss is faster than ~1% bodyweight, note that rushing worsens loose skin. Never over-promise.
-  - To suggest a retinol/product frequency change, use a "skincare" suggestion (see below). For routine-structure fixes or loose-skin advice, use a "note".
+- SKIN CARE (only if a SKIN CARE ROUTINE block is present — a 6-phase retinol ramp from every-4-days up to nightly, then tretinoin):
+  RETINOL PHASE RULES:
+  - NEVER suggest advancing phase if ANY redness or burning logged in the last 14 days.
+  - NEVER suggest advancing if retinol compliance is below 100%.
+  - Minimum 3 weeks at a phase before any advancement.
+  - Mild dryness and peeling are NORMAL on retinol — do NOT delay advancement for those alone.
+  - Always acknowledge compliance achievements (streaks, full AM/PM days).
+  - If burning was logged: instruct 5 rest days before resuming retinol — do not advance.
+  - The PHASE READINESS line in the context already states whether the user is ready. If it says READY, you may emit a "skincare-phase" suggestion to advance.
+  - Do NOT suggest tretinoin until phase 5 is complete and 3+ weeks of nightly retinol with zero redness — even then, only as a "note" to discuss with a doctor, never an automatic step.
+  ROUTINE STRUCTURE RULES:
+  - CE Ferulic (vitamin C) always AM, never PM. SPF always the last AM step — flag if missed. Retinol always PM, never AM.
+  - Niacinamide and CE Ferulic never the same session. Alpha Arbutin and Niacinamide never on retinol nights. Cicaplast only on retinol nights. (The app's conflict engine enforces this — flag only if context shows otherwise.)
+  SKIN HEALTH CONTEXT for this user:
+  - HbA1c 72 (high blood sugar) slows skin healing — expect retinol tolerance to build slower than average; be conservative.
+  - User smokes — skin is more sensitive and recovers slower.
+  - On Mounjaro (Wednesday injections) — Thursday irritation may correlate with injection sensitivity; the context flags this.
+  - hsCRP 4.92 (chronic inflammation) affects skin response.
+  - Vitamin D 47 nmol/L — being corrected with supplements.
+  - End goal: nightly retinol, then transition to tretinoin 0.025% via Dermatica after discussion.
+  - For retinol phase advancement use a "skincare-phase" suggestion. For routine-structure fixes or loose-skin advice use a "note".
 
 OUTPUT FORMAT:
 1. Markdown REPORT under 450 words. Sections: ## This week, ## What's working, ## What to fix, ## Next week focus.
@@ -601,14 +722,14 @@ OUTPUT FORMAT:
 Suggestion types:
 - "macros": adjust daily calorie/macro targets. Payload keys (any subset): calsGym, calsRest, protein, carbs, fat. Only suggest if 7-day average is off target rate by >0.2kg/wk AND it isn't explained by medication timing.
 - "reminders": add/change a reminder. Payload: { action: "add" | "remove", reminder: { time: "HH:MM", text: string, days?: number[] } }.
-- "skincare": change a skin product's frequency. Payload: { productId: string (the id: value from the SKIN CARE block), frequency: "daily" | "every-2-days" | "every-3-days" | "every-4-days" | "weekly" }. Only for retinol/active ramping when the ramping rules above are satisfied.
+- "skincare-phase": advance the retinol phase. Payload: { newPhase: number (current phase + 1, max 5), newFrequency: string }. ONLY when PHASE READINESS says READY. This re-frequencies the retinol + cicaplast products automatically.
 - "note": directional nudge that doesn't change app state. Payload: {}.
 
 Be direct. Cite the actual numbers. The user wants a coach, not a chatbot.`;
 
 interface Suggestion {
   id: string;
-  type: "macros" | "reminders" | "note" | "skincare";
+  type: "macros" | "reminders" | "note" | "skincare" | "skincare-phase";
   label: string;
   rationale: string;
   payload: any;
@@ -654,7 +775,7 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
             items: {
               type: "object",
               properties: {
-                type: { type: "string", enum: ["macros", "reminders", "note", "skincare"] },
+                type: { type: "string", enum: ["macros", "reminders", "note", "skincare", "skincare-phase"] },
                 label: { type: "string", description: "One-line summary shown on the Apply button row" },
                 rationale: { type: "string", description: "1-2 sentence justification referencing the data" },
                 payload: { type: "object", description: "Type-specific change payload, see system prompt" },

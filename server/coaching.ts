@@ -30,6 +30,25 @@ function applySkincare(state: any, payload: any) {
   p.frequencyStartedAt = new Date().toISOString().slice(0, 10);
 }
 
+const PHASE_FREQ: Record<number, string> = { 1: "every-4-days", 2: "every-3-days", 3: "every-2-days", 4: "5x-week", 5: "daily", 6: "daily" };
+function applySkincarePhase(state: any, payload: any) {
+  const newPhase = payload?.newPhase;
+  if (typeof newPhase !== "number" || newPhase < 1 || newPhase > 6) {
+    throw new Error("skincare-phase payload needs newPhase 1-6");
+  }
+  const sc = state.skinCare;
+  if (!sc || !Array.isArray(sc.products)) throw new Error("no skin care routine");
+  sc.phase = Math.round(newPhase);
+  sc.phaseStartDate = new Date().toISOString().slice(0, 10);
+  const freq = PHASE_FREQ[sc.phase];
+  for (const p of sc.products) {
+    if (p.type === "retinol" || p.id === "skn-cicaplast") {
+      p.frequency = freq;
+      p.frequencyStartedAt = sc.phaseStartDate;
+    }
+  }
+}
+
 function applyReminders(state: any, payload: any) {
   if (!Array.isArray(state.reminders)) state.reminders = [];
   if (payload?.action === "add" && payload.reminder?.time && payload.reminder?.text) {
@@ -63,6 +82,7 @@ router.post("/:rid/apply/:sid", requireAuth, async (req: Request, res: Response)
         case "macros": applyMacros(state, sug.payload || {}); break;
         case "reminders": applyReminders(state, sug.payload || {}); break;
         case "skincare": applySkincare(state, sug.payload || {}); break;
+        case "skincare-phase": applySkincarePhase(state, sug.payload || {}); break;
         case "note": break;
         default: res.status(400).json({ error: "Unknown suggestion type" }); return;
       }
