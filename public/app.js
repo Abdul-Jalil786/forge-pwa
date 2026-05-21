@@ -435,6 +435,68 @@ async function savePersonalProfile(){
   }
 }
 
+// ---- SKIN CARE (Phase 35, owner-only) ----
+let _skinEdit=null;
+
+function openSkinProductEdit(id){
+  _skinEdit={id};
+  const p=id?getSkinProducts().find(x=>x.id===id):{};
+  document.getElementById('skin-title').textContent=id?'Edit Skin Product':'Add Skin Product';
+  document.getElementById('skin-name').value=p?.name||'';
+  document.getElementById('skin-type').value=p?.type||'cleanser';
+  document.getElementById('skin-conc').value=p?.concentration||'';
+  document.getElementById('skin-slot').value=p?.slot||'am';
+  document.getElementById('skin-freq').value=p?.frequency||'daily';
+  document.getElementById('skin-started').value=p?.startedDate||new Date().toISOString().slice(0,10);
+  document.getElementById('skin-notes').value=p?.notes||'';
+  document.getElementById('skin-delete-btn').style.display=id?'block':'none';
+  openModal('modal-skin-edit');
+}
+
+function saveSkinProduct(){
+  if(!_skinEdit)return;
+  const name=document.getElementById('skin-name').value.trim();
+  if(!name){showToast('Name required');return;}
+  const data={
+    name,
+    type:document.getElementById('skin-type').value,
+    concentration:document.getElementById('skin-conc').value.trim(),
+    slot:document.getElementById('skin-slot').value,
+    frequency:document.getElementById('skin-freq').value,
+    startedDate:document.getElementById('skin-started').value,
+    notes:document.getElementById('skin-notes').value.trim(),
+  };
+  if(_skinEdit.id)updateSkinProduct(_skinEdit.id,data);
+  else addSkinProduct(data);
+  showToast(_skinEdit.id?'Saved ✓':'Product added ✓');
+  closeModal('modal-skin-edit');
+  _skinEdit=null;
+  renderMore();renderToday();
+}
+
+function deleteSkinProductFromModal(){
+  if(!_skinEdit||!_skinEdit.id)return;
+  if(!confirm('Remove this product from your routine?'))return;
+  deleteSkinProduct(_skinEdit.id);
+  showToast('Removed');
+  closeModal('modal-skin-edit');
+  _skinEdit=null;
+  renderMore();renderToday();
+}
+
+function toggleSkinItem(itemId){
+  const today=todayStr();
+  const log=getSkinCareLog(today);
+  setSkinItemDone(today,itemId,!log[itemId]);
+  renderToday();
+}
+
+function setTodaySkinIrritation(level){
+  setSkinIrritation(todayStr(),level);
+  renderToday();
+  showToast(level==='irritated'?'Logged — AI will ramp slower':'Logged ✓');
+}
+
 // ---- BLOOD MARKERS (Phase 29a) ----
 let _blmEdit = null;
 

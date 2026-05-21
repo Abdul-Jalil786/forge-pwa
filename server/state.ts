@@ -173,6 +173,51 @@ router.put("/meal-plan", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// Phase 35: skin care — products config + daily routine log
+router.put("/skin-care", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { skinCare } = req.body || {};
+    if (!skinCare || typeof skinCare !== "object") { res.status(400).json({ error: "skinCare object required" }); return; }
+    if (!Array.isArray(skinCare.products)) { res.status(400).json({ error: "skinCare.products must be an array" }); return; }
+    if (skinCare.products.length > 40) { res.status(400).json({ error: "max 40 products" }); return; }
+    const valueJson = JSON.stringify(skinCare);
+    if (valueJson.length > 60000) { res.status(413).json({ error: "skinCare too large" }); return; }
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{skinCare}', ${valueJson}::jsonb, true),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put skin-care error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/skin-care-log/:date", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const date = req.params.date as string;
+    if (!DATE_RE.test(date)) { res.status(400).json({ error: "Invalid date" }); return; }
+    const valueJson = JSON.stringify(req.body.value ?? {});
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{skinCareLog}', COALESCE(state->'skinCareLog', '{}'), true),
+        ARRAY['skinCareLog', ${date}],
+        ${valueJson}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put skin-care-log error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 27 + 32: personal demographics (subfield of profile)
 router.put("/profile/personal", requireAuth, async (req: Request, res: Response) => {
   try {

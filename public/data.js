@@ -85,7 +85,70 @@ let STATE = {
   trainingStartDate: null,
   waterClicked: {},
   supplementLog: {},
+  skinCare: { products: [] },
+  skinCareLog: {},
 };
+
+// ---- OWNER GATE (Phase 35) — some features are personal to Jay only ----
+function isOwner(){
+  const p=STATE.profile||{};
+  return p.email==='jay@afjltd.co.uk' || (p.name && p.name.toLowerCase().startsWith('jay'));
+}
+
+// ---- SKIN CARE (Phase 35) ----
+function getSkinCare(){const s=pGet('skinCare',{products:[]});if(!Array.isArray(s.products))s.products=[];return s;}
+function getSkinProducts(){return getSkinCare().products;}
+function getSkinCareLog(date){return(pGet('skinCareLog',{})[date])||{};}
+
+function saveSkinCare(skinCare){
+  STATE.skinCare=skinCare;
+  updateLocalCache();
+  saveFieldToServer('/api/state/skin-care',{skinCare});
+}
+function addSkinProduct(p){
+  const sc=getSkinCare();
+  sc.products.push({id:'skn_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),...p});
+  saveSkinCare(sc);
+}
+function updateSkinProduct(id,patch){
+  const sc=getSkinCare();
+  const i=sc.products.findIndex(x=>x.id===id);
+  if(i>=0){sc.products[i]={...sc.products[i],...patch};saveSkinCare(sc);}
+}
+function deleteSkinProduct(id){
+  const sc=getSkinCare();
+  sc.products=sc.products.filter(x=>x.id!==id);
+  saveSkinCare(sc);
+}
+function setSkinItemDone(date,itemId,done){
+  const log=pGet('skinCareLog',{});
+  if(!log[date])log[date]={};
+  log[date][itemId]=done;
+  STATE.skinCareLog=log;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/skin-care-log/${date}`,{value:log[date]});
+}
+function setSkinIrritation(date,level){
+  const log=pGet('skinCareLog',{});
+  if(!log[date])log[date]={};
+  log[date]._irritation=level;
+  STATE.skinCareLog=log;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/skin-care-log/${date}`,{value:log[date]});
+}
+// Is a product due on `date`? freq + startedDate drive the cycle.
+function skinDueOn(product,date){
+  const freq=product.frequency||'daily';
+  if(freq==='daily')return true;
+  const start=product.startedDate;
+  if(!start)return true; // no start date → treat as daily
+  const d0=new Date(start+'T12:00:00').getTime();
+  const d1=new Date(date+'T12:00:00').getTime();
+  const days=Math.round((d1-d0)/86400000);
+  if(days<0)return false;
+  const step={'every-2-days':2,'every-3-days':3,'every-4-days':4,'weekly':7}[freq];
+  return step?(days%step===0):true;
+}
 let saveStateTimeout = null;
 
 async function loadState() {

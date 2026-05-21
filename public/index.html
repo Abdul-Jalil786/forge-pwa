@@ -528,6 +528,62 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
   </div>
 </div>
 
+<div class="modal-bg" id="modal-skin-edit">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="skin-title">Skin Product</div>
+      <button class="modal-close" onclick="closeModal('modal-skin-edit')">✕</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Product name</div>
+    <input id="skin-name" type="text" maxlength="120" placeholder="e.g. The Ordinary Retinol 0.5%" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;" />
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Type</div>
+        <select id="skin-type" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+          <option value="cleanser">Cleanser / face wash</option>
+          <option value="vitamin-c">Vitamin C</option>
+          <option value="retinol">Retinol / retinoid</option>
+          <option value="serum">Serum (other)</option>
+          <option value="moisturizer">Moisturiser</option>
+          <option value="spf">SPF</option>
+          <option value="exfoliant">Exfoliant / acid</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Strength (optional)</div>
+        <input id="skin-conc" type="text" maxlength="30" placeholder="e.g. 0.5%" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">When</div>
+        <select id="skin-slot" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+          <option value="am">AM only</option>
+          <option value="pm">PM only</option>
+          <option value="both">AM + PM</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Frequency</div>
+        <select id="skin-freq" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+          <option value="daily">Every day</option>
+          <option value="every-2-days">Every 2 days</option>
+          <option value="every-3-days">Every 3 days</option>
+          <option value="every-4-days">Every 4 days</option>
+          <option value="weekly">Weekly</option>
+        </select>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Started using (drives retinol ramping)</div>
+    <input id="skin-started" type="date" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;" />
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Notes for the AI (optional)</div>
+    <textarea id="skin-notes" rows="2" maxlength="300" placeholder="e.g. switched from 0.25%, no irritation so far" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:14px;"></textarea>
+    <button class="btn btn-lime btn-full" style="margin-bottom:8px;" onclick="saveSkinProduct()">Save</button>
+    <button id="skin-delete-btn" class="btn btn-ghost btn-full" style="color:var(--red);border-color:var(--red);display:none;" onclick="deleteSkinProductFromModal()">Delete</button>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-set-edit">
   <div class="modal">
     <div class="modal-hdr">

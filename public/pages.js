@@ -263,6 +263,8 @@ function renderToday(){
 
     ${renderSupplementsToday()}
 
+    ${renderSkinChecklist()}
+
     <div class="sec-label">Streaks</div>
     <div class="sg sg3">
       <div class="sb lime"><div class="l">Gym</div><div class="v">${gymStreak}<span class="u">days</span></div></div>
@@ -1691,6 +1693,61 @@ function _wysRow(label, value, unit, bands, hint){
   </div>`;
 }
 
+// Phase 35: Skin Care — More page management + Today page checklist (owner-only)
+const _SKIN_TYPE_LABEL={cleanser:'Cleanser',vitaminC:'Vitamin C','vitamin-c':'Vitamin C',retinol:'Retinol',serum:'Serum',moisturizer:'Moisturiser',spf:'SPF',exfoliant:'Exfoliant',other:'Other'};
+const _SKIN_FREQ_LABEL={daily:'every day','every-2-days':'every 2 days','every-3-days':'every 3 days','every-4-days':'every 4 days',weekly:'weekly'};
+
+function renderSkinProductsList(){
+  const products=getSkinProducts();
+  if(products.length===0)return '<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px 0;">No products yet</div>';
+  return products.map(p=>`
+    <div onclick="openSkinProductEdit('${p.id}')" style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(p.name)}${p.concentration?` <span style="font-size:11px;color:var(--text3);font-weight:400;">${escapeHtml(p.concentration)}</span>`:''}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px;">${_SKIN_TYPE_LABEL[p.type]||p.type} · ${p.slot==='both'?'AM+PM':p.slot.toUpperCase()} · ${_SKIN_FREQ_LABEL[p.frequency]||p.frequency}</div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);">✏️</div>
+    </div>`).join('');
+}
+
+function renderSkinChecklist(){
+  if(!isOwner())return '';
+  const products=getSkinProducts();
+  if(products.length===0)return '';
+  const today=todayStr();
+  const log=getSkinCareLog(today);
+  const dueToday=products.filter(p=>skinDueOn(p,today));
+  if(dueToday.length===0)return '';
+  const amItems=dueToday.filter(p=>p.slot==='am'||p.slot==='both');
+  const pmItems=dueToday.filter(p=>p.slot==='pm'||p.slot==='both');
+  const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
+  const row=(p,slotKey)=>{
+    const itemId=`${p.id}_${slotKey}`;
+    const on=log[itemId]===true;
+    return `<div onclick="toggleSkinItem('${itemId}')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border);cursor:pointer;min-height:42px;">
+      <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--lime)':'var(--border)'};background:${on?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
+      <div style="flex:1;font-size:13px;color:${on?'var(--text3)':'var(--text)'};${on?'text-decoration:line-through;':''}">${escapeHtml(p.name)}${p.concentration?` <span style="font-size:10px;color:var(--text3);">${escapeHtml(p.concentration)}</span>`:''}</div>
+    </div>`;
+  };
+  const hasRetinolPM=pmItems.some(p=>p.type==='retinol');
+  const irrit=log._irritation;
+  const irritBlock=hasRetinolPM?`
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Skin after retinol?</div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="setTodaySkinIrritation('fine')" class="btn btn-sm ${irrit==='fine'?'btn-lime':'btn-ghost'}" style="flex:1;font-size:12px;">😊 Fine</button>
+        <button onclick="setTodaySkinIrritation('irritated')" class="btn btn-sm ${irrit==='irritated'?'btn-ghost':'btn-ghost'}" style="flex:1;font-size:12px;${irrit==='irritated'?'color:var(--orange);border-color:var(--orange);':''}">😬 Irritated</button>
+      </div>
+    </div>`:'';
+  return `
+    <div class="sec-label">Skin Care</div>
+    <div class="card" style="margin-bottom:10px;">
+      ${amItems.length?`<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">☀️ AM</div>${amItems.map(p=>row(p,'am')).join('')}`:''}
+      ${pmItems.length?`<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:${amItems.length?'12px':'0'};">🌙 PM</div>${pmItems.map(p=>row(p,'pm')).join('')}`:''}
+      ${irritBlock}
+    </div>`;
+}
+
 function renderWhereYouStand(){
   const profile = STATE.profile || {};
   const personal = profile.personal || {};
@@ -2186,6 +2243,17 @@ function renderMore(){
       <div id="blm-list" style="margin-bottom:10px;"></div>
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openBloodMarkerEdit(null)">+ Add Marker</button>
     </div>
+
+    ${isOwner()?`
+    <div class="sec-label">Skin Care Routine</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        Your AM/PM products. The checklist on the Today page shows what's due each day. The AI Coach reviews your routine weekly — ramps retinol frequency as your skin builds tolerance.
+      </div>
+      <div id="skin-products-list" style="margin-bottom:10px;">${renderSkinProductsList()}</div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openSkinProductEdit(null)">+ Add Product</button>
+    </div>
+    `:''}
 
     <div class="sec-label">Food Preferences</div>
     <div class="card" style="margin-bottom:10px;">
