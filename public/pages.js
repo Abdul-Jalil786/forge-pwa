@@ -140,7 +140,7 @@ function renderToday(){
     <div class="card hi" style="margin-bottom:10px;">
       <div style="font-size:9px;font-weight:700;color:var(--lime);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px;">TODAY</div>
       ${session?`
-        <div style="font-family:'Archivo Black',sans-serif;font-size:18px;letter-spacing:-.5px;margin-bottom:4px;">${WORKOUTS[session].name} — 16:00</div>
+        <div style="font-family:'Archivo Black',sans-serif;font-size:18px;letter-spacing:-.5px;margin-bottom:4px;">${WORKOUTS[session].name}${(()=>{const t=(typeof getSessionTimeForDate==='function')?getSessionTimeForDate(todayStr()):null;return t?' — '+t:'';})()}</div>
       `:`
         <div style="font-family:'Archivo Black',sans-serif;font-size:18px;letter-spacing:-.5px;margin-bottom:4px;">Rest Day</div>
       `}
@@ -1129,7 +1129,8 @@ const STRENGTH_STD = {
   l4: { name:'Leg Curl',             male:[0.40, 0.70, 0.95, 1.20] },
   l5: { name:'Hip Thrust',           male:[1.00, 1.50, 2.25, 3.00] },
   l6: { name:'Calf Raise',           male:[1.00, 1.50, 2.00, 2.75] },
-  l7: { name:'Good Mornings',        male:[0.40, 0.65, 0.95, 1.25] },
+  l7_cable_pull: { name:'Cable Pull Through',  male:[0.40, 0.65, 0.95, 1.25] },
+  l8_rev_hyper:  { name:'Reverse Hyperext.',   male:[0.30, 0.50, 0.75, 1.00] },
 };
 
 const STRENGTH_TIERS = [
@@ -2459,6 +2460,24 @@ function renderMore(){
       <button class="btn btn-lime btn-sm" style="width:100%;margin-top:10px;" onclick="openAddSupplement()">+ Add Supplement</button>
     </div>
 
+    <div class="sec-label">Training Schedule</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        Your training start time for each day. Shown on the Today card. Leave a day blank if you don't normally train then.
+      </div>
+      <div id="session-times-grid"></div>
+      <button class="btn btn-lime btn-sm" style="width:100%;margin-top:12px;" onclick="saveSessionTimesFromUI()">Save Schedule</button>
+    </div>
+
+    <div class="sec-label">Injury Management</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        Flag an injury and pick the lifts it affects. Forge automatically reduces those loads (mild −20%, moderate −35%, severe = hold &amp; see a doctor) and the AI Coach factors active injuries into its weekly review.
+      </div>
+      <div id="injury-list" style="margin-bottom:10px;"></div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openInjuryEdit(null)">+ Flag an Injury</button>
+    </div>
+
     <div class="sec-label">Calorie Stage Guide</div>
     <div class="card" style="margin-bottom:10px;">
       ${[{w:114,c:'2,300–2,400'},{w:108,c:'2,200'},{w:102,c:'2,100'},{w:96,c:'2,050'},{w:90,c:'1,950'},{w:87,c:'Maintenance'}].map(s=>`
@@ -2488,4 +2507,6 @@ function renderMore(){
   loadPersonalProfileUI();
   renderMedsList();
   renderBloodMarkersList();
+  loadSessionTimesUI();
+  renderInjuryList();
 }

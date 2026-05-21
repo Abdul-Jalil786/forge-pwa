@@ -464,6 +464,85 @@ router.put("/profile/food-prefs", requireAuth, async (req: Request, res: Respons
   }
 });
 
+// Phase 38: injury flags — object keyed by injury id
+router.put("/injuries", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { injuries } = req.body || {};
+    if (!injuries || typeof injuries !== "object" || Array.isArray(injuries)) {
+      res.status(400).json({ error: "injuries must be an object" }); return;
+    }
+    const keys = Object.keys(injuries);
+    if (keys.length > 100) { res.status(400).json({ error: "max 100 injuries" }); return; }
+    const validSev = ["mild", "moderate", "severe"];
+    const clean: Record<string, any> = {};
+    for (const k of keys) {
+      const j = injuries[k];
+      if (!j || typeof j !== "object") continue;
+      const id = String(j.id || k).trim().slice(0, 80) || ("inj_" + Date.now());
+      clean[id] = {
+        id,
+        name: String(j.name || "Injury").trim().slice(0, 120),
+        bodyPart: String(j.bodyPart || "").trim().slice(0, 80),
+        severity: validSev.includes(j.severity) ? j.severity : "mild",
+        affectedExercises: Array.isArray(j.affectedExercises)
+          ? j.affectedExercises.map((e: any) => String(e).slice(0, 40)).slice(0, 40)
+          : [],
+        status: j.status === "resolved" ? "resolved" : "active",
+        notes: String(j.notes || "").trim().slice(0, 400),
+        createdAt: String(j.createdAt || "").slice(0, 10),
+        resolvedAt: j.resolvedAt ? String(j.resolvedAt).slice(0, 10) : null,
+      };
+    }
+    const valueJson = JSON.stringify(clean);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{injuries}', ${valueJson}::jsonb, true),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true, count: Object.keys(clean).length });
+  } catch (err) {
+    console.error("Put injuries error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Phase 38: per day-of-week training session times (subfield of profile)
+router.put("/profile/session-times", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { sessionTimes } = req.body || {};
+    if (!sessionTimes || typeof sessionTimes !== "object" || Array.isArray(sessionTimes)) {
+      res.status(400).json({ error: "sessionTimes must be an object" }); return;
+    }
+    const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const clean: Record<string, string | null> = {};
+    for (let d = 0; d < 7; d++) {
+      const v = sessionTimes[String(d)];
+      if (v == null || v === "") { clean[String(d)] = null; continue; }
+      if (typeof v !== "string" || !TIME_RE.test(v)) {
+        res.status(400).json({ error: `invalid time for day ${d} (use HH:MM)` }); return;
+      }
+      clean[String(d)] = v;
+    }
+    const valueJson = JSON.stringify(clean);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+        '{profile,sessionTimes}',
+        ${valueJson}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put session-times error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.put("/sleep/:date", requireAuth, async (req: Request, res: Response) => {
   try {
     const date = req.params.date as string;

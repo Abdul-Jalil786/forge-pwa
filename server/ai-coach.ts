@@ -263,6 +263,84 @@ function buildSkinContext(state: any): string {
   return L.join("\n");
 }
 
+// Phase 38: exercise id → display name (mirrors public/data.js WORKOUTS)
+const EX_NAMES: Record<string, string> = {
+  u1: "Chest Press", u2: "Incline Dumbbell Press", u3: "Seated Row", u4: "Shoulder Press",
+  u5: "Lat Pulldown", u6: "Bicep Curl", u7: "Tricep Pushdown", u8: "Face Pull", u9: "Plank",
+  l1: "Leg Press", l2: "Romanian Deadlift", l3: "Leg Extension", l4: "Leg Curl",
+  l5: "Hip Thrust", l6: "Calf Raise", l7_cable_pull: "Cable Pull Through",
+  l8_rev_hyper: "Reverse Hyperextension", l8: "Ab Crunch", core_dead_bug: "Dead Bug",
+};
+
+// Phase 38: per-lift detailed history — last 4 sessions per exercise
+function buildTrainingDetail(state: any): string {
+  const exLog = state.exLog || {};
+  const dates = Object.keys(exLog).sort().reverse();
+  const perEx: Record<string, Array<{ date: string; sets: any[]; effort?: string }>> = {};
+  for (const date of dates) {
+    const day = exLog[date] || {};
+    for (const exId of Object.keys(day)) {
+      if (exId.startsWith("_")) continue;
+      const ex = day[exId];
+      const sets = Array.isArray(ex?.sets) ? ex.sets.filter((s: any) => s.kg || s.reps || s.seconds) : [];
+      if (sets.length === 0) continue;
+      if (!perEx[exId]) perEx[exId] = [];
+      if (perEx[exId].length < 4) perEx[exId].push({ date, sets, effort: ex.effort });
+    }
+  }
+  const exIds = Object.keys(perEx);
+  if (exIds.length === 0) return "";
+  const lines: string[] = [];
+  lines.push("TRAINING DETAIL (per-lift, last 4 sessions, newest first — read this to spot stalls, deloads, and rep progress):");
+  for (const exId of exIds) {
+    lines.push(`  ${EX_NAMES[exId] || exId}:`);
+    for (const h of perEx[exId]) {
+      const setStr = h.sets.map((s: any) =>
+        s.seconds ? `${s.seconds}s` : `${s.kg || "-"}×${s.reps || "-"}${s.effort ? `(${String(s.effort)[0]})` : ""}`
+      ).join(", ");
+      const restVals = h.sets.map((s: any) => s.actualRestSeconds).filter((r: any) => typeof r === "number" && r > 0);
+      const restStr = restVals.length
+        ? ` · ${Math.round(restVals.reduce((a: number, b: number) => a + b, 0) / restVals.length)}s avg rest`
+        : "";
+      lines.push(`    ${h.date}: ${setStr}${h.effort ? ` [overall: ${h.effort}]` : ""}${restStr}`);
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+// Phase 38: pair each training session with the sleep + recovery that preceded it
+function buildSleepPerformance(state: any): string {
+  const exLog = state.exLog || {};
+  const sleepLog = state.sleepLog || {};
+  const recovery = state.recovery || {};
+  const dates = Object.keys(exLog).sort().reverse();
+  const rows: string[] = [];
+  for (const date of dates) {
+    if (rows.length >= 8) break;
+    const day = exLog[date] || {};
+    let volume = 0, sets = 0, tough = 0, easy = 0;
+    for (const exId of Object.keys(day)) {
+      if (exId.startsWith("_")) continue;
+      const exSets = Array.isArray(day[exId]?.sets) ? day[exId].sets : [];
+      for (const s of exSets) {
+        if (!(s.kg || s.reps || s.seconds)) continue;
+        sets++;
+        volume += (parseFloat(s.kg) || 0) * (parseInt(s.reps, 10) || 0);
+        if (s.effort === "tough") tough++;
+        else if (s.effort === "easy") easy++;
+      }
+    }
+    if (sets === 0) continue;
+    const sl = sleepLog[date] || {};
+    const hrs = sl.totalHours ?? sl.hours;
+    const rec = recovery[date] || {};
+    rows.push(`  ${date}: sleep ${hrs != null ? `${hrs}h` : "?"}${sl.deepMin != null ? ` (deep ${sl.deepMin}m, REM ${sl.remMin ?? "?"}m)` : ""}${rec.readiness != null ? ` · readiness ${rec.readiness}` : ""} → ${sets} sets, ${Math.round(volume)}kg volume${(tough || easy) ? `, ${tough} tough / ${easy} easy` : ""}`);
+  }
+  if (rows.length < 3) return "";
+  return ["SLEEP VS PERFORMANCE CORRELATION (last " + rows.length + " sessions — does poor sleep precede weaker sessions?):", ...rows, ""].join("\n");
+}
+
 function buildContext(state: any): string {
   const today = ukToday();
   const cutoff14 = daysAgoUK(14);
@@ -292,7 +370,8 @@ function buildContext(state: any): string {
   for (const date of Object.keys(state.exLog || {}).sort()) {
     if (date < cutoff7) continue;
     const exs = state.exLog[date] || {};
-    const exercises = Object.values(exs) as any[];
+    // Phase 38: skip non-exercise keys (e.g. _session timing metadata)
+    const exercises = Object.keys(exs).filter((k) => !k.startsWith("_")).map((k) => exs[k]) as any[];
     if (exercises.length === 0) continue;
     const doneExercises = exercises.filter((e) => e?.done).length;
     let setsLogged = 0;
@@ -607,6 +686,23 @@ function buildContext(state: any): string {
   }
   lines.push("");
 
+  // Phase 38: active injuries
+  const activeInjuries = Object.values(state.injuries || {}).filter((j: any) => j && j.status !== "resolved");
+  if (activeInjuries.length > 0) {
+    lines.push("ACTIVE INJURIES (loads on affected lifts are auto-reduced — factor recovery, deloads and form into advice):");
+    for (const j of activeInjuries as any[]) {
+      const exNames = (j.affectedExercises || []).map((id: string) => EX_NAMES[id] || id).join(", ");
+      lines.push(`  - ${j.name} (${j.severity}${j.bodyPart ? `, ${j.bodyPart}` : ""})${exNames ? ` — affects: ${exNames}` : ""}${j.notes ? ` · "${j.notes}"` : ""}`);
+    }
+    lines.push("");
+  }
+
+  // Phase 38: per-lift detail + sleep/performance correlation
+  const trainingDetail = buildTrainingDetail(state);
+  if (trainingDetail) lines.push(trainingDetail);
+  const sleepPerf = buildSleepPerformance(state);
+  if (sleepPerf) lines.push(sleepPerf);
+
   // Phase 37: skin care routine — enhanced context block
   const skinBlock = buildSkinContext(state);
   if (skinBlock) lines.push(skinBlock, "");
@@ -661,6 +757,7 @@ DATA YOU NOW HAVE (Phase 29):
 9. DAILY ACTIVITY (steps + Oura active calories — active cals is the most accurate TDEE input you have)
 10. SUPPLEMENT ADHERENCE
 11. PREVIOUS COACHING REPORTS (last 4 with their suggestions + apply/dismiss status) — your memory
+12. TRAINING DETAIL (per-lift last-4-session tables), SLEEP VS PERFORMANCE correlation, ACTIVE INJURIES
 
 INTERPRETATION RULES:
 - Use Oura TOTAL calories (labelled "TDEE" in the data) as primary TDEE input. Mifflin-St Jeor is a fallback. ACTIVE calories alone is movement burn above BMR, NOT TDEE — never use active cals as TDEE.
@@ -690,6 +787,13 @@ INTERPRETATION RULES:
   - Other meds: read user notes carefully and apply common sense.
 - Ethnicity: South Asian visceral fat threshold ≥ 7 = elevated risk (vs ≥ 10 for European baseline). Calibrate visceral commentary accordingly.
 - Training split (Upper/Rest/Lower/Rest 4-day) is FIXED. Don't suggest split changes. Inside the split, you can suggest volume / intensity tweaks.
+- TRAINING ANALYSIS RULES (use the TRAINING DETAIL per-lift tables):
+  - Stall: same working weight for 3+ sessions without reaching the top of the rep range — the progression engine deloads automatically; acknowledge the deload and reassure, don't alarm.
+  - Progress: rising weight or reps across sessions on a lift = it's working. Name the specific lifts that are moving up.
+  - Effort letters per set: (e)=easy, (s)=solid, (t)=tough. A lift logged all-easy for 2+ sessions is under-loaded; all-tough may be too heavy or signal under-recovery.
+  - Rest times: average rest far above the prescription can blunt the stimulus on accessories — mention only if clearly excessive.
+  - ACTIVE INJURIES: never tell the user to add load to an injured lift. Loads are already auto-reduced (mild −20%, moderate −35%, severe = hold). Reinforce pain-free range of motion and advise when to consider seeing a professional.
+- SLEEP VS PERFORMANCE: use the correlation block. If sessions following short (<6.5h) or low-deep-sleep nights consistently show lower volume or more "tough" tags, state it plainly and tell the user to protect sleep the night before training days.
 - SKIN CARE (only if a SKIN CARE ROUTINE block is present — a 6-phase retinol ramp from every-4-days up to nightly, then tretinoin):
   RETINOL PHASE RULES:
   - NEVER suggest advancing phase if ANY redness or burning logged in the last 14 days.

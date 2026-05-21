@@ -817,6 +817,119 @@ async function deleteMedication() {
   }
 }
 
+// ---- TRAINING SCHEDULE (Phase 38) ----
+const _DOW_LABELS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function loadSessionTimesUI(){
+  const grid=document.getElementById('session-times-grid');
+  if(!grid)return;
+  const times=(typeof getSessionTimes==='function')?getSessionTimes():{};
+  const order=[1,2,3,4,5,6,0]; // Monday-first
+  grid.innerHTML=order.map(d=>{
+    const v=times[String(d)]||'';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:1;font-size:13px;font-weight:600;">${_DOW_LABELS[d]}</div>
+      <input type="time" id="st-${d}" value="${v}" style="padding:6px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+      <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px;" onclick="document.getElementById('st-${d}').value='';">Clear</button>
+    </div>`;
+  }).join('');
+}
+function saveSessionTimesFromUI(){
+  const out={};
+  for(let d=0;d<7;d++){
+    const el=document.getElementById('st-'+d);
+    out[String(d)]=(el&&el.value)?el.value:null;
+  }
+  saveSessionTimes(out);
+  showToast('Schedule saved ✓');
+  renderToday();
+}
+
+// ---- INJURY MANAGEMENT (Phase 38) ----
+let _injuryEdit=null; // { id: string | null }
+function _allWorkoutExercises(){
+  return [
+    ...WORKOUTS.upper.exercises.map(e=>({id:e.id,name:e.name,session:'Upper'})),
+    ...WORKOUTS.lower.exercises.map(e=>({id:e.id,name:e.name,session:'Lower'})),
+  ];
+}
+function renderInjuryList(){
+  const el=document.getElementById('injury-list');
+  if(!el)return;
+  const all=Object.values((typeof getInjuries==='function')?getInjuries():{});
+  if(all.length===0){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px 0;">No injuries flagged</div>';
+    return;
+  }
+  const sevColor={mild:'#ffc107',moderate:'var(--orange)',severe:'var(--red)'};
+  const exList=_allWorkoutExercises();
+  all.sort((a,b)=>(a.status==='resolved'?1:0)-(b.status==='resolved'?1:0));
+  el.innerHTML=all.map(j=>{
+    const resolved=j.status==='resolved';
+    const exNames=(j.affectedExercises||[]).map(id=>{const e=exList.find(x=>x.id===id);return e?e.name:id;});
+    return `<div onclick="openInjuryEdit('${j.id}')" style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;${resolved?'opacity:.55;':''}">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:var(--text);">${_esc(j.name)} ${resolved?'<span style="font-size:10px;color:var(--green);">✓ resolved</span>':`<span style="font-size:10px;color:${sevColor[j.severity]||'#ffc107'};text-transform:uppercase;font-weight:700;">${_esc(j.severity)}</span>`}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${_esc(j.bodyPart||'—')}${exNames.length?` · ${exNames.length} lift${exNames.length>1?'s':''} affected`:''}</div>
+        ${exNames.length?`<div style="font-size:10px;color:var(--text3);margin-top:3px;">${exNames.map(_esc).join(', ')}</div>`:''}
+      </div>
+      <div style="font-size:11px;color:var(--text3);">✏️</div>
+    </div>`;
+  }).join('');
+}
+function openInjuryEdit(id){
+  _injuryEdit={id};
+  const j=id?((typeof getInjuries==='function'?getInjuries():{})[id]):null;
+  document.getElementById('injury-title').textContent=id?'Edit Injury':'Flag an Injury';
+  document.getElementById('injury-name').value=j?.name||'';
+  document.getElementById('injury-bodypart').value=j?.bodyPart||'';
+  document.getElementById('injury-severity').value=j?.severity||'mild';
+  document.getElementById('injury-notes').value=j?.notes||'';
+  const affected=new Set(j?.affectedExercises||[]);
+  document.getElementById('injury-exercises').innerHTML=_allWorkoutExercises().map(e=>`
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px;cursor:pointer;">
+      <input type="checkbox" class="injury-ex-cb" value="${e.id}" ${affected.has(e.id)?'checked':''} style="width:16px;height:16px;flex-shrink:0;" />
+      <span>${_esc(e.name)} <span style="color:var(--text3);font-size:10px;">${e.session}</span></span>
+    </label>`).join('');
+  document.getElementById('injury-resolve-btn').style.display=(id&&j&&j.status!=='resolved')?'block':'none';
+  document.getElementById('injury-delete-btn').style.display=id?'block':'none';
+  openModal('modal-injury-edit');
+}
+function saveInjuryFromModal(){
+  if(!_injuryEdit)return;
+  const name=document.getElementById('injury-name').value.trim();
+  if(!name){showToast('Name required');return;}
+  const data={
+    name,
+    bodyPart:document.getElementById('injury-bodypart').value.trim(),
+    severity:document.getElementById('injury-severity').value,
+    notes:document.getElementById('injury-notes').value.trim(),
+    affectedExercises:Array.from(document.querySelectorAll('.injury-ex-cb')).filter(c=>c.checked).map(c=>c.value),
+  };
+  if(_injuryEdit.id)updateInjury(_injuryEdit.id,data);
+  else addInjury(data);
+  showToast(_injuryEdit.id?'Injury updated ✓':'Injury flagged ✓');
+  closeModal('modal-injury-edit');
+  _injuryEdit=null;
+  renderMore();
+}
+function resolveInjuryFromModal(){
+  if(!_injuryEdit||!_injuryEdit.id)return;
+  resolveInjury(_injuryEdit.id);
+  showToast('Marked resolved ✓');
+  closeModal('modal-injury-edit');
+  _injuryEdit=null;
+  renderMore();
+}
+function deleteInjuryFromModal(){
+  if(!_injuryEdit||!_injuryEdit.id)return;
+  if(!confirm('Delete this injury record permanently?'))return;
+  deleteInjury(_injuryEdit.id);
+  showToast('Deleted');
+  closeModal('modal-injury-edit');
+  _injuryEdit=null;
+  renderMore();
+}
+
 // ---- FOOD PREFERENCES (Phase 24) ----
 function _foodPrefs(){
   return (STATE.profile && STATE.profile.foodPrefs) || { excluded: [], notes: '', refreshCadence: 'weekly-sunday' };

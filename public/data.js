@@ -17,6 +17,7 @@ const WORKOUTS = {
       {id:'u7',name:'Tricep Pushdown',sets:3,reps:'10–12',rest:60,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+pushdown+form'},
       {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
       {id:'u9',name:'Plank',sets:3,reps:'30–45s',rest:45,muscle:'Core',metric:'time',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
+      {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
     ]
   },
   lower: {
@@ -30,8 +31,10 @@ const WORKOUTS = {
       {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
       {id:'l5',name:'Hip Thrust',sets:3,reps:'8–10',rest:90,muscle:'Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
       {id:'l6',name:'Calf Raise',sets:4,reps:'15–20',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
-      {id:'l7',name:'Good Mornings',sets:3,reps:'10–12',rest:90,muscle:'Lower Back / Hams',size:'small',yt:'https://www.youtube.com/results?search_query=good+morning+barbell+form'},
+      {id:'l7_cable_pull',name:'Cable Pull Through',sets:3,reps:'12–15',rest:60,muscle:'Glutes / Hams',size:'medium',yt:'https://www.youtube.com/results?search_query=cable+pull+through+form'},
+      {id:'l8_rev_hyper',name:'Reverse Hyperextension',sets:3,reps:'12–15',rest:60,muscle:'Lower Back / Glutes',size:'medium',yt:'https://www.youtube.com/results?search_query=reverse+hyperextension+form'},
       {id:'l8',name:'Ab Crunch',sets:3,reps:'15',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=ab+crunch+form+technique'},
+      {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
     ]
   }
 };
@@ -87,6 +90,7 @@ let STATE = {
   supplementLog: {},
   skinCare: { products: [], phase: 1, phaseStartDate: null, tretinoinReady: false, weeklyCheckIn: {} },
   skinCareLog: {},
+  injuries: {},
 };
 
 // ---- OWNER GATE (Phase 35) — some features are personal to the owner only ----
@@ -634,7 +638,109 @@ function getPreviousSessions(beforeDate, sessionType, limit){
 // Was a session completed on a date? (4+ exercises marked done)
 function wasSessionCompleted(date){
   const log=getExLog()[date]||{};
-  return Object.values(log).filter(e=>e.done).length>=4;
+  return Object.values(log).filter(e=>e&&e.done).length>=4;
+}
+
+// ============================================================
+// INJURY FLAG SYSTEM (Phase 38)
+// state.injuries = { [id]: {id,name,bodyPart,severity,affectedExercises[],status,notes,createdAt,resolvedAt} }
+// severity: 'mild' | 'moderate' | 'severe'   status: 'active' | 'resolved'
+// ============================================================
+const INJURY_SEVERITY_RANK={mild:1,moderate:2,severe:3};
+const INJURY_WEIGHT_FACTOR={mild:0.80,moderate:0.65,severe:0};
+
+function getInjuries(){
+  const i=pGet('injuries',{});
+  return (i&&typeof i==='object'&&!Array.isArray(i))?i:{};
+}
+function getActiveInjuries(){
+  return Object.values(getInjuries()).filter(j=>j&&j.status!=='resolved');
+}
+function isExerciseInjured(exId){
+  return getActiveInjuries().some(j=>Array.isArray(j.affectedExercises)&&j.affectedExercises.includes(exId));
+}
+// Highest-severity active injury affecting an exercise → 'mild'|'moderate'|'severe'|null
+function getInjurySeverity(exId){
+  let best=null,bestRank=0;
+  for(const j of getActiveInjuries()){
+    if(!Array.isArray(j.affectedExercises)||!j.affectedExercises.includes(exId))continue;
+    const rank=INJURY_SEVERITY_RANK[j.severity]||1;
+    if(rank>bestRank){bestRank=rank;best=j.severity||'mild';}
+  }
+  return best;
+}
+// First active injury affecting an exercise (for naming in banners/suggestions)
+function getInjuryForExercise(exId){
+  let best=null,bestRank=0;
+  for(const j of getActiveInjuries()){
+    if(!Array.isArray(j.affectedExercises)||!j.affectedExercises.includes(exId))continue;
+    const rank=INJURY_SEVERITY_RANK[j.severity]||1;
+    if(rank>bestRank){bestRank=rank;best=j;}
+  }
+  return best;
+}
+function saveInjuries(injuries){
+  STATE.injuries=injuries;
+  updateLocalCache();
+  saveFieldToServer('/api/state/injuries',{injuries});
+}
+function addInjury(inj){
+  const all=getInjuries();
+  const id='inj_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+  all[id]={
+    id,
+    name:String(inj.name||'Injury').slice(0,120),
+    bodyPart:String(inj.bodyPart||'').slice(0,80),
+    severity:INJURY_SEVERITY_RANK[inj.severity]?inj.severity:'mild',
+    affectedExercises:Array.isArray(inj.affectedExercises)?inj.affectedExercises.slice(0,40):[],
+    status:'active',
+    notes:String(inj.notes||'').slice(0,400),
+    createdAt:todayStr(),
+    resolvedAt:null,
+  };
+  saveInjuries(all);
+  return id;
+}
+function updateInjury(id,patch){
+  const all=getInjuries();
+  if(!all[id])return;
+  all[id]={...all[id],...patch,id};
+  saveInjuries(all);
+}
+function resolveInjury(id){
+  const all=getInjuries();
+  if(!all[id])return;
+  all[id].status='resolved';
+  all[id].resolvedAt=todayStr();
+  saveInjuries(all);
+}
+function deleteInjury(id){
+  const all=getInjuries();
+  delete all[id];
+  saveInjuries(all);
+}
+
+// ============================================================
+// SESSION TIMES (Phase 38) — per day-of-week training start time
+// profile.sessionTimes = { "0".."6": "HH:MM" | null }   (0=Sun)
+// ============================================================
+const _DEFAULT_SESSION_TIMES={0:'14:30',1:'16:00',2:null,3:'16:00',4:null,5:'16:00',6:'14:30'};
+function getSessionTimes(){
+  const st=(STATE.profile&&STATE.profile.sessionTimes)||null;
+  return (st&&typeof st==='object')?st:{..._DEFAULT_SESSION_TIMES};
+}
+// Training start time for a given date string (falls back to default)
+function getSessionTimeForDate(dateStr){
+  const dow=new Date((dateStr||todayStr())+'T12:00:00').getDay();
+  const st=getSessionTimes();
+  const v=st[String(dow)]!==undefined?st[String(dow)]:_DEFAULT_SESSION_TIMES[dow];
+  return v||null;
+}
+function saveSessionTimes(times){
+  if(!STATE.profile)STATE.profile={};
+  STATE.profile.sessionTimes=times;
+  updateLocalCache();
+  saveFieldToServer('/api/state/profile/session-times',{sessionTimes:times});
 }
 
 // ============================================================

@@ -408,6 +408,38 @@ async function fixJayVisceralTarget() {
   }
 }
 
+// Phase 38: seed Jay's known lower-back niggle on RDL as a mild injury
+async function seedJayInjuryV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.injurySeededV1) return;
+    if (!state.injuries || typeof state.injuries !== "object" || Array.isArray(state.injuries)) {
+      state.injuries = {};
+    }
+    const id = "inj_seed_lowerback";
+    if (!state.injuries[id]) {
+      state.injuries[id] = {
+        id,
+        name: "Lower back niggle",
+        bodyPart: "Lower Back",
+        severity: "mild",
+        affectedExercises: ["l2", "l7_cable_pull", "l8_rev_hyper"],
+        status: "active",
+        notes: "Pre-existing flag — keep RDL and hip-hinge work conservative; stop on any sharp pain.",
+        createdAt: new Date().toISOString().slice(0, 10),
+        resolvedAt: null,
+      };
+    }
+    state.injurySeededV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay lower-back injury seeded (mild, affects RDL + hip-hinge accessories)");
+  } catch (err) {
+    console.error("[migration] Jay injury seed failed:", err);
+  }
+}
+
 const server = app.listen(PORT, () => {
   console.log(`Forge server running on port ${PORT}`);
   startCron();
@@ -418,6 +450,7 @@ const server = app.listen(PORT, () => {
   fixJayPostWorkoutBerries();
   fixJayOmega3Dose();
   seedJaySkinCareV1();
+  seedJayInjuryV1();
 });
 
 const shutdown = async (signal: string) => {

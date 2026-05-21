@@ -704,6 +704,32 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
   </div>
 </div>
 
+<div class="modal-bg" id="modal-injury-edit">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="injury-title">Injury</div>
+      <button class="modal-close" onclick="closeModal('modal-injury-edit')">✕</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Name</div>
+    <input id="injury-name" type="text" maxlength="120" placeholder="e.g. Lower back strain" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;" />
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Body part</div>
+    <input id="injury-bodypart" type="text" maxlength="80" placeholder="e.g. Lower Back" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;" />
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Severity</div>
+    <select id="injury-severity" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;">
+      <option value="mild">Mild — reduce load on affected lifts (−20%)</option>
+      <option value="moderate">Moderate — significant reduction (−35%)</option>
+      <option value="severe">Severe — hold / do not load (see a doctor)</option>
+    </select>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Affected lifts</div>
+    <div id="injury-exercises" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px 10px;margin-bottom:10px;"></div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Notes</div>
+    <textarea id="injury-notes" rows="2" maxlength="400" placeholder="e.g. tweaked it on RDLs, sharp pain on hinge" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:14px;"></textarea>
+    <button class="btn btn-lime btn-full" style="margin-bottom:8px;" onclick="saveInjuryFromModal()">Save</button>
+    <button id="injury-resolve-btn" class="btn btn-ghost btn-full" style="margin-bottom:8px;display:none;" onclick="resolveInjuryFromModal()">Mark as Resolved</button>
+    <button id="injury-delete-btn" class="btn btn-ghost btn-full" style="color:var(--red);border-color:var(--red);display:none;" onclick="deleteInjuryFromModal()">Delete</button>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-ing-edit">
   <div class="modal">
     <div class="modal-hdr">

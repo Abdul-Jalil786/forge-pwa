@@ -288,11 +288,11 @@ function finishSession(){
 // ============================================================
 // GUIDED WORKOUT MODE
 // ============================================================
-let wm = { active:false, exIdx:0, setIdx:0, mode:'outline', restTarget:0, restStarted:0, restInterval:null };
+let wm = { active:false, exIdx:0, setIdx:0, mode:'outline', restTarget:0, restStarted:0, restInterval:null, setStartedAt:0 };
 
 function startGuidedWorkout(){
   const session=getTodaySession(); if(!session)return showToast('Rest day — no workout');
-  wm = { active:true, exIdx:0, setIdx:0, mode:'outline', session, restTarget:0, restStarted:0, restInterval:null };
+  wm = { active:true, exIdx:0, setIdx:0, mode:'outline', session, restTarget:0, restStarted:0, restInterval:null, setStartedAt:0 };
   document.getElementById('workoutMode').classList.add('open');
   renderWmOutline();
 }
@@ -404,7 +404,34 @@ function detectStall(exId, exObj, prevSessions){
   };
 }
 
+// Phase 38: injury overlay — reduces prescribed load on injured lifts.
+// mild ×0.80 · moderate ×0.65 · severe → hold / see doctor.
+function _applyInjuryToSuggestion(exId, sug){
+  if(!sug)return sug;
+  const sev=(typeof getInjurySeverity==='function')?getInjurySeverity(exId):null;
+  if(!sev)return sug;
+  const inj=(typeof getInjuryForExercise==='function')?getInjuryForExercise(exId):null;
+  const nm=inj&&inj.name?inj.name:'injury';
+  if(sev==='severe'){
+    return {...sug, dir:null, injured:'severe',
+      reason:`⚠️ INJURY (${nm}) — do not load this lift. Hold or skip it; see a doctor before progressing.`};
+  }
+  const factor=(typeof INJURY_WEIGHT_FACTOR!=='undefined'&&INJURY_WEIGHT_FACTOR[sev])||0.8;
+  if(sug.timed){
+    const sec=Math.max(5,Math.round((sug.seconds||0)*factor));
+    return {...sug, seconds:sec, dir:'down', injured:sev,
+      reason:`⚠️ Injury (${nm}, ${sev}) — cut to ${Math.round(factor*100)}%: try ${fmtSec(sec)}. ${sug.reason||''}`.trim()};
+  }
+  const kg=_roundToPlate(Math.max(0,(sug.kg||0)*factor));
+  return {...sug, kg, dir:'down', injured:sev,
+    reason:`⚠️ Injury (${nm}, ${sev}) — cut to ${Math.round(factor*100)}%: ${kg}kg. ${sug.reason||''}`.trim()};
+}
+
 function suggestWeight(exId, prevSession, setIdx, opts){
+  return _applyInjuryToSuggestion(exId, _suggestWeightCore(exId, prevSession, setIdx, opts));
+}
+
+function _suggestWeightCore(exId, prevSession, setIdx, opts){
   const exObj=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises].find(e=>e.id===exId);
   if(!exObj)return null;
   const timed=isTimeBased(exObj);
@@ -525,6 +552,12 @@ function renderWmOutline(){
     ? `<div style="background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:#ffc107;line-height:1.5;">⚠️ <strong>Lower recovery today</strong> (${gate.reason}). Today is about form and finishing every set — not PRs. Suggestions are set to hold weights.</div>`
     : '';
 
+  // Phase 38: injury banner — lists active injuries affecting today's lifts
+  const injuredEx = w.exercises.filter(ex=>typeof isExerciseInjured==='function'&&isExerciseInjured(ex.id));
+  const injuryBanner = injuredEx.length
+    ? `<div style="background:rgba(255,59,59,.1);border:1px solid rgba(255,59,59,.4);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:#ff6b6b;line-height:1.5;">🩹 <strong>Active injury</strong> — ${injuredEx.length} lift${injuredEx.length>1?'s':''} today affected (${injuredEx.map(e=>e.name).join(', ')}). Loads are reduced automatically. Train pain-free; stop if it hurts.</div>`
+    : '';
+
   // Phase 33: build prescriptions array for AI brief
   const prescriptions = w.exercises.map(ex => {
     const sug = suggestWeight(ex.id, prev, undefined, opts);
@@ -551,6 +584,7 @@ function renderWmOutline(){
     <div class="wm-title">${w.name}</div>
     <div class="wm-sub">${w.muscles} · ${w.exercises.length} exercises · ~${w.duration} mins</div>
     ${banner}
+    ${injuryBanner}
     ${briefSlot}
     <div class="wm-h">Today's Plan</div>
     <div style="margin-bottom:24px;" id="wm-exercise-list">
@@ -559,7 +593,7 @@ function renderWmOutline(){
         const timed=isTimeBased(ex);
         const arrow=sug?.dir==='up'?'<span class="wm-arrow-up">↑</span>':sug?.dir==='down'?'<span class="wm-arrow-down">↓</span>':'';
         const wt=sug?(timed?`@ ${fmtSec(sug.seconds)} ${arrow}`:`@ ${sug.kg}kg ${arrow}`):'';
-        const badge=sug?.deload?'<span style="font-size:9px;color:var(--orange);font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">DELOAD</span>':sug?.recovery==='low'?'<span style="font-size:9px;color:#ffc107;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">HOLD</span>':'';
+        const badge=sug?.injured==='severe'?'<span style="font-size:9px;color:#ff6b6b;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">⚠ DO NOT LOAD</span>':sug?.injured?'<span style="font-size:9px;color:#ff6b6b;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">INJURY −</span>':sug?.deload?'<span style="font-size:9px;color:var(--orange);font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">DELOAD</span>':sug?.recovery==='low'?'<span style="font-size:9px;color:#ffc107;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">HOLD</span>':'';
         const cueId = `cue-${ex.id}`;
         const cueText = cached?.perExercise?.find(c => c.exId === ex.id)?.cue || '';
         return `<div class="wm-ex-row"><div style="flex:1;"><div style="font-size:10px;color:var(--text3);font-weight:700;">${i+1}.</div><div class="wm-ex-name">${ex.name}</div><div id="${cueId}" style="font-size:11px;color:var(--lime);margin-top:4px;line-height:1.4;${cueText?'':'display:none;'}">${cueText}</div></div><div class="wm-ex-spec">${ex.sets}×${ex.reps}<br>${wt}${badge}</div></div>`;
@@ -611,7 +645,40 @@ function wmShowStrategy(){
 
 function wmStartFirstSet(){
   wm.exIdx=0; wm.setIdx=0; wm.mode='set';
+  wm.setStartedAt=Date.now();
+  _wmMarkSessionStart();
+  _wmMarkExerciseStart();
   renderWmSet();
+}
+
+// Phase 38: session + exercise timing helpers
+function _wmMarkSessionStart(){
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  if(!dayLog._session||typeof dayLog._session!=='object')dayLog._session={};
+  if(!dayLog._session.startedAt)dayLog._session.startedAt=Date.now();
+  saveExLogForDate(date,dayLog);
+}
+function _wmMarkExerciseStart(){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx]; if(!ex)return;
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  if(!dayLog[ex.id])dayLog[ex.id]={done:false,sets:[]};
+  if(!dayLog[ex.id].exerciseStartedAt)dayLog[ex.id].exerciseStartedAt=Date.now();
+  saveExLogForDate(date,dayLog);
+}
+function _wmMarkExerciseDone(){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx]; if(!ex)return;
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  if(!dayLog[ex.id])return;
+  dayLog[ex.id].exerciseCompletedAt=Date.now();
+  if(dayLog[ex.id].exerciseStartedAt){
+    dayLog[ex.id].totalExerciseDuration=Math.round((Date.now()-dayLog[ex.id].exerciseStartedAt)/1000);
+  }
+  saveExLogForDate(date,dayLog);
 }
 
 function renderWmSet(){
@@ -629,6 +696,13 @@ function renderWmSet(){
   const startKg=existingSet?.kg||sug?.kg||'';
   const repMatch=String(ex.reps).match(/(\d+)[–-](\d+)/);
   const targetReps=existingSet?.reps||sug?.reps||(repMatch?parseInt(repMatch[2]):8);
+  // Phase 38: warm-up prompt on the very first working set of the session
+  const isSessionOpener=wm.exIdx===0&&wm.setIdx===0;
+  const workKg=parseFloat(startKg)||0;
+  const warmKg=isSessionOpener&&workKg>0?Math.round((workKg*0.5)/2.5)*2.5:0;
+  const warmupBlock=warmKg>0
+    ? `<div style="background:rgba(61,155,255,.08);border:1px solid rgba(61,155,255,.3);border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:var(--blue);line-height:1.5;">🔥 <strong>Warm up first.</strong> Before this working set do 1–2 light sets at ~${warmKg}kg (50% of today's load), 8–10 easy reps. Don't log warm-ups.</div>`
+    : '';
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
@@ -639,6 +713,7 @@ function renderWmSet(){
       ${_wmStrategyBtnHTML()}
     </div>
     ${_wmCueHTML(ex.id)}
+    ${warmupBlock}
     <div class="wm-h">Weight</div>
     <div class="wm-stepper">
       <button class="wm-step-btn" onclick="wmStepKg(-2.5)">−</button>
@@ -741,7 +816,8 @@ function wmTimedSetDone(restSec){
   const dayLog=getExLogForDate(date);
   if(!dayLog[ex.id])dayLog[ex.id]={done:false,sets:[]};
   while(dayLog[ex.id].sets.length<=wm.setIdx)dayLog[ex.id].sets.push({seconds:0,done:false});
-  dayLog[ex.id].sets[wm.setIdx]={seconds,done:true,doneAt:Date.now()};
+  dayLog[ex.id].sets[wm.setIdx]={seconds,done:true,doneAt:Date.now(),
+    setStartedAt:wm.setStartedAt||null,setCompletedAt:Date.now()};
   if(dayLog[ex.id].sets.filter(s=>s.done).length>=ex.sets)dayLog[ex.id].done=true;
   saveExLogForDate(date,dayLog);
 
@@ -796,6 +872,7 @@ function wmRecordTimedEffort(effort){
     if(sets.length)sets[sets.length-1].effort=effort;
     saveExLogForDate(date,dayLog);
   }
+  _wmMarkExerciseDone();
   wm.mode='exDone';
   renderWmExerciseDone();
 }
@@ -820,7 +897,10 @@ function wmMarkSetDone(restSec){
   const dayLog=getExLogForDate(date);
   if(!dayLog[ex.id])dayLog[ex.id]={done:false,sets:[]};
   while(dayLog[ex.id].sets.length<=wm.setIdx)dayLog[ex.id].sets.push({kg:'',reps:'',done:false});
-  dayLog[ex.id].sets[wm.setIdx]={kg,reps,done:true,doneAt:Date.now()};
+  const prevEffort=dayLog[ex.id].sets[wm.setIdx]?.effort;
+  dayLog[ex.id].sets[wm.setIdx]={kg,reps,done:true,doneAt:Date.now(),
+    setStartedAt:wm.setStartedAt||null,setCompletedAt:Date.now()};
+  if(prevEffort)dayLog[ex.id].sets[wm.setIdx].effort=prevEffort;
   if(dayLog[ex.id].sets.filter(s=>s.done).length>=ex.sets)dayLog[ex.id].done=true;
   saveExLogForDate(date,dayLog);
   wm.restTarget=restSec;
@@ -867,6 +947,7 @@ function wmRecordEffort(effort){
   }
   const isLastSet=wm.setIdx>=ex.sets-1;
   if(isLastSet){
+    _wmMarkExerciseDone();
     wm.mode='exDone';
     renderWmExerciseDone();
   } else {
@@ -912,8 +993,14 @@ function updateWmRest(){
   if(!t)return;
   if(remaining>0){
     t.textContent=Math.ceil(remaining)+'s';
-    t.style.color='var(--lime)';
-    s.textContent='counting down';
+    // Phase 38: green while plenty of rest left, amber in the final 20s
+    if(remaining>20){
+      t.style.color='var(--lime)';
+      s.textContent='resting — recover fully';
+    }else{
+      t.style.color='#ffc107';
+      s.textContent='almost ready — get set';
+    }
     if(b){b.textContent='SKIP REST · START NEXT SET';b.classList.add('ghost');b.classList.remove('over');}
   } else {
     const over=Math.floor(-remaining);
@@ -922,7 +1009,7 @@ function updateWmRest(){
       if(navigator.vibrate)navigator.vibrate([200,100,200,100,200]);
     }
     t.textContent='+'+over+'s';
-    t.style.color='var(--orange)';
+    t.style.color='var(--red)';
     s.textContent='GO! Tap to start next set';
     if(b){b.textContent='START NEXT SET';b.classList.remove('ghost');b.classList.add('over');}
   }
@@ -934,11 +1021,19 @@ function wmStartNextSet(){
   const ex=w.exercises[wm.exIdx];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
-  if(dayLog[ex.id]?.sets?.[wm.setIdx])dayLog[ex.id].sets[wm.setIdx].restAfter=elapsed;
+  const setObj=dayLog[ex.id]?.sets?.[wm.setIdx];
+  if(setObj){
+    setObj.restAfter=elapsed;
+    setObj.restStartedAt=wm.restStarted;
+    setObj.restCompletedAt=Date.now();
+    setObj.actualRestSeconds=elapsed;
+    setObj.prescribedRestSeconds=wm.restTarget;
+  }
   saveExLogForDate(date,dayLog);
   if(wm.restInterval){clearInterval(wm.restInterval);wm.restInterval=null;}
   wm.setIdx++;
   wm.mode='set';
+  wm.setStartedAt=Date.now();
   renderWmSet();
 }
 
@@ -978,6 +1073,8 @@ function wmNextExercise(){
   wm.exIdx++;
   wm.setIdx=0;
   wm.mode='set';
+  wm.setStartedAt=Date.now();
+  _wmMarkExerciseStart();
   renderWmSet();
 }
 
@@ -985,15 +1082,23 @@ function wmFinish(){
   const w=WORKOUTS[wm.session];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
-  const totalVolume=Object.values(dayLog).reduce((tot,ex)=>tot+(ex.sets||[]).reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0),0);
-  const totalSets=Object.values(dayLog).reduce((tot,ex)=>tot+(ex.sets||[]).filter(s=>s.done).length,0);
+  // Phase 38: stamp session completion timing
+  if(dayLog._session&&typeof dayLog._session==='object'){
+    dayLog._session.completedAt=Date.now();
+    if(dayLog._session.startedAt)dayLog._session.totalDuration=Math.round((Date.now()-dayLog._session.startedAt)/1000);
+    saveExLogForDate(date,dayLog);
+  }
+  const totalVolume=Object.values(dayLog).reduce((tot,ex)=>tot+((ex&&ex.sets)||[]).reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0),0);
+  const totalSets=Object.values(dayLog).reduce((tot,ex)=>tot+((ex&&ex.sets)||[]).filter(s=>s.done).length,0);
+  const sessDur=(dayLog._session&&dayLog._session.totalDuration)?dayLog._session.totalDuration:0;
+  const durStr=sessDur>0?` · ${Math.round(sessDur/60)} min`:'';
   const volStr=totalVolume>0?` · ${totalVolume.toFixed(0)}kg total volume`:'';
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:60px;text-align:center;">Workout complete</div>
     <div class="wm-title" style="text-align:center;font-size:36px;color:var(--green);margin-top:8px;">✓ ${w.name} DONE</div>
     <div style="text-align:center;font-size:48px;margin:24px 0;">🔥</div>
-    <div style="text-align:center;color:var(--text2);font-size:14px;margin-bottom:16px;">${w.exercises.length}/${w.exercises.length} exercises · ${totalSets} sets${volStr}</div>
+    <div style="text-align:center;color:var(--text2);font-size:14px;margin-bottom:16px;">${w.exercises.length}/${w.exercises.length} exercises · ${totalSets} sets${volStr}${durStr}</div>
     <button class="wm-cta" onclick="exitGuidedWorkout()">FINISH</button>
   `;
   document.getElementById('wmContent').innerHTML=html;
