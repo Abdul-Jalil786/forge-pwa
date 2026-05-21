@@ -85,7 +85,7 @@ let STATE = {
   trainingStartDate: null,
   waterClicked: {},
   supplementLog: {},
-  skinCare: { products: [] },
+  skinCare: { products: [], phase: 1, phaseStartDate: null, tretinoinReady: false, weeklyCheckIn: {} },
   skinCareLog: {},
 };
 
@@ -131,6 +131,12 @@ function setSkinItemDone(date,itemId,done){
   if(!log[date])log[date]={};
   log[date][itemId]=done;
   STATE.skinCareLog=log;
+  // Recompute the day's compliance fraction + stamp Mounjaro (Wednesday) flag
+  const {am,pm}=getSkinVisibleItems(date);
+  const items=[...am,...pm];
+  const dn=items.filter(it=>log[date][it.itemId]===true).length;
+  log[date]._compliance=items.length?Math.round((dn/items.length)*100)/100:0;
+  log[date]._mounjaro_day=new Date(date+'T12:00:00').getDay()===3;
   updateLocalCache();
   saveFieldToServer(`/api/state/skin-care-log/${date}`,{value:log[date]});
 }
@@ -146,6 +152,10 @@ function setSkinIrritation(date,level){
 function skinDueOn(product,date){
   const freq=product.frequency||'daily';
   if(freq==='daily')return true;
+  if(freq==='5x-week'){ // 5 nights/week = weekdays Mon-Fri
+    const dow=new Date(date+'T12:00:00').getDay();
+    return dow>=1&&dow<=5;
+  }
   const start=product.startedDate;
   if(!start)return true; // no start date → treat as daily
   const d0=new Date(start+'T12:00:00').getTime();
@@ -154,6 +164,148 @@ function skinDueOn(product,date){
   if(days<0)return false;
   const step={'every-2-days':2,'every-3-days':3,'every-4-days':4,'weekly':7}[freq];
   return step?(days%step===0):true;
+}
+
+// ---- SKIN CARE PHASES + CONFLICT ENGINE (Phase 37) ----
+const SKIN_PHASES=[
+  {n:1,freq:'every-4-days',label:'Every 4 days'},
+  {n:2,freq:'every-3-days',label:'Every 3 days'},
+  {n:3,freq:'every-2-days',label:'Every other day'},
+  {n:4,freq:'5x-week',label:'5 nights per week'},
+  {n:5,freq:'daily',label:'Every night'},
+  {n:6,freq:'daily',label:'Tretinoin 0.025%'},
+];
+function getSkinPhase(){
+  const n=getSkinCare().phase||1;
+  return SKIN_PHASES.find(p=>p.n===n)||SKIN_PHASES[0];
+}
+function isMounjaroDay(){return new Date().getDay()===3;} // Wednesday
+function isRetinolNight(date){
+  return getSkinProducts().some(p=>p.type==='retinol'&&skinDueOn(p,date));
+}
+
+// Conflict engine — single source of truth for what's visible on a date.
+// Returns { am:[items], pm:[items], retinolNight } — each item {product, slot, itemId}.
+function getSkinVisibleItems(date){
+  const products=getSkinProducts();
+  const due=products.filter(p=>skinDueOn(p,date));
+  const retinolNight=due.some(p=>p.type==='retinol');
+  const mk=(p,slot)=>({product:p,slot,itemId:`${p.id}_${slot}`});
+  // AM — fixed order: cleanser, vitamin-c, moisturizer, spf
+  const am=[];
+  for(const t of ['cleanser','vitamin-c','moisturizer','spf']){
+    const p=due.find(x=>(x.slot==='am'||x.slot==='both')&&x.type===t);
+    if(p)am.push(mk(p,'am'));
+  }
+  // PM — branches on retinol night
+  const pm=[];
+  if(retinolNight){
+    for(const t of ['cleanser','moisturizer','retinol']){
+      const p=due.find(x=>(x.slot==='pm'||x.slot==='both')&&x.type===t);
+      if(p)pm.push(mk(p,'pm'));
+    }
+    const cica=due.find(x=>x.id==='skn-cicaplast');
+    if(cica)pm.push(mk(cica,'pm'));
+  }else{
+    const cleanser=due.find(x=>(x.slot==='pm'||x.slot==='both')&&x.type==='cleanser');
+    if(cleanser)pm.push(mk(cleanser,'pm'));
+    // serums thinnest-first (lower concentration → applied first)
+    const serums=due.filter(x=>x.slot==='pm'&&x.type==='serum')
+      .sort((a,b)=>(parseFloat(a.concentration)||0)-(parseFloat(b.concentration)||0));
+    for(const p of serums)pm.push(mk(p,'pm'));
+    const moist=due.find(x=>(x.slot==='pm'||x.slot==='both')&&x.type==='moisturizer');
+    if(moist)pm.push(mk(moist,'pm'));
+    const honey=due.find(x=>x.id==='skn-honeymask');
+    if(honey)pm.push(mk(honey,'pm'));
+  }
+  return {am,pm,retinolNight};
+}
+
+// Compliance % across last `days` days (counts only conflict-engine-visible items).
+function getSkinCompliance(days){
+  let due=0,done=0;
+  for(let i=0;i<days;i++){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const ds=d.toISOString().slice(0,10);
+    const {am,pm}=getSkinVisibleItems(ds);
+    const items=[...am,...pm];
+    if(items.length===0)continue;
+    const log=getSkinCareLog(ds);
+    for(const it of items){due++;if(log[it.itemId]===true)done++;}
+  }
+  return due>0?Math.round((done/due)*100):0;
+}
+// Today's compliance as {done,total,pct}.
+function getTodaySkinCompliance(){
+  const today=todayStr();
+  const {am,pm}=getSkinVisibleItems(today);
+  const items=[...am,...pm];
+  const log=getSkinCareLog(today);
+  const done=items.filter(it=>log[it.itemId]===true).length;
+  return {done,total:items.length,pct:items.length?Math.round((done/items.length)*100):0};
+}
+function getSkinIrritationSummary(days){
+  const counts={none:0,'mild-dryness':0,peeling:0,redness:0,burning:0};
+  for(let i=0;i<days;i++){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const ir=getSkinCareLog(d.toISOString().slice(0,10))._irritation;
+    if(ir&&counts[ir]!==undefined)counts[ir]++;
+  }
+  return counts;
+}
+// Retinol phase readiness — 3 conditions: 3wk min, no redness/burning 14d, 100% retinol compliance 14d.
+function getRetinolPhaseReadiness(){
+  const sc=getSkinCare();
+  const phaseNum=sc.phase||1;
+  if(phaseNum>=5)return{ready:false,atMax:true,phaseNum,reason:phaseNum>=6?'On tretinoin':'At final retinol phase (every night)'};
+  const ret=sc.products.find(p=>p.type==='retinol');
+  const phaseStart=sc.phaseStartDate||ret?.frequencyStartedAt;
+  const weeksAtPhase=phaseStart?((Date.now()-new Date(phaseStart+'T12:00:00').getTime())/(7*86400000)):0;
+  const irr=getSkinIrritationSummary(14);
+  const badIrritation=irr.redness>0||irr.burning>0;
+  let retDue=0,retDone=0;
+  for(let i=0;i<14;i++){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const ds=d.toISOString().slice(0,10);
+    if(ret&&skinDueOn(ret,ds)){retDue++;if(getSkinCareLog(ds)[`${ret.id}_pm`]===true)retDone++;}
+  }
+  const retComplete=retDue>0?(retDone/retDue):1;
+  const reasons=[];
+  if(weeksAtPhase<3)reasons.push(`3 weeks at this phase needed (${weeksAtPhase.toFixed(1)} so far)`);
+  if(badIrritation)reasons.push(`irritation logged: ${irr.redness} redness, ${irr.burning} burning in 14d`);
+  if(retComplete<1)reasons.push(`retinol compliance ${Math.round(retComplete*100)}% in 14d (need 100%)`);
+  const ready=reasons.length===0&&weeksAtPhase>=3;
+  const next=SKIN_PHASES.find(p=>p.n===phaseNum+1);
+  return{ready,atMax:false,phaseNum,weeksAtPhase,reason:ready?'All conditions met':reasons.join(' · '),nextPhase:next?next.n:null,nextFrequency:next?next.freq:null};
+}
+function getSkinWeeklyCheckIn(date){return(getSkinCare().weeklyCheckIn||{})[date]||null;}
+function setSkinWeeklyCheckIn(date,data){
+  const sc=getSkinCare();
+  if(!sc.weeklyCheckIn)sc.weeklyCheckIn={};
+  sc.weeklyCheckIn[date]={score:data.score,trend:data.trend,notes:data.notes,date};
+  STATE.skinCare=sc;
+  const log=pGet('skinCareLog',{});
+  if(!log[date])log[date]={};
+  log[date]._skin_score=data.score;
+  log[date]._skin_trend=data.trend;
+  log[date]._skin_notes=data.notes;
+  STATE.skinCareLog=log;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/skin-care-weekly/${date}`,{score:data.score,trend:data.trend,notes:data.notes});
+  saveFieldToServer(`/api/state/skin-care-log/${date}`,{value:log[date]});
+}
+function setSkinPhase(phaseNum){
+  const sc=getSkinCare();
+  const ph=SKIN_PHASES.find(p=>p.n===phaseNum);
+  if(!ph)return;
+  sc.phase=phaseNum;
+  sc.phaseStartDate=todayStr();
+  for(const p of sc.products){
+    if(p.type==='retinol'||p.id==='skn-cicaplast'){p.frequency=ph.freq;p.frequencyStartedAt=todayStr();}
+  }
+  STATE.skinCare=sc;
+  updateLocalCache();
+  saveFieldToServer('/api/state/skin-care-phase',{phase:phaseNum});
 }
 let saveStateTimeout = null;
 

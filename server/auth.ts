@@ -42,6 +42,21 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 }
 
+// Phase 37: owner-only gate — for personal features (skin care). Chain AFTER requireAuth.
+export const OWNER_EMAIL = "jay@afjltd.co.uk";
+export async function requireOwnerCheck(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { email: true } });
+    if (!user || user.email.toLowerCase() !== OWNER_EMAIL) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    next();
+  } catch {
+    res.status(403).json({ error: "Forbidden" });
+  }
+}
+
 
 // POST /api/auth/signup
 router.post("/signup", async (req: Request, res: Response) => {

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import prisma from "./db";
-import { requireAuth } from "./auth";
+import { requireAuth, requireOwnerCheck } from "./auth";
 
 const router = Router();
 
@@ -173,8 +173,8 @@ router.put("/meal-plan", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Phase 35: skin care — products config + daily routine log
-router.put("/skin-care", requireAuth, async (req: Request, res: Response) => {
+// Phase 35 + 37: skin care — products config + daily routine log (owner-only)
+router.put("/skin-care", requireAuth, requireOwnerCheck, async (req: Request, res: Response) => {
   try {
     const { skinCare } = req.body || {};
     if (!skinCare || typeof skinCare !== "object") { res.status(400).json({ error: "skinCare object required" }); return; }
@@ -195,7 +195,7 @@ router.put("/skin-care", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.put("/skin-care-log/:date", requireAuth, async (req: Request, res: Response) => {
+router.put("/skin-care-log/:date", requireAuth, requireOwnerCheck, async (req: Request, res: Response) => {
   try {
     const date = req.params.date as string;
     if (!DATE_RE.test(date)) { res.status(400).json({ error: "Invalid date" }); return; }
@@ -214,6 +214,78 @@ router.put("/skin-care-log/:date", requireAuth, async (req: Request, res: Respon
     res.json({ success: true });
   } catch (err) {
     console.error("Put skin-care-log error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Phase 37: weekly skin journal entry (Sunday check-in)
+router.put("/skin-care-weekly/:date", requireAuth, requireOwnerCheck, async (req: Request, res: Response) => {
+  try {
+    const date = req.params.date as string;
+    if (!DATE_RE.test(date)) { res.status(400).json({ error: "Invalid date" }); return; }
+    const { score, trend, notes } = req.body || {};
+    const entry = {
+      score: typeof score === "number" ? Math.max(1, Math.min(10, Math.round(score))) : null,
+      trend: ["better", "same", "worse"].includes(trend) ? trend : null,
+      notes: typeof notes === "string" ? notes.slice(0, 200) : "",
+      date,
+    };
+    const valueJson = JSON.stringify(entry);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(
+          jsonb_set(COALESCE(state, '{}')::jsonb, '{skinCare}', COALESCE(state->'skinCare', '{}'), true),
+          '{skinCare,weeklyCheckIn}', COALESCE(state->'skinCare'->'weeklyCheckIn', '{}'), true
+        ),
+        ARRAY['skinCare', 'weeklyCheckIn', ${date}],
+        ${valueJson}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true, entry });
+  } catch (err) {
+    console.error("Put skin-care-weekly error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Phase 37: retinol phase update. Advancing phase also re-frequencies the retinol + cicaplast
+// products to match. One atomic write of the whole skinCare object.
+const PHASE_FREQ: Record<number, string> = { 1: "every-4-days", 2: "every-3-days", 3: "every-2-days", 4: "5x-week", 5: "daily", 6: "daily" };
+router.put("/skin-care-phase", requireAuth, requireOwnerCheck, async (req: Request, res: Response) => {
+  try {
+    const { phase, tretinoinReady } = req.body || {};
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    const sc = st.skinCare || { products: [] };
+    if (phase != null) {
+      if (typeof phase !== "number" || phase < 1 || phase > 6) { res.status(400).json({ error: "phase must be 1-6" }); return; }
+      sc.phase = Math.round(phase);
+      sc.phaseStartDate = new Date().toISOString().slice(0, 10);
+      const freq = PHASE_FREQ[sc.phase];
+      if (freq && Array.isArray(sc.products)) {
+        for (const p of sc.products) {
+          if (p.type === "retinol" || p.id === "skn-cicaplast") {
+            p.frequency = freq;
+            p.frequencyStartedAt = sc.phaseStartDate;
+          }
+        }
+      }
+    }
+    if (tretinoinReady != null) sc.tretinoinReady = !!tretinoinReady;
+    const valueJson = JSON.stringify(sc);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{skinCare}', ${valueJson}::jsonb, true),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true, skinCare: sc });
+  } catch (err) {
+    console.error("Put skin-care-phase error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

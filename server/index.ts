@@ -284,6 +284,49 @@ async function seedJayBloodMarkers() {
   }
 }
 
+// Phase 37: full skin care routine overhaul — replace all products with Jay's real 9-product routine.
+async function seedJaySkinCareV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.profile?.skinCareSeededV1) return;
+    const START = "2026-05-21";
+    state.skinCare = {
+      phase: 1,
+      phaseStartDate: START,
+      tretinoinReady: false,
+      weeklyCheckIn: {},
+      products: [
+        { id: "skn-cleanser", order: 1, name: "CeraVe Hydrating Cleanser", type: "cleanser", concentration: null, slot: "both", frequency: "daily", startedDate: START,
+          notes: "Use morning and evening. Replaces Elemis completely. Gentle — no exfoliating enzymes. Essential on retinol nights." },
+        { id: "skn-ceferulic", order: 2, name: "SkinCeuticals CE Ferulic", type: "vitamin-c", concentration: "15%", slot: "am", frequency: "daily", startedDate: START,
+          notes: "Gold standard Vitamin C. Apply after cleanser before moisturiser. Never use same time as niacinamide or retinol. Morning only always." },
+        { id: "skn-moisturizer", order: 3, name: "CeraVe Moisturising Cream", type: "moisturizer", concentration: null, slot: "both", frequency: "daily", startedDate: START,
+          notes: "Core barrier moisturiser. Use morning and evening. On retinol nights apply thin layer before retinol and generous layer after — sandwich method." },
+        { id: "skn-spf", order: 4, name: "La Roche-Posay UVMune 400 SPF50+", type: "spf", concentration: "SPF50+", slot: "am", frequency: "daily", startedDate: START,
+          notes: "Always the absolute last step every morning. Never skip. Retinol and CE Ferulic both increase sun sensitivity significantly." },
+        { id: "skn-arbutin", order: 5, name: "The Ordinary Alpha Arbutin 2% + HA", type: "serum", concentration: "2%", slot: "pm", frequency: "daily", startedDate: START,
+          notes: "Targets pigmentation and uneven skin tone. PM only. NEVER use on retinol nights — skip completely. Apply before niacinamide — thinnest first." },
+        { id: "skn-niacinamide", order: 6, name: "The Ordinary Niacinamide 10% + Zinc", type: "serum", concentration: "10%", slot: "pm", frequency: "daily", startedDate: START,
+          notes: "Evens skin tone, reduces pigmentation and pores. PM only. NEVER use on retinol nights. NEVER use same session as CE Ferulic. Apply after Alpha Arbutin." },
+        { id: "skn-retinol", order: 7, name: "SkinCeuticals Retinol 0.3", type: "retinol", concentration: "0.3%", slot: "pm", frequency: "every-4-days", startedDate: START, frequencyStartedAt: START,
+          notes: "Encapsulated retinol. Currently Phase 1 — every 4 days. Use sandwich method always — moisturiser before and after. Pea size for entire face. Progress frequency only when zero redness for full phase duration." },
+        { id: "skn-cicaplast", order: 8, name: "La Roche-Posay Cicaplast Baume B5+", type: "other", concentration: null, slot: "pm", frequency: "every-4-days", startedDate: START,
+          notes: "Barrier repair. Use ONLY on retinol nights — apply over final moisturiser layer on any dry or peeling areas especially forehead. Auto-shown only when retinol is due that day." },
+        { id: "skn-honeymask", order: 9, name: "Sidr Honey Mask", type: "other", concentration: null, slot: "pm", frequency: "every-3-days", startedDate: START,
+          notes: "Natural antibacterial and brightening mask. Apply to face for 15 minutes then rinse. Use 2x per week on non-retinol nights only. Follow with normal PM routine after rinsing." },
+      ],
+    };
+    if (!state.profile) state.profile = {};
+    state.profile.skinCareSeededV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay skin care routine seeded — 9 products, phase 1");
+  } catch (err) {
+    console.error("[migration] skin care seed failed:", err);
+  }
+}
+
 // Phase 36a: record Jay's accurate omega-3 potency. Product: Bare Biology Life & Soul,
 // 2 caps/day = 1,700mg omega-3 (1,100mg EPA + 500mg DHA). System only had "2 caps".
 async function fixJayOmega3Dose() {
@@ -374,6 +417,7 @@ const server = app.listen(PORT, () => {
   seedJayBloodMarkers();
   fixJayPostWorkoutBerries();
   fixJayOmega3Dose();
+  seedJaySkinCareV1();
 });
 
 const shutdown = async (signal: string) => {
