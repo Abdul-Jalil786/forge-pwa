@@ -89,10 +89,16 @@ let STATE = {
   skinCareLog: {},
 };
 
-// ---- OWNER GATE (Phase 35) — some features are personal to Jay only ----
+// ---- OWNER GATE (Phase 35) — some features are personal to the owner only ----
+const OWNER_EMAIL='jay@afjltd.co.uk';
 function isOwner(){
+  // Primary: the authenticated email captured from /api/auth/me (cached in localStorage)
+  const email=(window._forgeUserEmail||localStorage.getItem('forge_email')||'').toLowerCase();
+  if(email===OWNER_EMAIL)return true;
+  // Fallback: profile fields (older accounts may not have email captured yet)
   const p=STATE.profile||{};
-  return p.email==='jay@afjltd.co.uk' || (p.name && p.name.toLowerCase().startsWith('jay'));
+  if((p.email||'').toLowerCase()===OWNER_EMAIL)return true;
+  return !!(p.name && p.name.toLowerCase().startsWith('jay'));
 }
 
 // ---- SKIN CARE (Phase 35) ----

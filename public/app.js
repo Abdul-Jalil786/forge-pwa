@@ -1462,8 +1462,13 @@ async function checkAuth(){
   try{
     const res=await fetch('/api/auth/me',{headers:{Authorization:'Bearer '+token}});
     if(!res.ok){localStorage.removeItem('forge_token');window.location.href='/login.html';return false;}
+    const data=await res.json().catch(()=>null);
+    if(data&&data.user&&data.user.email){
+      window._forgeUserEmail=data.user.email;
+      localStorage.setItem('forge_email',data.user.email);
+    }
     return true;
-  }catch{return true;} // offline = let them in
+  }catch{return true;} // offline = let them in (cached forge_email still works)
 }
 
 // ---- INIT ----
