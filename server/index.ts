@@ -284,6 +284,40 @@ async function seedJayBloodMarkers() {
   }
 }
 
+// Phase 36a: record Jay's accurate omega-3 potency. Product: Bare Biology Life & Soul,
+// 2 caps/day = 1,700mg omega-3 (1,100mg EPA + 500mg DHA). System only had "2 caps".
+async function fixJayOmega3Dose() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.profile?.omega3DoseFixedV1) return;
+    const DOSE = "2 caps · 1,700mg omega-3 (1,100 EPA / 500 DHA)";
+    const isOmega = (s: any) => s && ((s.id === "omega-3") || (String(s.name || "").toLowerCase().includes("omega")));
+    let changed = 0;
+    // Meal plan per-meal supplements
+    for (const m of (state.mealPlan?.meals || [])) {
+      for (const s of (m.supplements || [])) {
+        if (isOmega(s)) { s.dose = DOSE; changed++; }
+      }
+    }
+    // Phase 19 standalone supplements tracker
+    for (const s of (state.supplements || [])) {
+      if (isOmega(s)) { s.dose = DOSE; changed++; }
+    }
+    // Legacy supps array
+    for (const s of (state.supps || [])) {
+      if (isOmega(s)) { s.dose = DOSE; changed++; }
+    }
+    if (!state.profile) state.profile = {};
+    state.profile.omega3DoseFixedV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] Jay omega-3 dose updated in ${changed} place(s)`);
+  } catch (err) {
+    console.error("[migration] omega-3 dose fix failed:", err);
+  }
+}
+
 // Phase 32a: swap banana → 100g blueberries in Jay's post-workout shake meal.
 // User doesn't take banana in the shake; macros recomputed for blueberries.
 async function fixJayPostWorkoutBerries() {
@@ -339,6 +373,7 @@ const server = app.listen(PORT, () => {
   fixJayVisceralTarget();
   seedJayBloodMarkers();
   fixJayPostWorkoutBerries();
+  fixJayOmega3Dose();
 });
 
 const shutdown = async (signal: string) => {
