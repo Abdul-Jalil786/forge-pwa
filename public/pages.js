@@ -565,18 +565,19 @@ function _fmtQty(q){
   return q+'×';
 }
 
-function openMealDetail(mealId){
+function openMealDetail(mealId,date){
+  const targetDate=date||todayStr();
   const plan=STATE.mealPlan;
   if(!plan)return;
   const m=plan.meals.find(x=>x.id===mealId);
   if(!m)return;
   const ingredients=getMealIngredients(m);
   const supplements=getMealSupplements(m);
-  const todayFoods=getFoods();
+  const dayFoods=getFoods(targetDate);
   const isStringFormat=!Array.isArray(m.ingredients);
-  const granular=todayFoods.filter(f=>f.mealId===m.id);
-  const legacy=todayFoods.find(f=>f.name===m.name&&!f.mealId);
-  const suppLog=getSupplementLog(todayStr());
+  const granular=dayFoods.filter(f=>f.mealId===m.id);
+  const legacy=dayFoods.find(f=>f.name===m.name&&!f.mealId);
+  const suppLog=getSupplementLog(targetDate);
   let ingQty,suppChecked;
   if(granular.length>0){
     const byName=new Map(granular.map(f=>[f.name,f]));
@@ -592,7 +593,7 @@ function openMealDetail(mealId){
     ingQty=ingredients.map(()=>1);
     suppChecked=supplements.map(()=>true);
   }
-  _mds={mealId:m.id,meal:m,ingredients,supplements,ingQty,suppChecked,isStringFormat,
+  _mds={mealId:m.id,meal:m,date:targetDate,ingredients,supplements,ingQty,suppChecked,isStringFormat,
     ingInit:[...ingQty],suppInit:[...suppChecked]};
   _renderMealDetail();
   openModal('modal-meal-detail');
@@ -600,7 +601,7 @@ function openMealDetail(mealId){
 
 function _getMealLogStatus(){
   if(!_mds)return'none';
-  const foods=getFoods();
+  const foods=getFoods(_mds.date);
   const g=foods.filter(f=>f.mealId===_mds.mealId);
   const l=foods.find(f=>f.name===_mds.meal.name&&!f.mealId);
   if(g.length>0){
@@ -692,10 +693,14 @@ function _renderMealDetail(){
 function logMealFromModal(){
   const s=_mds;if(!s)return;
   const m=s.meal;
-  const today=todayStr();
-  const nowIso=new Date().toISOString();
-  // Build final foods array for today: existing entries minus this meal's, plus entries for ingredients with qty > 0
-  const foods=getFoods();
+  const targetDate=s.date||todayStr();
+  const isToday=targetDate===todayStr();
+  // For today, timestamp = now. For a backfilled past meal, use the meal's planned time on that date.
+  const loggedAtIso=isToday
+    ? new Date().toISOString()
+    : new Date(`${targetDate}T${(m.time||'12:00')}:00`).toISOString();
+  // Build final foods array for that date: existing entries minus this meal's, plus entries for ingredients with qty > 0
+  const foods=getFoods(targetDate);
   const filtered=foods.filter(f=>!(f.mealId===m.id||(f.name===m.name&&!f.mealId)));
   const newEntries=[];
   s.ingredients.forEach((ing,i)=>{
@@ -711,7 +716,7 @@ function logMealFromModal(){
         mealId:m.id,
         mealName:m.name,
         quantity:q,
-        loggedAt:nowIso,
+        loggedAt:loggedAtIso,
       });
     }
   });
@@ -719,16 +724,17 @@ function logMealFromModal(){
 
   // Single atomic write — local + server
   const all=pGet('foods',{});
-  all[today]=finalFoods;
+  all[targetDate]=finalFoods;
   STATE.foods=all;
   updateLocalCache();
-  saveFieldToServer(`/api/state/foods/${today}`,{value:finalFoods});
+  saveFieldToServer(`/api/state/foods/${targetDate}`,{value:finalFoods});
 
   // Supplements (separate endpoint, no race)
-  s.supplements.forEach((supp,i)=>setSupplementTaken(today,supp.id,s.suppChecked[i]));
+  s.supplements.forEach((supp,i)=>setSupplementTaken(targetDate,supp.id,s.suppChecked[i]));
 
   closeModal('modal-meal-detail');
-  renderFood();renderToday();
+  if(isToday){ renderFood();renderToday(); }
+  else if(typeof renderDayDetail==='function'){ renderDayDetail(targetDate); }
   if(newEntries.length===0){
     showToast(`${m.name} unlogged`);
   } else if(newEntries.length<s.ingredients.length){
@@ -1436,8 +1442,43 @@ function renderDayDetail(date){
       </div>`).join('')}
     `;
   }
-  html+=`<button class="btn btn-lime btn-sm" style="width:100%;margin-top:10px;font-size:12px;" onclick="openAddFoodForDate('${date}')">+ Add forgotten food to this day</button>`;
   html+=`</div>`;
+
+  // PLANNED MEALS — log/backfill from the meal plan on this date (same modal as Today)
+  const plan=STATE.mealPlan;
+  if(plan&&Array.isArray(plan.meals)&&plan.meals.length){
+    html+=`<div class="sec-label">Plan — log / backfill</div>`;
+    html+=`<div class="card" style="margin-bottom:10px;">`;
+    html+=`<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">Tap a meal to log it (or individual items) for this day.</div>`;
+    plan.meals.forEach(m=>{
+      const ings=getMealIngredients(m);
+      const total=ings.length;
+      const granular=foods.filter(f=>f.mealId===m.id);
+      const legacy=foods.find(f=>f.name===m.name&&!f.mealId);
+      let loggedCount=0,status='none';
+      if(granular.length>0){
+        const ln=new Set(granular.map(f=>f.name));
+        loggedCount=ings.filter(ing=>ln.has(ing.name)).length;
+        status=loggedCount===total?'full':loggedCount>0?'partial':'none';
+      } else if(legacy){ status='full'; loggedCount=total; }
+      const statusIcon=status==='full'?'✓':status==='partial'?'◐':'+ Log';
+      const statusColor=status==='full'?'var(--text3)':status==='partial'?'var(--orange)':'var(--lime)';
+      const dim=status==='full';
+      html+=`<div onclick="openMealDetail('${m.id}','${date}')" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border);cursor:pointer;${dim?'opacity:.6;':''}">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;">${m.time||''}</div>
+            <div style="font-weight:600;font-size:13px;${dim?'text-decoration:line-through;color:var(--text3);':''}">${m.name}</div>
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin-top:3px;">${m.cals||0} kcal · ${m.protein||0}g P${status==='partial'?` · <span style="color:var(--orange);">${loggedCount}/${total} items logged</span>`:''}</div>
+        </div>
+        <div class="btn ${status==='none'?'btn-lime':'btn-ghost'} btn-sm" style="font-size:11px;padding:8px 14px;flex-shrink:0;${status==='partial'?'color:var(--orange);border-color:var(--orange);':''}">${statusIcon}</div>
+      </div>`;
+    });
+    html+=`</div>`;
+  }
+
+  html+=`<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px;font-size:12px;" onclick="openAddFoodForDate('${date}')">+ Add a one-off food (not on plan)</button>`;
 
   // ACTIVITY
   if(steps||cals){
