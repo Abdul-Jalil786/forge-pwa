@@ -33,7 +33,8 @@
       "Bash(python -c \"import pypdf; print\\('have pypdf', pypdf.__version__\\)\")",
       "Bash(python -m pip install pypdf)",
       "Bash(python -m pip install cryptography)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(node --check public/data.js)"
     ]
   }
 }

@@ -1390,6 +1390,8 @@ function JAY_SUPPLEMENTS_V39(){
     {id:'supp-magnesium',name:'Magnesium Glycinate',dose:'300mg',time:'22:00',mealId:'',timing:'bedtime',withFood:false,critical:true,notes:'Sleep support'},
     {id:'metformin-am',name:'Metformin',dose:'1000mg',time:'12:00',mealId:'',timing:'with-food',withFood:true,critical:true,notes:'Medication — take with food'},
     {id:'supp-mounjaro',name:'Mounjaro',dose:'5mg',time:'15:00',mealId:'',timing:'wednesday-meal-2',withFood:true,critical:true,frequency:'weekly-wednesday',notes:'GLP-1 — Wednesday injection after meal 2'},
+    {id:'supp-zinc',name:'Zinc',dose:'30mg',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:false,notes:'With meal 1 — testosterone + immune support'},
+    {id:'supp-coq10',name:'CoQ10',dose:'200mg',time:'15:00',mealId:'',timing:'meal-2',withFood:true,critical:false,notes:'With meal 2 — fat-soluble, statin-induced CoQ10 depletion support'},
   ];
 }
 
