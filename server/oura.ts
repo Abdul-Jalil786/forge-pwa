@@ -111,10 +111,14 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     }
 
     // Steps + calories from daily activity
+    const manualSteps = state.manualSteps || {};
     for (const e of activity.data || []) {
       if (typeof e.steps === "number") {
-        stepsLog[e.day] = e.steps;
-        updated++;
+        // Phase 41: manual step entries override Oura sync
+        if (!manualSteps[e.day]) {
+          stepsLog[e.day] = e.steps;
+          updated++;
+        }
       }
       if (typeof e.total_calories === "number" || typeof e.active_calories === "number") {
         calorieLog[e.day] = {

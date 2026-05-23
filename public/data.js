@@ -96,6 +96,7 @@ let STATE = {
   mounjaroLog: {},
   notifications: [],
   exerciseNotes: {},
+  manualSteps: {},
 };
 
 // ---- OWNER GATE (Phase 35) — some features are personal to the owner only ----
@@ -558,7 +559,14 @@ function deleteTemplate(i){const ts=getTemplates();ts.splice(i,1);pSet('foodTemp
 // ============================================================
 function getStepsLog(){return pGet('stepsLog',{});}
 function getTodaySteps(){return getStepsLog()[todayStr()]||0;}
-function saveSteps(val,date=todayStr()){const l=getStepsLog();l[date]=val;pSet('stepsLog',l);}
+function saveSteps(val,date=todayStr()){
+  const l=getStepsLog();l[date]=val;
+  // Phase 41: tag this date as a manual entry so Oura sync won't overwrite it
+  const m=pGet('manualSteps',{})||{};m[date]=true;
+  STATE.stepsLog=l; STATE.manualSteps=m;
+  localStorage.setItem("forge_state_cache", JSON.stringify(STATE));
+  saveStateDebounced();
+}
 
 // ============================================================
 // EXERCISE LOG
@@ -1386,7 +1394,6 @@ function JAY_SUPPLEMENTS_V39(){
     {id:'vit-d',name:'Vitamin D3',dose:'4,000 IU',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:true,notes:'Fat-soluble — take with food'},
     {id:'omega-3',name:'Omega 3',dose:'2 capsules',time:'15:00',mealId:'',timing:'meal-2',withFood:true,critical:true,notes:'Anti-inflammatory'},
     {id:'supp-omega3-2',name:'Omega 3 (2nd dose)',dose:'2 capsules',time:'17:30',mealId:'',timing:'meal-3',withFood:true,critical:true,notes:'Anti-inflammatory'},
-    {id:'creatine',name:'Creatine',dose:'5g',time:'15:00',mealId:'',timing:'meal-2',withFood:true,critical:false,notes:''},
     {id:'supp-magnesium',name:'Magnesium Glycinate',dose:'300mg',time:'22:00',mealId:'',timing:'bedtime',withFood:false,critical:true,notes:'Sleep support'},
     {id:'metformin-am',name:'Metformin',dose:'1000mg',time:'12:00',mealId:'',timing:'with-food',withFood:true,critical:true,notes:'Medication — take with food'},
     {id:'supp-mounjaro',name:'Mounjaro',dose:'5mg',time:'15:00',mealId:'',timing:'wednesday-meal-2',withFood:true,critical:true,frequency:'weekly-wednesday',notes:'GLP-1 — Wednesday injection after meal 2'},
