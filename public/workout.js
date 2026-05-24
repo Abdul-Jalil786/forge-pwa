@@ -37,6 +37,8 @@ function renderWorkout(){
       <div class="rest-title">Rest Day</div>
       <div class="rest-sub">${isToday?'Recovery is where the gains happen.<br>Walk, swim, sleep well.':'Rest day.'}</div>
     </div>`;
+    // Phase 41: mobility section visible on rest days too (today only)
+    if(isToday&&typeof renderStretchCards==='function')html+=renderStretchCards();
     el.innerHTML=html;
     return;
   }
@@ -64,6 +66,9 @@ function renderWorkout(){
     </div>
     <div class="sec-label">Exercises (tap to view/edit)</div>
     <div id="exList">${w.exercises.map(ex=>buildExItem(ex,dayLog,prev,isFuture)).join('')}</div>`;
+
+  // Phase 41: mobility section under the exercise list (today only)
+  if(isToday&&typeof renderStretchCards==='function')html+=renderStretchCards();
 
   el.innerHTML=html;
 }

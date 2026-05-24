@@ -1705,6 +1705,7 @@ function _smClose(){
   _smClearTimer();
   document.getElementById('stretchMode').style.display='none';
   sm.active=false;
+  if(typeof renderWorkout==='function')renderWorkout();
   if(typeof renderToday==='function')renderToday();
   if(typeof renderMore==='function')renderMore();
 }
