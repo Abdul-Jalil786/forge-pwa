@@ -1233,8 +1233,6 @@ const STRENGTH_STD = {
   l4: { name:'Leg Curl',             male:[0.40, 0.70, 0.95, 1.20] },
   l5: { name:'Hip Thrust',           male:[1.00, 1.50, 2.25, 3.00] },
   l6: { name:'Calf Raise',           male:[1.00, 1.50, 2.00, 2.75] },
-  l7_cable_pull: { name:'Cable Pull Through',  male:[0.40, 0.65, 0.95, 1.25] },
-  l8_rev_hyper:  { name:'Reverse Hyperext.',   male:[0.30, 0.50, 0.75, 1.00] },
 };
 
 const STRENGTH_TIERS = [

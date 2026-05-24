@@ -268,8 +268,8 @@ const EX_NAMES: Record<string, string> = {
   u1: "Chest Press", u2: "Incline Dumbbell Press", u3: "Seated Row", u4: "Shoulder Press",
   u5: "Lat Pulldown", u6: "Bicep Curl", u7: "Tricep Pushdown", u8: "Face Pull", u9: "Plank",
   l1: "Leg Press", l2: "Romanian Deadlift", l3: "Leg Extension", l4: "Leg Curl",
-  l5: "Hip Thrust", l6: "Calf Raise", l7_cable_pull: "Cable Pull Through",
-  l8_rev_hyper: "Reverse Hyperextension", l8: "Ab Crunch", core_dead_bug: "Dead Bug",
+  l5: "Hip Thrust", l6: "Calf Raise", l8: "Ab Crunch",
+  core_dead_bug: "Dead Bug", neck_ext: "Neck Extension (lying)",
 };
 
 // Phase 38: per-lift detailed history — last 4 sessions per exercise
