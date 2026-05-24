@@ -1692,7 +1692,253 @@ function confirmReset(){
   }
 }
 
-// ---- NOTIFICATIONS (Phase 40 + 41 backfill actions) ----
+// ============================================================
+// PHASE 41 — GUIDED STRETCH MODE (owner-only)
+// ============================================================
+let sm = { active:false, type:null, idx:0, side:null, repCount:0, sideStartedAt:0, totalStartedAt:0, timerInterval:null, paused:false };
+
+function _smRoutine(){ return (typeof STRETCH_ROUTINES!=='undefined')?STRETCH_ROUTINES[sm.type]:null; }
+function _smCurrent(){ const r=_smRoutine(); return r?r.stretches[sm.idx]:null; }
+
+function _smClearTimer(){ if(sm.timerInterval){clearInterval(sm.timerInterval);sm.timerInterval=null;} }
+function _smClose(){
+  _smClearTimer();
+  document.getElementById('stretchMode').style.display='none';
+  sm.active=false;
+  if(typeof renderToday==='function')renderToday();
+  if(typeof renderMore==='function')renderMore();
+}
+
+function startStretchMode(type){
+  if(typeof isStretchUser!=='function'||!isStretchUser()){showToast('Not available');return;}
+  if(!STRETCH_ROUTINES[type]){showToast('Unknown routine');return;}
+  sm = {active:true, type, idx:0, side:null, repCount:0, sideStartedAt:0, totalStartedAt:Date.now(), timerInterval:null, paused:false};
+  document.getElementById('stretchMode').style.display='block';
+  renderSmOutline();
+}
+
+function renderSmOutline(){
+  _smClearTimer();
+  const r=_smRoutine(); if(!r)return _smClose();
+  const today=todayStr();
+  const log=getStretchLog(today)[sm.type]||{};
+  const done=log.completedStretches||[];
+  const skipped=log.skippedStretches||[];
+  document.getElementById('smContent').innerHTML=`
+    <button onclick="_smClose()" style="background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;float:right;margin-top:-4px;">✕</button>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">${sm.type==='morning'?'🌅 Morning':'🌙 Evening'}</div>
+    <div style="font-family:'Archivo Black',sans-serif;font-size:22px;margin:4px 0 4px;letter-spacing:-.3px;">${r.title}</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">${r.subtitle}</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:20px;">${r.totalMinutes} min · ${r.stretches.length} stretches · best time: ${r.bestTime}</div>
+    <div style="margin-bottom:20px;">
+      ${r.stretches.map((s,i)=>{
+        const did=done.includes(s.id), skp=skipped.includes(s.id);
+        const dot=did?'✓':skp?'↷':String(i+1);
+        const color=did?'var(--green)':skp?'var(--text3)':'var(--text2)';
+        const dur=s.unit==='seconds'?Math.round(s.duration)+'s':s.duration+' '+s.unit;
+        const sided=s.sides?' · L+R':'';
+        return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="width:28px;height:28px;border-radius:50%;background:${did?'var(--green)':'var(--s2)'};color:${did?'var(--bg)':color};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;">${dot}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:600;color:${did?'var(--text)':skp?'var(--text3)':'var(--text)'};${skp?'text-decoration:line-through;':''}">${s.name}</div>
+            <div style="font-size:10px;color:var(--text3);">${dur}${sided}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <button class="btn btn-lime btn-full" style="padding:14px;font-size:15px;" onclick="smBeginSession()">${done.length+skipped.length>0?'Continue session →':'Begin session →'}</button>
+  `;
+}
+
+function smBeginSession(){
+  const today=todayStr();
+  const log=getStretchLog(today)[sm.type]||{};
+  const done=log.completedStretches||[];
+  const skipped=log.skippedStretches||[];
+  const r=_smRoutine();
+  // resume at first undone/unskipped stretch
+  sm.idx=r.stretches.findIndex(s=>!done.includes(s.id)&&!skipped.includes(s.id));
+  if(sm.idx<0){ smShowDone(); return; }
+  renderSmActive();
+}
+
+function renderSmActive(){
+  _smClearTimer();
+  const s=_smCurrent(); if(!s)return smShowDone();
+  const r=_smRoutine();
+  const isTimed=s.unit==='seconds';
+  const isReps=!isTimed;
+  if(s.sides && !sm.side) sm.side='left';
+  if(!s.sides) sm.side=null;
+  sm.repCount=0;
+  sm.sideStartedAt=Date.now();
+
+  const sideLabel=s.sides?`<div style="font-family:'Archivo Black',sans-serif;font-size:28px;color:var(--lime);letter-spacing:1px;margin-bottom:8px;">${sm.side==='left'?'LEFT SIDE':'RIGHT SIDE'}</div>`:'';
+
+  const timerHtml=isTimed?`
+    <div style="text-align:center;padding:24px 0;">
+      <div id="sm-timer" style="font-family:'Archivo Black',sans-serif;font-size:80px;letter-spacing:-3px;color:var(--blue);line-height:1;">${s.duration}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;">seconds</div>
+    </div>
+    <button class="btn btn-ghost btn-full" style="margin-bottom:10px;" onclick="smPauseToggle()">⏸ Pause</button>
+  `:`
+    <div style="text-align:center;padding:24px 0;">
+      <div id="sm-reps" style="font-family:'Archivo Black',sans-serif;font-size:80px;letter-spacing:-3px;color:var(--lime);line-height:1;">0<span style="font-size:30px;color:var(--text3);">/${s.duration}</span></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;">${s.unit}</div>
+    </div>
+    <button class="btn btn-lime btn-full" style="margin-bottom:10px;padding:16px;font-size:16px;" onclick="smIncrementRep()">+ Rep</button>
+  `;
+
+  document.getElementById('smContent').innerHTML=`
+    <button onclick="_smClose()" style="background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;float:right;margin-top:-4px;">✕</button>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">${sm.idx+1} of ${r.stretches.length}</div>
+    <div style="font-family:'Archivo Black',sans-serif;font-size:24px;margin:4px 0 8px;letter-spacing:-.5px;">${s.name}</div>
+    ${sideLabel}
+    <div style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:14px;">${_esc(s.instructions)}</div>
+    <div style="font-size:11px;color:var(--text2);background:var(--s2);border-left:3px solid var(--lime);padding:10px 12px;border-radius:6px;margin-bottom:10px;line-height:1.5;">${_esc(s.benefit)}</div>
+    <div style="font-size:11px;color:var(--lime);font-style:italic;margin-bottom:14px;line-height:1.5;">💡 ${_esc(s.cue)}</div>
+    ${s.injury_note?`<div style="font-size:11px;color:#ffc107;background:rgba(255,193,7,.08);border:1px solid rgba(255,193,7,.3);padding:8px 12px;border-radius:6px;margin-bottom:14px;">⚕️ ${_esc(s.injury_note)}</div>`:''}
+    ${timerHtml}
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="smPrevStretch()" ${sm.idx===0?'disabled':''}>← Back</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1;color:var(--text3);" onclick="smSkipStretch()">Skip</button>
+    </div>
+  `;
+
+  if(isTimed){
+    sm.paused=false;
+    let remaining=s.duration;
+    sm.timerInterval=setInterval(()=>{
+      if(sm.paused)return;
+      remaining--;
+      const t=document.getElementById('sm-timer');
+      if(t)t.textContent=Math.max(0,remaining);
+      if(remaining<=0){
+        _smClearTimer();
+        if(t){t.style.color='var(--green)';}
+        if(navigator.vibrate)navigator.vibrate(180);
+        setTimeout(_smAdvanceFromTimer,500);
+      }
+    },1000);
+  }
+}
+
+function smPauseToggle(){ sm.paused=!sm.paused; showToast(sm.paused?'Paused':'Resumed'); }
+
+function smIncrementRep(){
+  const s=_smCurrent(); if(!s)return;
+  sm.repCount++;
+  const el=document.getElementById('sm-reps');
+  if(el)el.innerHTML=`${sm.repCount}<span style="font-size:30px;color:var(--text3);">/${s.duration}</span>`;
+  if(sm.repCount>=s.duration){
+    if(navigator.vibrate)navigator.vibrate(180);
+    setTimeout(_smAdvanceFromTimer,300);
+  }
+}
+
+function _smAdvanceFromTimer(){
+  const s=_smCurrent(); if(!s)return;
+  if(s.sides && sm.side==='left'){
+    // switch sides
+    sm.side='right';
+    showToast('Switch to right side');
+    renderSmActive();
+    return;
+  }
+  smCompleteStretch();
+}
+
+function smCompleteStretch(){
+  _smClearTimer();
+  const s=_smCurrent(); if(!s)return;
+  markStretchDone(todayStr(),sm.type,s.id);
+  sm.side=null;
+  const r=_smRoutine();
+  if(sm.idx>=r.stretches.length-1){ smShowDone(); return; }
+  renderSmRest(r.stretches[sm.idx+1]);
+}
+
+function smSkipStretch(){
+  _smClearTimer();
+  const s=_smCurrent(); if(!s)return;
+  markStretchSkipped(todayStr(),sm.type,s.id);
+  sm.side=null;
+  const r=_smRoutine();
+  if(sm.idx>=r.stretches.length-1){ smShowDone(); return; }
+  renderSmRest(r.stretches[sm.idx+1]);
+}
+
+function smPrevStretch(){
+  _smClearTimer();
+  if(sm.idx===0)return;
+  sm.idx--;
+  sm.side=null;
+  renderSmActive();
+}
+
+function renderSmRest(next){
+  _smClearTimer();
+  const REST=10;
+  document.getElementById('smContent').innerHTML=`
+    <button onclick="_smClose()" style="background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;float:right;margin-top:-4px;">✕</button>
+    <div style="text-align:center;margin-top:60px;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:2px;font-weight:700;">Next up</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:24px;margin:8px 0 16px;">${_esc(next.name)}</div>
+      <div id="sm-rest" style="font-family:'Archivo Black',sans-serif;font-size:64px;color:var(--lime);">${REST}</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px;">rest</div>
+    </div>
+    <button class="btn btn-lime btn-full" style="margin-top:30px;" onclick="smSkipRest()">Skip rest →</button>
+  `;
+  let r=REST;
+  sm.timerInterval=setInterval(()=>{
+    r--;
+    const el=document.getElementById('sm-rest');
+    if(el)el.textContent=Math.max(0,r);
+    if(r<=0){ _smClearTimer(); smSkipRest(); }
+  },1000);
+}
+
+function smSkipRest(){
+  _smClearTimer();
+  sm.idx++;
+  renderSmActive();
+}
+
+function smShowDone(){
+  _smClearTimer();
+  const today=todayStr();
+  const log=getStretchLog(today)[sm.type]||{};
+  const r=_smRoutine();
+  const done=(log.completedStretches||[]).length;
+  const skipped=(log.skippedStretches||[]).length;
+  const totalMin=Math.max(1,Math.round((Date.now()-sm.totalStartedAt)/60000));
+  // streak preview (will be re-saved properly in smSaveFeel)
+  const projectedStreak=getStretchStreak(sm.type)+(isRoutineComplete(today,sm.type)?0:1);
+  document.getElementById('smContent').innerHTML=`
+    <button onclick="_smClose()" style="background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;float:right;margin-top:-4px;">✕</button>
+    <div style="text-align:center;margin-top:30px;">
+      <div style="font-size:50px;margin-bottom:8px;">✨</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:24px;margin-bottom:6px;">${r.title} complete</div>
+      <div style="font-size:13px;color:var(--text2);">${done} of ${r.stretches.length} stretches · ${totalMin} min${skipped?` · ${skipped} skipped`:''}</div>
+      <div style="font-size:12px;color:var(--lime);margin-top:8px;">🔥 Day ${projectedStreak} of streak</div>
+    </div>
+    <div style="margin-top:30px;">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:10px;text-align:center;">How are you feeling?</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <button class="btn btn-ghost btn-sm" style="padding:14px 0;" onclick="smSaveFeel('better')">Better</button>
+        <button class="btn btn-ghost btn-sm" style="padding:14px 0;" onclick="smSaveFeel('same')">Same</button>
+        <button class="btn btn-ghost btn-sm" style="padding:14px 0;" onclick="smSaveFeel('unsure')">Unsure</button>
+      </div>
+    </div>
+    <button class="btn btn-lime btn-full" style="margin-top:20px;" onclick="smSaveFeel(null)">Save & close</button>
+  `;
+}
+
+function smSaveFeel(feel){
+  saveStretchSession(todayStr(),sm.type,feel);
+  showToast(`${sm.type==='morning'?'Morning':'Evening'} routine saved ✓`);
+  _smClose();
+}
 const NOTIF_AREA_ICON={food:'🍳',training:'🏋️',supplements:'💊',skin:'🧴',water:'💧'};
 function _gapRowHtml(g){
   const ic=NOTIF_AREA_ICON[g.area]||'•';

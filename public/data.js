@@ -96,6 +96,8 @@ let STATE = {
   notifications: [],
   exerciseNotes: {},
   manualSteps: {},
+  stretchLog: {},
+  stretchStreak: { morning: 0, evening: 0, combined: 0, lastMorningDate: null, lastEveningDate: null },
 };
 
 // ---- OWNER GATE (Phase 35) — some features are personal to the owner only ----
@@ -1385,6 +1387,192 @@ function getMissedCriticalSupplements(date){
   });
 }
 function getSupplementCompliance(days){return getSupplementAdherence(days);}
+// ============================================================
+// PHASE 41 — STRETCH ROUTINES (owner-only feature)
+// ============================================================
+const STRETCH_ROUTINES = {
+  morning: {
+    id: 'morning',
+    title: 'Morning Mobility',
+    subtitle: 'Wake up — fix posture — protect lower back',
+    totalMinutes: 12,
+    bestTime: 'On waking — before anything else',
+    stretches: [
+      { id:'s1_childs_pose', name:"Child's Pose", duration:90, unit:'seconds', sides:false,
+        instructions:"Kneel on floor. Sit back toward heels. Extend arms forward on floor. Let lower back release completely. Breathe deeply into the stretch.",
+        benefit:"Decompresses spine after sleep. Most important stretch for lower back injury.",
+        cue:"Focus on breathing out tension in lower back",
+        injury_note:"Safe for lower back injury — therapeutic" },
+      { id:'s2_cat_cow', name:'Cat Cow', duration:10, unit:'reps', sides:false,
+        instructions:"On hands and knees. Arch back up toward ceiling — hold 2 seconds. Drop belly toward floor — hold 2 seconds. Alternate slowly.",
+        benefit:"Lubricates spine. Restores spinal mobility. Warms up every vertebra.",
+        cue:"Slow and controlled — feel every vertebra moving" },
+      { id:'s3_hip_flexor', name:'Hip Flexor Stretch', duration:60, unit:'seconds', sides:true,
+        instructions:"Kneel on one knee. Front foot forward. Push hips forward gently until stretch felt in front of rear hip. Keep torso upright. Do not lean forward.",
+        benefit:"Fixes anterior pelvic tilt. Directly reduces lower back pain. Counteracts sitting all day.",
+        cue:"Tuck pelvis under slightly to deepen stretch" },
+      { id:'s4_glute_bridge', name:'Glute Bridge Activation', duration:20, unit:'reps', sides:false,
+        instructions:"Lie on back. Knees bent. Feet flat on floor. Push hips up toward ceiling. Squeeze glutes at top. Hold 2 seconds. Lower slowly.",
+        benefit:"Activates dormant glutes. Counteracts flat glute development. Wakes up posterior chain.",
+        cue:"Squeeze glutes hard at top — not just lifting hips" },
+      { id:'s5_chest_stretch', name:'Doorway Chest Stretch', duration:45, unit:'seconds', sides:false,
+        instructions:"Stand in doorway. Arms out at 90 degrees. Forearms against door frame. Lean gently forward until stretch felt across chest and front shoulders.",
+        benefit:"Fixes forward shoulder rounding. Opens chest. Makes shoulders look broader.",
+        cue:"Keep chin up — do not let head drop forward" },
+      { id:'s6_thoracic_rotation', name:'Thoracic Rotation', duration:10, unit:'reps each side', sides:true,
+        instructions:"Sit cross legged on floor. Hands behind head. Rotate upper body left and right slowly. Keep hips still. Only upper back rotates.",
+        benefit:"Improves upper back mobility. Reduces stiffness from sitting. Improves posture.",
+        cue:"Lead with elbow — rotate as far as comfortable" },
+      { id:'s7_pelvic_tilt', name:'Pelvic Tilt', duration:15, unit:'reps', sides:false,
+        instructions:"Lie on back. Knees bent. Flatten lower back into floor by squeezing glutes and abs simultaneously. Hold 5 seconds. Release. Repeat.",
+        benefit:"Directly corrects anterior pelvic tilt. Retrains core and glutes. Visually flattens stomach.",
+        cue:"Imagine pressing your lower back like a stamp into the floor" },
+      { id:'s8_hamstring_stretch', name:'Standing Hamstring Stretch', duration:45, unit:'seconds', sides:true,
+        instructions:"Stand tall. Place one heel on a low surface or keep foot on floor. Keep leg straight. Hinge forward from hips — not waist — until stretch felt in back of thigh.",
+        benefit:"Releases tight hamstrings pulling pelvis forward. Supports RDL performance. Reduces lower back pain.",
+        cue:"Hinge from hips not waist — keep back flat" },
+    ],
+  },
+  evening: {
+    id: 'evening',
+    title: 'Evening Recovery',
+    subtitle: 'Release the day — recover — prepare for sleep',
+    totalMinutes: 15,
+    bestTime: '60–90 minutes before bedtime',
+    stretches: [
+      { id:'e1_childs_pose', name:"Child's Pose", duration:90, unit:'seconds', sides:false,
+        instructions:"Kneel on floor. Sit back toward heels. Extend arms forward on floor. Focus on releasing accumulated tension from the day. Breathe deeply.",
+        benefit:"Releases spinal compression from full day. Calms nervous system. Prepares body for sleep.",
+        cue:"Let every muscle release — nothing to do now" },
+      { id:'e2_figure_four', name:'Figure Four Glute Stretch', duration:60, unit:'seconds', sides:true,
+        instructions:"Lie on back. Cross right ankle over left knee. Pull both legs toward chest. Hold behind left thigh. Keep head on floor.",
+        benefit:"Releases glutes and piriformis after training and sitting. Reduces lower back pain overnight.",
+        cue:"Flex the foot of the crossed leg to protect the knee" },
+      { id:'e3_forward_fold', name:'Seated Forward Fold', duration:60, unit:'seconds', sides:false,
+        instructions:"Sit on floor. Legs straight in front. Reach toward feet as far as comfortable. Do not round the back aggressively. Breathe and relax into it.",
+        benefit:"Lengthens entire posterior chain. Releases hamstrings, lower back and calves simultaneously.",
+        cue:"Do not force — breathe and let gravity do the work" },
+      { id:'e4_spinal_twist', name:'Supine Spinal Twist', duration:60, unit:'seconds', sides:true,
+        instructions:"Lie on back. Bring one knee across body toward floor. Keep both shoulders flat on floor. Arms out to sides. Look away from the knee.",
+        benefit:"Decompresses lumbar spine. Releases lower back tension. One of best pre-sleep stretches.",
+        cue:"Keep shoulders flat — let gravity rotate the hip" },
+      { id:'e5_legs_up_wall', name:'Legs Up the Wall', duration:180, unit:'seconds', sides:false,
+        instructions:"Sit sideways against wall. Swing legs up wall. Lie flat on back. Arms by sides. Close eyes. Breathe slowly.",
+        benefit:"Reverses blood pooling in legs. Reduces leg inflammation after training. Signals body day is over.",
+        cue:"Close eyes — this is the transition from day to rest" },
+      { id:'e6_neck_rolls', name:'Neck Rolls', duration:10, unit:'reps each direction', sides:true,
+        instructions:"Sit comfortably. Drop chin to chest. Slowly roll head to one side — back — other side — forward. Gentle and slow. Never force.",
+        benefit:"Releases neck tension from screens and driving. Maintains mobility as neck exercises are added.",
+        cue:"Slow is more effective than fast — feel every point of tension" },
+      { id:'e7_deep_breathing', name:'4-7-8 Breathing', duration:300, unit:'seconds', sides:false,
+        instructions:"Sit or lie comfortably. Inhale through nose for 4 counts. Hold for 7 counts. Exhale through mouth for 8 counts. Repeat for 5 minutes.",
+        benefit:"Activates parasympathetic nervous system. Lowers cortisol. Most powerful non-pharmaceutical sleep aid.",
+        cue:"The exhale longer than inhale is the key — this is what calms the nervous system" },
+    ],
+  },
+};
+
+// Owner-only gate for the stretching feature (jay@afjltd.co.uk).
+// Wraps isOwner() so the spec's contract is preserved.
+function isStretchUser(){
+  return (typeof isOwner==='function')?isOwner():false;
+}
+
+function getStretchRoutine(type){ return STRETCH_ROUTINES[type]||null; }
+function getStretchLog(date){ return (pGet('stretchLog',{})[date||todayStr()])||{}; }
+function _ensureStretchDay(log,date,type){
+  if(!log[date])log[date]={};
+  if(!log[date][type])log[date][type]={completed:false,startedAt:null,completedAt:null,completedStretches:[],skippedStretches:[]};
+  return log[date][type];
+}
+function markStretchDone(date,type,stretchId){
+  const log=pGet('stretchLog',{});
+  const r=_ensureStretchDay(log,date,type);
+  if(!r.startedAt)r.startedAt=new Date().toISOString();
+  if(!r.completedStretches.includes(stretchId))r.completedStretches.push(stretchId);
+  r.skippedStretches=r.skippedStretches.filter(x=>x!==stretchId);
+  STATE.stretchLog=log;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/stretch-log/${date}`,{value:log[date]});
+}
+function markStretchSkipped(date,type,stretchId){
+  const log=pGet('stretchLog',{});
+  const r=_ensureStretchDay(log,date,type);
+  if(!r.startedAt)r.startedAt=new Date().toISOString();
+  if(!r.skippedStretches.includes(stretchId))r.skippedStretches.push(stretchId);
+  r.completedStretches=r.completedStretches.filter(x=>x!==stretchId);
+  STATE.stretchLog=log;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/stretch-log/${date}`,{value:log[date]});
+}
+function saveStretchSession(date,type,feel){
+  const log=pGet('stretchLog',{});
+  if(!log[date]||!log[date][type])return;
+  const r=log[date][type];
+  r.completedAt=new Date().toISOString();
+  r.completed=true;
+  if(feel)r.feel=feel;
+  STATE.stretchLog=log;
+  // recompute streak quickly
+  const streak=pGet('stretchStreak',{morning:0,evening:0,combined:0});
+  streak[type]=getStretchStreak(type);
+  streak.lastMorningDate=type==='morning'?date:streak.lastMorningDate;
+  streak.lastEveningDate=type==='evening'?date:streak.lastEveningDate;
+  STATE.stretchStreak=streak;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/stretch-log/${date}`,{value:log[date]});
+}
+function isRoutineComplete(date,type){
+  const log=pGet('stretchLog',{});
+  return !!(log[date]&&log[date][type]&&log[date][type].completed);
+}
+function getStretchStreak(type){
+  const log=pGet('stretchLog',{});
+  let streak=0;
+  for(let i=0;i<400;i++){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const ds=_ukDate(d);
+    const entry=(log[ds]||{})[type];
+    if(!entry||!entry.completed){
+      if(i===0)continue; // today incomplete doesn't break the streak yet
+      break;
+    }
+    streak++;
+  }
+  return streak;
+}
+function getStretchCompliance(days){
+  const log=pGet('stretchLog',{});
+  let mDone=0,eDone=0;
+  for(let i=0;i<days;i++){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const entry=log[_ukDate(d)]||{};
+    if(entry.morning&&entry.morning.completed)mDone++;
+    if(entry.evening&&entry.evening.completed)eDone++;
+  }
+  const total=days;
+  return {
+    morning:{done:mDone,total,pct:Math.round((mDone/total)*100)},
+    evening:{done:eDone,total,pct:Math.round((eDone/total)*100)},
+    combined:{done:mDone+eDone,total:total*2,pct:Math.round(((mDone+eDone)/(total*2))*100)},
+  };
+}
+function getMostSkippedStretch(days,type){
+  const log=pGet('stretchLog',{});
+  const counts={};
+  for(let i=0;i<days;i++){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const entry=(log[_ukDate(d)]||{})[type];
+    if(!entry||!Array.isArray(entry.skippedStretches))continue;
+    entry.skippedStretches.forEach(id=>{counts[id]=(counts[id]||0)+1;});
+  }
+  let topId=null,topN=0;
+  for(const [id,n] of Object.entries(counts)){if(n>topN){topN=n;topId=id;}}
+  if(!topId)return null;
+  const s=(STRETCH_ROUTINES[type]?.stretches||[]).find(x=>x.id===topId);
+  return {id:topId,name:s?.name||topId,count:topN};
+}
+
 // Canonical supplement list for Jay (Phase 39)
 function JAY_SUPPLEMENTS_V39(){
   return [

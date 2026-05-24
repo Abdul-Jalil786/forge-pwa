@@ -280,6 +280,8 @@ function renderToday(){
 
     ${renderSkinSection()}
 
+    ${renderStretchCards()}
+
     <div class="sec-label">Streaks</div>
     <div class="sg sg3">
       <div class="sb lime"><div class="l">Gym</div><div class="v">${gymStreak}<span class="u">days</span></div></div>
@@ -2563,6 +2565,8 @@ function renderMore(){
     ${renderSkinRoutineRules()}
     `:''}
 
+    ${renderStretchHistory()}
+
     <div class="sec-label">Food Preferences</div>
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
@@ -2755,6 +2759,113 @@ function renderProteinDistribution(){
       }).join('')}
     </div>
     ${score?`<div style="font-size:11px;color:var(--text2);">${score.label} · ${score.hits}/${score.total} meals ≥40g</div>`:''}
+  </div>`;
+}
+
+// ============================================================
+// PHASE 41 — STRETCH CARDS (owner-only)
+// ============================================================
+function renderStretchCards(){
+  if(typeof isStretchUser!=='function'||!isStretchUser())return '';
+  const today=todayStr();
+  const log=getStretchLog(today);
+  const now=new Date();
+  const hr=now.getHours();
+  const mStreak=getStretchStreak('morning');
+  const eStreak=getStretchStreak('evening');
+
+  const mDone=!!(log.morning&&log.morning.completed);
+  const eDone=!!(log.evening&&log.evening.completed);
+
+  // Morning card — visible all day, message varies by time + state
+  let mCard;
+  if(mDone){
+    const dur=(log.morning.startedAt&&log.morning.completedAt)?Math.max(1,Math.round((new Date(log.morning.completedAt).getTime()-new Date(log.morning.startedAt).getTime())/60000)):null;
+    mCard=`<div class="card" style="margin-bottom:10px;border-color:var(--green);background:linear-gradient(135deg,rgba(0,232,122,.05),transparent);">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div><div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:var(--green);">✅ Morning Mobility</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:3px;">${dur?dur+' min · ':''}Day ${mStreak} of streak 🔥</div></div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;" onclick="startStretchMode('morning')">Redo</button>
+      </div>
+    </div>`;
+  } else if(hr<12){
+    mCard=`<div class="card" style="margin-bottom:10px;border-color:#ffc107;background:linear-gradient(135deg,rgba(255,193,7,.05),transparent);">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:#ffc107;">🌅 Morning Mobility</div>
+      <div style="font-size:12px;color:var(--text2);margin:4px 0 10px;">Start your day right — 12 minutes · 8 stretches</div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="startStretchMode('morning')">Start morning routine</button>
+    </div>`;
+  } else {
+    mCard=`<div class="card" style="margin-bottom:10px;border-color:var(--orange);background:linear-gradient(135deg,rgba(255,85,0,.04),transparent);">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:13px;color:var(--orange);">⚠️ Morning routine not done</div>
+      <div style="font-size:12px;color:var(--text2);margin:4px 0 10px;">Still worth doing — better late than never (12 min)</div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;" onclick="startStretchMode('morning')">Do it now</button>
+    </div>`;
+  }
+
+  // Evening card — visible after 17:00
+  let eCard='';
+  if(eDone){
+    const dur=(log.evening.startedAt&&log.evening.completedAt)?Math.max(1,Math.round((new Date(log.evening.completedAt).getTime()-new Date(log.evening.startedAt).getTime())/60000)):null;
+    eCard=`<div class="card" style="margin-bottom:10px;border-color:var(--green);background:linear-gradient(135deg,rgba(0,232,122,.05),transparent);">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div><div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:var(--green);">✅ Evening Recovery</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:3px;">${dur?dur+' min · ':''}Day ${eStreak} of streak 🔥</div></div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;" onclick="startStretchMode('evening')">Redo</button>
+      </div>
+    </div>`;
+  } else if(hr>=17&&hr<22){
+    eCard=`<div class="card" style="margin-bottom:10px;border-color:var(--blue);background:linear-gradient(135deg,rgba(61,155,255,.05),transparent);">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:var(--blue);">🌙 Evening Recovery</div>
+      <div style="font-size:12px;color:var(--text2);margin:4px 0 10px;">Wind down and prepare for sleep — 15 minutes · 7 stretches</div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="startStretchMode('evening')">Start evening routine</button>
+    </div>`;
+  } else if(hr>=22){
+    eCard=`<div class="card" style="margin-bottom:10px;border-color:var(--orange);background:linear-gradient(135deg,rgba(255,85,0,.04),transparent);">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:13px;color:var(--orange);">⚠️ Evening routine not done</div>
+      <div style="font-size:12px;color:var(--text2);margin:4px 0 10px;">Do it now — it will improve your sleep + HRV</div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;" onclick="startStretchMode('evening')">Do it now</button>
+    </div>`;
+  }
+
+  return `<div class="sec-label">Mobility</div>${mCard}${eCard}`;
+}
+
+// More page stretch history — owner-only
+function renderStretchHistory(){
+  if(typeof isStretchUser!=='function'||!isStretchUser())return '';
+  const c=getStretchCompliance(7);
+  const mStreak=getStretchStreak('morning');
+  const eStreak=getStretchStreak('evening');
+  const log=pGet('stretchLog',{});
+  const total=Object.values(log).reduce((s,d)=>s+((d.morning?.completed?1:0)+(d.evening?.completed?1:0)),0);
+  const today=todayStr();
+  // 7-day dot grid: green=both done, amber=one done or partial, red=none, grey=future (not applicable here)
+  const days=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const ds=_ukDate(d);
+    const entry=log[ds]||{};
+    const m=!!entry.morning?.completed, e=!!entry.evening?.completed;
+    const mPartial=entry.morning&&!entry.morning.completed&&(entry.morning.completedStretches||[]).length>0;
+    const ePartial=entry.evening&&!entry.evening.completed&&(entry.evening.completedStretches||[]).length>0;
+    let color,label;
+    if(m&&e){color='var(--green)';label='Both';}
+    else if(m||e){color='#ffc107';label=m?'AM only':'PM only';}
+    else if(mPartial||ePartial){color='var(--orange)';label='Partial';}
+    else if(ds<=today){color='var(--red)';label='None';}
+    else {color='var(--border)';label='—';}
+    days.push({ds,color,label,short:new Date(ds+'T12:00:00').toLocaleDateString('en-GB',{weekday:'narrow'})});
+  }
+  return `<div class="sec-label">Stretching · Mobility</div>
+  <div class="card" style="margin-bottom:10px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+      <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Morning · 7d</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:${c.morning.pct>=70?'var(--green)':c.morning.pct>=40?'var(--orange)':'var(--red)'};">${c.morning.done}<span style="font-size:11px;">/7</span></div><div style="font-size:10px;color:var(--text3);">🔥 ${mStreak} day streak</div></div>
+      <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Evening · 7d</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:${c.evening.pct>=70?'var(--green)':c.evening.pct>=40?'var(--orange)':'var(--red)'};">${c.evening.done}<span style="font-size:11px;">/7</span></div><div style="font-size:10px;color:var(--text3);">🔥 ${eStreak} day streak</div></div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:6px;">
+      ${days.map(d=>`<div style="flex:1;text-align:center;"><div style="width:24px;height:24px;border-radius:50%;background:${d.color};margin:0 auto;" title="${d.ds} · ${d.label}"></div><div style="font-size:9px;color:var(--text3);margin-top:3px;">${d.short}</div></div>`).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">Total sessions completed: ${total} · combined ${c.combined.pct}% (last 7d)</div>
   </div>`;
 }
 

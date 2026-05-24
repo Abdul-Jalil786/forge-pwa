@@ -597,6 +597,7 @@ dateKeyedRoute("/fasting-log/:date", "fastingLog");
 dateKeyedRoute("/mounjaro-log/:date", "mounjaroLog");
 dateKeyedRoute("/water-log/:date", "waterLog");
 dateKeyedRoute("/supplement-log/:date", "supplementLog");
+dateKeyedRoute("/stretch-log/:date", "stretchLog"); // Phase 41 (owner-only feature, but endpoint is per-user data)
 
 // Phase 39: dynamic calorie/macro targets (subfield of profile)
 router.put("/profile/dynamic-targets", requireAuth, async (req: Request, res: Response) => {

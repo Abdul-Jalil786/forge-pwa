@@ -342,6 +342,102 @@ function buildSleepPerformance(state: any): string {
 }
 
 // Phase 39: nutrition system context — fasting, water, Mounjaro, protein distribution
+// Phase 41: stretching/mobility compliance context (only emitted when stretchLog has data)
+function buildStretchContext(state: any): string {
+  const log = state.stretchLog || {};
+  if (!log || typeof log !== "object" || Object.keys(log).length === 0) return "";
+
+  const STRETCH_NAMES: Record<string, string> = {
+    s1_childs_pose: "Child's Pose (AM)", s2_cat_cow: "Cat Cow", s3_hip_flexor: "Hip Flexor Stretch",
+    s4_glute_bridge: "Glute Bridge Activation", s5_chest_stretch: "Doorway Chest Stretch",
+    s6_thoracic_rotation: "Thoracic Rotation", s7_pelvic_tilt: "Pelvic Tilt", s8_hamstring_stretch: "Standing Hamstring Stretch",
+    e1_childs_pose: "Child's Pose (PM)", e2_figure_four: "Figure Four Glute Stretch",
+    e3_forward_fold: "Seated Forward Fold", e4_spinal_twist: "Supine Spinal Twist",
+    e5_legs_up_wall: "Legs Up the Wall", e6_neck_rolls: "Neck Rolls", e7_deep_breathing: "4-7-8 Breathing",
+  };
+
+  // Compliance over last 7d and prior 7d (for trend)
+  function tally(start: number, span: number) {
+    let mDone = 0, eDone = 0;
+    const skipCounts: Record<string, number> = {};
+    const mDur: number[] = [], eDur: number[] = [];
+    const mOnTime: number[] = [], eOnTime: number[] = [];
+    for (let i = start; i < start + span; i++) {
+      const d = daysAgoUK(i);
+      const e = log[d] || {};
+      if (e.morning?.completed) {
+        mDone++;
+        if (e.morning.startedAt && e.morning.completedAt) {
+          mDur.push(Math.round((new Date(e.morning.completedAt).getTime() - new Date(e.morning.startedAt).getTime()) / 60000));
+        }
+        // morning on-time: started before 12:00
+        if (e.morning.startedAt) {
+          const h = new Date(e.morning.startedAt).getUTCHours(); // close enough for week-aggregate
+          mOnTime.push(h < 12 ? 1 : 0);
+        }
+      }
+      if (e.evening?.completed) {
+        eDone++;
+        if (e.evening.startedAt && e.evening.completedAt) {
+          eDur.push(Math.round((new Date(e.evening.completedAt).getTime() - new Date(e.evening.startedAt).getTime()) / 60000));
+        }
+        if (e.evening.startedAt) {
+          const h = new Date(e.evening.startedAt).getUTCHours();
+          eOnTime.push(h >= 17 && h < 22 ? 1 : 0);
+        }
+      }
+      for (const arr of [e.morning?.skippedStretches, e.evening?.skippedStretches]) {
+        if (Array.isArray(arr)) for (const id of arr) skipCounts[id] = (skipCounts[id] || 0) + 1;
+      }
+    }
+    const avg = (a: number[]) => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null;
+    const sum = (a: number[]) => a.reduce((s, x) => s + x, 0);
+    return { mDone, eDone, skipCounts, mDur: avg(mDur), eDur: avg(eDur), mOnTime: sum(mOnTime), eOnTime: sum(eOnTime) };
+  }
+  const cur = tally(0, 7);
+  const prev = tally(7, 7);
+
+  // Streaks
+  function streakOf(type: "morning" | "evening"): number {
+    let s = 0;
+    for (let i = 0; i < 400; i++) {
+      const d = daysAgoUK(i);
+      const e = (log[d] || {})[type];
+      if (!e || !e.completed) { if (i === 0) continue; break; }
+      s++;
+    }
+    return s;
+  }
+  const mStreak = streakOf("morning");
+  const eStreak = streakOf("evening");
+
+  // Most skipped (current 7d)
+  let mostSkippedId = "", mostSkippedN = 0;
+  for (const [id, n] of Object.entries(cur.skipCounts)) {
+    if (n > mostSkippedN) { mostSkippedN = n; mostSkippedId = id; }
+  }
+  const mostSkippedName = mostSkippedId ? (STRETCH_NAMES[mostSkippedId] || mostSkippedId) : "—";
+
+  const total = cur.mDone + cur.eDone;
+  const possible = 14;
+  const pct = Math.round((total / possible) * 100);
+  const prevTotal = prev.mDone + prev.eDone;
+  const trend = total > prevTotal ? "improving" : total < prevTotal ? "declining" : (total === 0 && prevTotal === 0 ? "new" : "stable");
+
+  const lines: string[] = [];
+  lines.push("STRETCHING COMPLIANCE (mobility routines — last 7d):");
+  lines.push("  Morning Routine (8 stretches, ~12 min):");
+  lines.push(`    Days completed: ${cur.mDone}/7 · missed: ${7 - cur.mDone} · current streak: ${mStreak} day${mStreak === 1 ? "" : "s"}`);
+  if (cur.mDur) lines.push(`    Avg session: ${cur.mDur} min · on-time (before 12pm): ${cur.mOnTime}/${cur.mDone}`);
+  lines.push("  Evening Routine (7 stretches, ~15 min):");
+  lines.push(`    Days completed: ${cur.eDone}/7 · missed: ${7 - cur.eDone} · current streak: ${eStreak} day${eStreak === 1 ? "" : "s"}`);
+  if (cur.eDur) lines.push(`    Avg session: ${cur.eDur} min · on-time (17:00-22:00): ${cur.eOnTime}/${cur.eDone}`);
+  lines.push(`  Most skipped stretch: ${mostSkippedName}${mostSkippedN ? ` (${mostSkippedN}×)` : ""}`);
+  lines.push(`  Combined: ${total}/${possible} sessions · ${pct}% compliance · trend vs last week: ${trend} (was ${prevTotal}/${possible})`);
+  lines.push("");
+  return lines.join("\n");
+}
+
 function buildNutritionContext(state: any): string {
   const lines: string[] = [];
 
@@ -634,6 +730,10 @@ function buildContext(state: any): string {
   const nutritionBlock = buildNutritionContext(state);
   if (nutritionBlock) lines.push(nutritionBlock);
 
+  // Phase 41: stretching / mobility compliance block (between Recovery and Skin Care)
+  const stretchBlock = buildStretchContext(state);
+  if (stretchBlock) lines.push(stretchBlock);
+
   // Phase 29 + 30: Oura activity. NOTE: total_calories ≈ TDEE (BMR + active);
   // active_calories alone is just movement burn above BMR. Use total for TDEE.
   lines.push("DAILY ACTIVITY (last 7d, Oura):");
@@ -859,6 +959,7 @@ DATA YOU NOW HAVE (Phase 29):
 10. SUPPLEMENT ADHERENCE
 11. PREVIOUS COACHING REPORTS (last 4 with their suggestions + apply/dismiss status) — your memory
 12. TRAINING DETAIL (per-lift last-4-session tables), SLEEP VS PERFORMANCE correlation, ACTIVE INJURIES
+13. STRETCHING COMPLIANCE (morning + evening mobility routines, compliance, streaks, most-skipped) — emitted only when the user has logged stretches
 
 INTERPRETATION RULES:
 - Use Oura TOTAL calories (labelled "TDEE" in the data) as primary TDEE input. Mifflin-St Jeor is a fallback. ACTIVE calories alone is movement burn above BMR, NOT TDEE — never use active cals as TDEE.
@@ -907,6 +1008,12 @@ INTERPRETATION RULES:
   - Rest times: average rest far above the prescription can blunt the stimulus on accessories — mention only if clearly excessive.
   - ACTIVE INJURIES: never tell the user to add load to an injured lift. Loads are already auto-reduced (mild −20%, moderate −35%, severe = hold). Reinforce pain-free range of motion and advise when to consider seeing a professional.
 - SLEEP VS PERFORMANCE: use the correlation block. If sessions following short (<6.5h) or low-deep-sleep nights consistently show lower volume or more "tough" tags, state it plainly and tell the user to protect sleep the night before training days.
+- MOBILITY & STRETCHING (only when a STRETCHING COMPLIANCE block is present):
+  - If morning compliance is below 4/7: explicitly call out hip-flexor + pelvic-tilt as the user's most direct anti-anterior-pelvic-tilt and lower-back-pain intervention — missing them slows postural correction and prolongs pain.
+  - If evening compliance is below 4/7 AND latest Oura HRV is below 20ms: state that 4-7-8 breathing + legs-up-the-wall are therapeutic for the nervous system at the user's current HRV — not optional recovery, but medical intervention.
+  - If both routines are >= 6/7: acknowledge excellent compliance, and ask the user to notice any reduction in lower-back pain or improvement in sleep onset — these are the direct benefits of consistency.
+  - If either streak >= 7 days: name the streak and note that postural change becomes durable at ~4-6 weeks of daily consistency.
+  - If morning compliance < 5/7 OR evening < 5/7, that gap is a strong candidate for one of the 3 Priority Actions — and the action must name the specific stretches (hip-flexor / pelvic-tilt for morning; 4-7-8 / legs-up-the-wall for evening).
 - SKIN CARE (only if a SKIN CARE ROUTINE block is present — a 6-phase retinol ramp from every-4-days up to nightly, then tretinoin):
   RETINOL PHASE RULES:
   - NEVER suggest advancing phase if ANY redness or burning logged in the last 14 days.
@@ -934,6 +1041,7 @@ OUTPUT FORMAT:
    ## This week — 2-3 sentence summary; weight delta, FAT MASS delta, LBM delta.
    ## Body & training — composition trend, training adherence, per-lift progression highlights.
    ## Nutrition & recovery — calorie/protein/fasting/supplement compliance, sleep + HRV + readiness trend.
+   ## Mobility & stretching — ONLY include this section when a STRETCHING COMPLIANCE block is present. Open with the compliance score and trend, name the most-skipped stretch, correlate with HRV / sleep / lower-back pain where relevant.
    ## Skin & medical — retinol phase + compliance (if present), any blood-marker improvements or concerns.
    ## Priority actions — exactly 3, ranked by importance, each one specific and doable this week.
    - Reference previous reports when relevant ("3 weeks ago I suggested X, you applied it, results: ...").
