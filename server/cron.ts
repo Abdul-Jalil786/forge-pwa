@@ -22,7 +22,8 @@ function ukDaysAgo(n: number): string {
 }
 
 // Phase 40: push an in-app notification onto a user's state (deduped per day).
-function addStateNotification(state: any, notif: { type: string; title: string; message: string }): boolean {
+// Phase 41: accept optional `gaps` array for structured morning-recap notifications.
+function addStateNotification(state: any, notif: { type: string; title: string; message: string; gaps?: any[] }): boolean {
   if (!Array.isArray(state.notifications)) state.notifications = [];
   const today = ukToday();
   const key = `${notif.type}:${notif.title}:${today}`;
@@ -33,12 +34,26 @@ function addStateNotification(state: any, notif: { type: string; title: string; 
     type: notif.type,
     title: notif.title,
     message: notif.message,
+    gaps: notif.gaps,
     date: today,
     read: false,
-    expiresAt: ukDaysAgo(-1), // expires tomorrow
+    expiresAt: ukDaysAgo(-1),
   });
   if (state.notifications.length > 10) state.notifications = state.notifications.slice(0, 10);
   return true;
+}
+
+// Phase 41: server-side session-type lookup (mirrors data.js _trainingDayInCycle)
+function sessionTypeFor(state: any, dateStr: string): "upper" | "lower" | null {
+  const startDate = state.trainingStartDate || "2026-05-08";
+  const start = new Date(startDate + "T12:00:00").getTime();
+  const target = new Date(dateStr + "T12:00:00").getTime();
+  const days = Math.floor((target - start) / 86400000);
+  if (days < 0) return null;
+  const cycle = ((days % 4) + 4) % 4;
+  if (cycle === 0) return "upper";
+  if (cycle === 2) return "lower";
+  return null;
 }
 
 async function sendPushToUser(userId: string, payload: { title: string; body: string }): Promise<void> {
@@ -334,30 +349,98 @@ export function startCron() {
     }
   }, { timezone: "Europe/London" });
 
-  // Phase 40: daily 08:00 UK — yesterday's missed critical supplements
+  // Phase 41: daily 08:00 UK — consolidated yesterday gap recap (food + training + supps + skin + water)
   cron.schedule("0 8 * * *", async () => {
-    console.log("Running daily missed-critical-supplement check...");
+    console.log("Running daily yesterday-recap...");
     try {
       const yesterday = ukDaysAgo(1);
       const users = await prisma.user.findMany();
       for (const user of users) {
         const state: any = user.state || {};
+        const gaps: any[] = [];
+
+        // FOOD — flag if nothing logged OR protein < 60% of target
+        const foods = (state.foods || {})[yesterday] || [];
+        if (foods.length === 0) {
+          gaps.push({ area: "food", date: yesterday, label: "No food logged" });
+        } else {
+          const proteinTotal = foods.reduce((s: number, f: any) => s + (+f.protein || 0), 0);
+          const proteinTarget = state.profile?.dynamicTargets?.rest?.protein || state.profile?.proteinTarget || 180;
+          if (proteinTotal < proteinTarget * 0.6) {
+            gaps.push({ area: "food", date: yesterday, label: `Protein only ${Math.round(proteinTotal)}g of ${proteinTarget}g target` });
+          }
+        }
+
+        // TRAINING — flag if yesterday was a training day in the cycle but <4 exercises marked done
+        const sessionType = sessionTypeFor(state, yesterday);
+        if (sessionType) {
+          const dayLog = (state.exLog || {})[yesterday] || {};
+          const doneCount = Object.entries(dayLog).filter(([k, e]: [string, any]) => !k.startsWith("_") && e && e.done).length;
+          if (doneCount < 4) {
+            const label = sessionType[0].toUpperCase() + sessionType.slice(1);
+            gaps.push({ area: "training", date: yesterday, label: `${label} session — only ${doneCount} exercise${doneCount === 1 ? "" : "s"} done` });
+          }
+        }
+
+        // SUPPLEMENTS — critical untiked
         const supps = state.supplements || [];
         const critical = Array.isArray(supps) ? supps.filter((s: any) => s?.critical) : [];
-        if (!critical.length) continue;
-        const log = (state.supplementLog || {})[yesterday] || {};
-        const missed = critical.filter((s: any) => log[s.id] !== true);
-        if (!missed.length) continue;
+        if (critical.length) {
+          const dow = new Date(yesterday + "T12:00:00").getDay();
+          const dueCritical = critical.filter((s: any) => !(s.frequency === "weekly-wednesday" && dow !== 3));
+          const log = (state.supplementLog || {})[yesterday] || {};
+          const missedSupps = dueCritical.filter((s: any) => log[s.id] !== true);
+          if (missedSupps.length) {
+            const names = missedSupps.slice(0, 3).map((s: any) => s.name).join(", ");
+            const more = missedSupps.length > 3 ? ` (+${missedSupps.length - 3})` : "";
+            gaps.push({
+              area: "supplements",
+              date: yesterday,
+              label: `${missedSupps.length} critical: ${names}${more}`,
+            });
+          }
+        }
+
+        // SKIN — owner only, compliance < 60%
+        if (user.email === "jay@afjltd.co.uk") {
+          const skinLog = (state.skinCareLog || {})[yesterday];
+          if (skinLog && typeof skinLog._compliance === "number" && skinLog._compliance < 0.6) {
+            gaps.push({
+              area: "skin",
+              date: yesterday,
+              label: `Skin compliance: ${Math.round(skinLog._compliance * 100)}%`,
+            });
+          }
+        }
+
+        // WATER — flag only if user logged some water but well under target
+        const waterEntry = (state.waterLog || {})[yesterday];
+        if (waterEntry) {
+          const total = waterEntry.total || 0;
+          const target = waterEntry.target || 3000;
+          if (total > 0 && total < target * 0.5) {
+            gaps.push({
+              area: "water",
+              date: yesterday,
+              label: `${(total / 1000).toFixed(1)}L of ${(target / 1000).toFixed(1)}L`,
+            });
+          }
+        }
+
+        if (gaps.length === 0) continue;
+
+        const summary = gaps.length === 1 ? "1 gap" : `${gaps.length} gaps`;
         const added = addStateNotification(state, {
-          type: "medication",
-          title: `${missed.length} critical supplement${missed.length > 1 ? "s" : ""} missed yesterday`,
-          message: `${missed.map((s: any) => s.name).join(", ")} — don't miss them again today.`,
+          type: "morning-recap",
+          title: `🌅 Yesterday: ${summary} to backfill`,
+          message: gaps.map((g) => `• ${g.label}`).join(" · "),
+          gaps,
         });
         if (added) await prisma.user.update({ where: { id: user.id }, data: { state } });
       }
-      console.log("Daily missed-supplement check complete");
+      console.log("Daily yesterday-recap complete");
     } catch (err) {
-      console.error("Daily missed-supplement check error:", err);
+      console.error("Daily yesterday-recap error:", err);
     }
   }, { timezone: "Europe/London" });
 

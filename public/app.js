@@ -1692,23 +1692,114 @@ function confirmReset(){
   }
 }
 
-// ---- NOTIFICATIONS (Phase 40) ----
+// ---- NOTIFICATIONS (Phase 40 + 41 backfill actions) ----
+const NOTIF_AREA_ICON={food:'🍳',training:'🏋️',supplements:'💊',skin:'🧴',water:'💧'};
+function _gapRowHtml(g){
+  const ic=NOTIF_AREA_ICON[g.area]||'•';
+  return `<button data-area="${_esc(g.area)}" data-date="${_esc(g.date)}" onclick="notifAction(this)" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-top:6px;cursor:pointer;color:var(--text);font-family:inherit;">
+    <span style="font-size:14px;">${ic}</span>
+    <span style="flex:1;font-size:12px;line-height:1.4;">${_esc(g.label)}</span>
+    <span style="font-size:10px;color:var(--text3);flex-shrink:0;">Fix →</span>
+  </button>`;
+}
 function openNotifications(){
   const list=(typeof getNotifications==='function')?getNotifications():[];
   let html;
   if(!list.length){
     html='<div style="font-size:13px;color:var(--text3);text-align:center;padding:16px 0;">No notifications</div>';
   }else{
-    const icon={medication:'💊',training:'🏋️',nutrition:'🥗',coach:'🧠'};
-    html=list.map(n=>`<div style="padding:10px 0;border-bottom:1px solid var(--border);${n.read?'opacity:.55;':''}">
-      <div style="font-size:13px;font-weight:600;color:var(--text);">${icon[n.type]||'🔔'} ${_esc(n.title)}</div>
-      <div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:3px;">${_esc(n.message)}</div>
-      <div style="font-size:10px;color:var(--text3);margin-top:3px;">${_esc(n.date||'')}</div>
-    </div>`).join('');
+    const icon={medication:'💊',training:'🏋️',nutrition:'🥗',coach:'🧠','morning-recap':'🌅'};
+    html=list.map(n=>{
+      const gapsHtml=Array.isArray(n.gaps)&&n.gaps.length?n.gaps.map(_gapRowHtml).join(''):'';
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);${n.read?'opacity:.65;':''}">
+        <div style="font-size:13px;font-weight:600;color:var(--text);">${icon[n.type]||'🔔'} ${_esc(n.title)}</div>
+        ${gapsHtml?'':`<div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:3px;">${_esc(n.message||'')}</div>`}
+        ${gapsHtml}
+        <div style="font-size:10px;color:var(--text3);margin-top:6px;">${_esc(n.date||'')}</div>
+      </div>`;
+    }).join('');
   }
   if(typeof _showInfoModal==='function')_showInfoModal('Notifications',html);
   if(typeof markAllNotificationsRead==='function')markAllNotificationsRead();
   setTimeout(()=>{if(typeof renderToday==='function'&&document.getElementById('page-today').classList.contains('active'))renderToday();},150);
+}
+function notifAction(btn){
+  const area=btn.dataset.area, date=btn.dataset.date;
+  if(typeof closeModal==='function')closeModal('modal-info');
+  setTimeout(()=>{
+    switch(area){
+      case 'food':
+        if(typeof setFoodViewDate==='function'){setFoodViewDate(date);if(typeof nav==='function')nav('food');}
+        break;
+      case 'training':
+        if(typeof renderDayDetail==='function')renderDayDetail(date);
+        else showToast('Open the Track page to edit this date');
+        break;
+      case 'supplements': openSupplementBackfill(date); break;
+      case 'skin': openSkinBackfill(date); break;
+      case 'water': openWaterBackfill(date); break;
+    }
+  },120);
+}
+
+// ---- BACKFILL MODALS (Phase 41) ----
+function _fmtDateUK(date){
+  try{return new Date(date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'});}
+  catch{return date;}
+}
+function openSupplementBackfill(date){
+  const supps=(typeof getSupplements==='function')?getSupplements():[];
+  if(!supps.length){showToast('No supplements configured');return;}
+  const log=(typeof getSupplementLog==='function')?getSupplementLog(date):{};
+  const dow=new Date(date+'T12:00:00').getDay();
+  const due=supps.filter(s=>!(s.frequency==='weekly-wednesday'&&dow!==3));
+  const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
+  const html=`<div style="font-size:11px;color:var(--text2);margin-bottom:10px;">${_fmtDateUK(date)} — tick what you actually took</div>`+
+    due.map(s=>{
+      const on=log[s.id]===true;
+      return `<div onclick="toggleSuppBackfill('${date}','${_esc(s.id)}',${!on})" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;min-height:42px;">
+        <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--lime)':s.critical?'var(--orange)':'var(--border)'};background:${on?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:${on?'var(--text)':'var(--text2)'};">${_esc(s.name)}${s.critical&&!on?' <span style="color:var(--orange);font-size:11px;">⚠️</span>':''}</div>
+          <div style="font-size:11px;color:var(--text3);">${_esc(s.dose||'')}</div>
+        </div>
+      </div>`;
+    }).join('');
+  if(typeof _showInfoModal==='function')_showInfoModal('Backfill supplements',html);
+}
+function toggleSuppBackfill(date,id,taken){
+  if(typeof setSupplementTaken==='function')setSupplementTaken(date,id,taken);
+  openSupplementBackfill(date);
+}
+function openSkinBackfill(date){
+  if(typeof isOwner!=='function'||!isOwner()){showToast('Not available');return;}
+  if(typeof getSkinVisibleItems!=='function'){showToast('Skin care not configured');return;}
+  const v=getSkinVisibleItems(date);
+  const items=[...(v.am||[]),...(v.pm||[])];
+  if(!items.length){showToast('No skin items due that day');return;}
+  const log=(typeof getSkinCareLog==='function')?getSkinCareLog(date):{};
+  const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
+  const html=`<div style="font-size:11px;color:var(--text2);margin-bottom:10px;">${_fmtDateUK(date)} — backfill what you actually did</div>`+
+    items.map(it=>{
+      const on=log[it.itemId]===true;
+      return `<div onclick="toggleSkinBackfill('${date}','${_esc(it.itemId)}',${!on})" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;min-height:42px;">
+        <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--lime)':'var(--border)'};background:${on?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
+        <div style="flex:1;font-size:13px;color:${on?'var(--text)':'var(--text2)'};">${_esc(it.product.name)} <span style="font-size:10px;color:var(--text3);text-transform:uppercase;">${_esc(it.slot)}</span></div>
+      </div>`;
+    }).join('');
+  if(typeof _showInfoModal==='function')_showInfoModal('Backfill skin care',html);
+}
+function toggleSkinBackfill(date,itemId,done){
+  if(typeof setSkinItemDone==='function')setSkinItemDone(date,itemId,done);
+  openSkinBackfill(date);
+}
+function openWaterBackfill(date){
+  const v=prompt(`Add water for ${_fmtDateUK(date)} (ml):`,'');
+  if(v==null)return;
+  const ml=parseInt(v,10);
+  if(!ml||ml<=0||ml>5000){showToast('Enter 1–5000ml');return;}
+  if(typeof addWaterEntry==='function')addWaterEntry(date,ml,'backfill');
+  showToast(`+${ml}ml logged for ${date}`);
 }
 
 // ---- TOAST ----
