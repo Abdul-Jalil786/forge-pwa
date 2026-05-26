@@ -502,7 +502,7 @@ async function seedJayMealPlanV8() {
           time: "12:00",
           cals: 630, protein: 52, carbs: 54, fat: 24,
           ingredients: [
-            { name: "4 whole eggs scrambled", cals: 280, protein: 24, carbs: 1, fat: 20 },
+            { name: "4 whole eggs boiled", cals: 280, protein: 24, carbs: 1, fat: 20 },
             { name: "200g Greek yoghurt 0%", cals: 110, protein: 20, carbs: 8, fat: 1 },
             { name: "50g rolled oats", cals: 190, protein: 7, carbs: 33, fat: 3 },
             { name: "100g mixed berries", cals: 50, protein: 1, carbs: 12, fat: 0 },
@@ -575,6 +575,35 @@ async function seedJayMealPlanV8() {
     console.log("[migration] Jay meal plan V8 seeded (8h recomp window, Greek yoghurt evening)");
   } catch (err) {
     console.error("[migration] Jay meal plan V8 seed failed:", err);
+  }
+}
+
+// Phase 41b patch: change breakfast eggs from scrambled to boiled (Jay's preference).
+// Idempotent — runs once, only updates if the name still contains "scrambled".
+async function fixJayBreakfastEggsBoiled() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.eggsBoiledFixed) return;
+    const plan = state.mealPlan;
+    let changed = false;
+    if (plan && Array.isArray(plan.meals)) {
+      const breakfast = plan.meals.find((m: any) => m.id === "breakfast");
+      if (breakfast && Array.isArray(breakfast.ingredients)) {
+        for (const ing of breakfast.ingredients) {
+          if (typeof ing?.name === "string" && /scrambled/i.test(ing.name)) {
+            ing.name = ing.name.replace(/scrambled/gi, "boiled");
+            changed = true;
+          }
+        }
+      }
+    }
+    state.eggsBoiledFixed = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] Jay breakfast eggs: scrambled → boiled (${changed ? "patched" : "no change"})`);
+  } catch (err) {
+    console.error("[migration] fixJayBreakfastEggsBoiled failed:", err);
   }
 }
 
@@ -677,6 +706,7 @@ const server = app.listen(PORT, () => {
   removeJayCreatine();
   seedJayMealPlanV8();
   updateJaySupplementsV8();
+  fixJayBreakfastEggsBoiled();
 });
 
 const shutdown = async (signal: string) => {
