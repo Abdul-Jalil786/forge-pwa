@@ -552,9 +552,9 @@ function renderFood(){
     ${isToday?`
     <div class="sec-label">Eating Window</div>
     <div class="card">
-      <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">6-HOUR WINDOW · LOW GI</div>
-      <div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:var(--lime);">12:00 PM — 6:00 PM</div>
-      <div style="font-size:12px;color:var(--text2);margin-top:4px;">18 hours fasting</div>
+      <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">8-HOUR WINDOW · LOW GI · RECOMP</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:var(--lime);">12:00 PM — 8:00 PM</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px;">16 hours fasting</div>
     </div>`:''}
   `;
 

@@ -453,7 +453,7 @@ function buildNutritionContext(state: any): string {
     if (typeof e.fastDurationHours === "number") { fastSum += e.fastDurationHours; fastN++; }
   }
   if (maintained || broken) {
-    lines.push("FASTING COMPLIANCE (12:00-18:00 eating window, last 14d):");
+    lines.push("FASTING COMPLIANCE (12:00-20:00 eating window, last 14d):");
     lines.push(`  Window maintained: ${maintained} days · broken: ${broken}`);
     if (fastN) lines.push(`  Average fast duration: ${(fastSum / fastN).toFixed(1)}h`);
     if (brokenDays.length) lines.push(`  Broken on: ${brokenDays.join(", ")} — check if a specific weekday recurs`);
@@ -983,7 +983,7 @@ INTERPRETATION RULES:
   - Always cite the date of the panel ("from your 08/05/2026 panel: ..."). If the panel is > 6 months old, recommend a re-test.
   - NEVER make a definitive medical diagnosis. Frame everything as "consistent with X, recommend GP discussion" not "you have X".
 - NUTRITION SYSTEM (Phase 39 — fasting / water / Mounjaro / protein distribution data):
-  - FASTING: user runs a 12:00-18:00 eating window (18h fast). If the window is broken on a recurring weekday, name it and propose a fix. Don't moralise occasional breaks.
+  - FASTING: user runs a 12:00-20:00 eating window (16h fast, 8h eating). If the window is broken on a recurring weekday, name it and propose a fix. Don't moralise occasional breaks.
   - PROTEIN DISTRIBUTION: at 52, each meal needs >=40g protein to maximally trigger muscle protein synthesis. If "days all 3 meals hit 40g" is low, that is a top-priority fix — identify the consistently-low meal by name.
   - MOUNJARO (Wednesday injection): expect lower intake Wed/Thu. Judge those days on the 150g protein floor, NOT calories. Correlate logged side effects (nausea/reflux) with intake; if nausea recurs, reinforce the priority-food list rather than pushing calories.
   - WATER: target 3L (3.5L on gym days). With ALT + CRP elevated, hydration supports the liver — flag if the 7-day average is well under target.
@@ -1205,7 +1205,7 @@ HARD RULES (violations = rejected by server):
 - Ingredient macros MUST sum to the meal's totals within ±5 kcal / ±2g per macro
 
 STRUCTURE:
-- 5 meals across the eating window (default 12:00 to 18:00 UK)
+- 5 meals across the eating window (default 12:00 to 20:00 UK)
 - Use stable kebab-case meal ids: breakfast, mid-meal, pre-workout, dinner, evening
 - Place supplements (from the user's supplement list) into the appropriate meals
 - Name meals descriptively: "Breakfast: Eggs & Oats", "Pre-workout: Chicken & Sweet Potato", etc.
@@ -1262,7 +1262,7 @@ function buildPlanContext(state: any): string {
   lines.push("USER PROFILE:");
   lines.push(`  Daily target: gym day=${profile.calsGym ?? "?"}kcal, rest day=${profile.calsRest ?? "?"}kcal`);
   lines.push(`  Macros (daily): P=${macros.protein ?? "?"}g, C=${macros.carbs ?? "?"}g, F=${macros.fat ?? "?"}g`);
-  lines.push(`  Eating window: ${profile.eatingWindow || "12:00 to 18:00 UK"}`);
+  lines.push(`  Eating window: ${profile.eatingWindow || "12:00 to 20:00 UK"}`);
   lines.push("");
   lines.push("FOOD PREFERENCES:");
   const excl = prefs.excluded || [];

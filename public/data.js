@@ -1174,7 +1174,7 @@ function gradeClass(pct){
 // PHASE 39 — NUTRITION SYSTEM
 // ============================================================
 const EATING_WINDOW_START=12;   // 12:00
-const EATING_WINDOW_END=18;     // 18:00
+const EATING_WINDOW_END=20;     // 20:00 — Phase 41b: widened to 8h for recomp plan
 
 // ---- S1: Dynamic calorie targets (Mifflin-St Jeor) ----
 function getCurrentLeanMass(){
@@ -1191,10 +1191,13 @@ function calculateDynamicTargets(weight,leanMass,sessionType){
   const sexConst=(personal.sex==='female')?-161:5;
   const bmr=(10*weight)+(6.25*heightCm)-(5*age)+sexConst;
   const tdee=bmr*1.55;
-  const deficit=500;
+  // Phase 41b: deficit dropped 500 → 350 for recomp framing (lose fat + preserve / grow LBM)
+  const deficit=350;
   const sessionBonus=sessionType==='lower'?150:sessionType==='upper'?100:0;
-  const calsTarget=tdee-deficit+sessionBonus;
-  const proteinTarget=Math.max((leanMass||weight*0.7)*2.2,180);
+  // Phase 41b: safety floor at 2,400 kcal — never let target drop into over-restriction territory
+  const calsTarget=Math.max(2400, tdee-deficit+sessionBonus);
+  // Phase 41b: protein floor 180 → 200 (40g × 5 meals at age 52, low T, on Mounjaro)
+  const proteinTarget=Math.max((leanMass||weight*0.7)*2.2,200);
   const fatTarget=(calsTarget*0.30)/9;
   const carbTarget=Math.max(0,(calsTarget-(proteinTarget*4)-(calsTarget*0.30))/4);
   return {
@@ -1573,19 +1576,19 @@ function getMostSkippedStretch(days,type){
   return {id:topId,name:s?.name||topId,count:topN};
 }
 
-// Canonical supplement list for Jay (Phase 39)
+// Canonical supplement list for Jay (Phase 39, updated Phase 41b)
+// All supplements with M1; Mounjaro Wed 18:00 (post-workout); zinc 25mg; single Omega 3 dose (Bare Biology 1,700mg)
 function JAY_SUPPLEMENTS_V39(){
   return [
     {id:'supp-sidr-honey',name:'Sidr Honey',dose:'1 tsp in warm water',time:'07:30',mealId:'',timing:'on-waking',withFood:false,critical:true,notes:'Morning ritual'},
     {id:'supp-multivitamin',name:'Multivitamin',dose:'2 tablets',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:false,notes:''},
     {id:'vit-d',name:'Vitamin D3',dose:'4,000 IU',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:true,notes:'Fat-soluble — take with food'},
-    {id:'omega-3',name:'Omega 3',dose:'2 capsules',time:'15:00',mealId:'',timing:'meal-2',withFood:true,critical:true,notes:'Anti-inflammatory'},
-    {id:'supp-omega3-2',name:'Omega 3 (2nd dose)',dose:'2 capsules',time:'17:30',mealId:'',timing:'meal-3',withFood:true,critical:true,notes:'Anti-inflammatory'},
-    {id:'supp-magnesium',name:'Magnesium Glycinate',dose:'300mg',time:'22:00',mealId:'',timing:'bedtime',withFood:false,critical:true,notes:'Sleep support'},
+    {id:'omega-3',name:'Omega 3',dose:'2 caps (Bare Biology, 1,700mg total)',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:true,notes:'Anti-inflammatory · therapeutic dose for CRP + ALT'},
+    {id:'supp-zinc',name:'Zinc',dose:'25mg',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:false,notes:'With meal 1 — testosterone + immune support'},
     {id:'metformin-am',name:'Metformin',dose:'1000mg',time:'12:00',mealId:'',timing:'with-food',withFood:true,critical:true,notes:'Medication — take with food'},
-    {id:'supp-mounjaro',name:'Mounjaro',dose:'5mg',time:'15:00',mealId:'',timing:'wednesday-meal-2',withFood:true,critical:true,frequency:'weekly-wednesday',notes:'GLP-1 — Wednesday injection after meal 2'},
-    {id:'supp-zinc',name:'Zinc',dose:'30mg',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:false,notes:'With meal 1 — testosterone + immune support'},
-    {id:'supp-coq10',name:'CoQ10',dose:'200mg',time:'15:00',mealId:'',timing:'meal-2',withFood:true,critical:false,notes:'With meal 2 — fat-soluble, statin-induced CoQ10 depletion support'},
+    {id:'supp-coq10',name:'CoQ10',dose:'200mg',time:'15:00',mealId:'',timing:'meal-2',withFood:true,critical:false,notes:'Fat-soluble, statin-induced CoQ10 depletion support'},
+    {id:'supp-magnesium',name:'Magnesium Glycinate',dose:'300mg',time:'22:00',mealId:'',timing:'bedtime',withFood:false,critical:true,notes:'Sleep support'},
+    {id:'supp-mounjaro',name:'Mounjaro',dose:'5mg',time:'18:00',mealId:'',timing:'wednesday-meal-2',withFood:true,critical:true,frequency:'weekly-wednesday',notes:'GLP-1 — Wednesday injection post-workout'},
   ];
 }
 

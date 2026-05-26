@@ -484,6 +484,137 @@ async function seedJayNutritionSuppsV1() {
   }
 }
 
+// Phase 41b: Jay's V8 recomp meal plan (8h window 12-20, 5 meals, training 16:00).
+// Replaces V7. Casein-rich evening meal (Greek yoghurt 0% + whey) for overnight LBM
+// preservation; lower-sodium choice than cottage cheese (LVH-aware). Items locked.
+async function seedJayMealPlanV8() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.mealPlanV8Seeded) return;
+    const plan = {
+      name: "Recomp V8 — 8h window, locked items",
+      meals: [
+        {
+          id: "breakfast",
+          name: "Breakfast: Eggs, Yoghurt & Oats",
+          time: "12:00",
+          cals: 630, protein: 52, carbs: 54, fat: 24,
+          ingredients: [
+            { name: "4 whole eggs scrambled", cals: 280, protein: 24, carbs: 1, fat: 20 },
+            { name: "200g Greek yoghurt 0%", cals: 110, protein: 20, carbs: 8, fat: 1 },
+            { name: "50g rolled oats", cals: 190, protein: 7, carbs: 33, fat: 3 },
+            { name: "100g mixed berries", cals: 50, protein: 1, carbs: 12, fat: 0 },
+          ],
+          supplements: [
+            { id: "omega-3", name: "Omega 3", dose: "2 caps (1,700mg)" },
+            { id: "metformin-am", name: "Metformin", dose: "1000mg" },
+            { id: "supp-zinc", name: "Zinc", dose: "25mg" },
+            { id: "vit-d", name: "Vitamin D3", dose: "4,000 IU" },
+          ],
+        },
+        {
+          id: "mid-meal",
+          name: "Mid-meal: Chicken & Sweet Potato",
+          time: "13:30",
+          cals: 406, protein: 51, carbs: 25, fat: 14,
+          ingredients: [
+            { name: "200g chicken breast grilled", cals: 220, protein: 47, carbs: 0, fat: 5 },
+            { name: "100g cooked sweet potato", cals: 86, protein: 2, carbs: 20, fat: 0 },
+            { name: "Side salad with 1 tsp olive oil", cals: 100, protein: 2, carbs: 5, fat: 9 },
+          ],
+          supplements: [],
+        },
+        {
+          id: "pre-workout",
+          name: "Pre-workout: Chicken & Basmati",
+          time: "15:00",
+          cals: 490, protein: 54, carbs: 47, fat: 10,
+          ingredients: [
+            { name: "200g chicken breast grilled", cals: 220, protein: 47, carbs: 0, fat: 5 },
+            { name: "150g cooked basmati rice", cals: 200, protein: 4, carbs: 42, fat: 0 },
+            { name: "100g steamed broccoli", cals: 35, protein: 3, carbs: 7, fat: 0 },
+            { name: "1 tsp olive oil", cals: 35, protein: 0, carbs: 0, fat: 5 },
+          ],
+          supplements: [],
+        },
+        {
+          id: "dinner",
+          name: "Post-workout dinner: Shake, Chicken & Basmati",
+          time: "17:30",
+          cals: 700, protein: 87, carbs: 57, fat: 14,
+          ingredients: [
+            { name: "Protein shake: 2 scoops whey + 200ml semi-skim milk + 100g blueberries + 5g creatine (drink immediately on entering kitchen)", cals: 320, protein: 47, carbs: 24, fat: 5 },
+            { name: "150g chicken breast or salmon grilled", cals: 200, protein: 35, carbs: 0, fat: 6 },
+            { name: "100g cooked basmati rice", cals: 130, protein: 3, carbs: 28, fat: 0 },
+            { name: "Side salad", cals: 50, protein: 2, carbs: 5, fat: 3 },
+          ],
+          supplements: [],
+        },
+        {
+          id: "evening",
+          name: "Evening: Greek Yoghurt + Whey & Almonds",
+          time: "19:30",
+          cals: 485, protein: 45, carbs: 41, fat: 16,
+          ingredients: [
+            { name: "300g Greek yoghurt 0%", cals: 165, protein: 27, carbs: 12, fat: 0 },
+            { name: "15g whey isolate mixed into yoghurt (slow + fast casein/whey blend for overnight LBM)", cals: 60, protein: 12, carbs: 1, fat: 1 },
+            { name: "30g almonds", cals: 180, protein: 6, carbs: 6, fat: 15 },
+            { name: "1 medium apple", cals: 80, protein: 0, carbs: 22, fat: 0 },
+          ],
+          supplements: [],
+        },
+      ],
+    };
+    state.mealPlan = plan;
+    state.mealPlanV8Seeded = true;
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    state.eatingWindow = "12:00 to 20:00 UK";
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay meal plan V8 seeded (8h recomp window, Greek yoghurt evening)");
+  } catch (err) {
+    console.error("[migration] Jay meal plan V8 seed failed:", err);
+  }
+}
+
+// Phase 41b: update Jay's existing supplement list to match V8 spec.
+// - Zinc dose 30mg → 25mg
+// - Omega 3 consolidated: drop supp-omega3-2 entirely, move omega-3 to meal-1 12:00 with Bare Biology 1,700mg dose
+// - Mounjaro time 15:00 → 18:00 (post-workout injection)
+async function updateJaySupplementsV8() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.suppsV8Updated) return;
+    if (!Array.isArray(state.supplements)) state.supplements = [];
+
+    // Remove supp-omega3-2 entirely (second dose dropped — Bare Biology is high-strength)
+    state.supplements = state.supplements.filter((s: any) => s?.id !== "supp-omega3-2");
+
+    // Patch existing entries by id
+    for (const s of state.supplements) {
+      if (s?.id === "omega-3") {
+        s.dose = "2 caps (Bare Biology, 1,700mg total)";
+        s.time = "12:00";
+        s.timing = "meal-1";
+        s.notes = "Anti-inflammatory · therapeutic dose for CRP + ALT";
+      } else if (s?.id === "supp-zinc") {
+        s.dose = "25mg";
+      } else if (s?.id === "supp-mounjaro") {
+        s.time = "18:00";
+        s.notes = "GLP-1 — Wednesday injection post-workout";
+      }
+    }
+    state.suppsV8Updated = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay supplements updated to V8 (zinc 25mg, omega-3 consolidated to M1, Mounjaro 18:00)");
+  } catch (err) {
+    console.error("[migration] Jay supplements V8 update failed:", err);
+  }
+}
+
 // Remove creatine from Jay's supplement list — it's in the post-workout shake,
 // tracking it separately double-counts. Historical supplementLog entries remain.
 async function removeJayCreatine() {
@@ -544,6 +675,8 @@ const server = app.listen(PORT, () => {
   seedJayNutritionSuppsV1();
   seedJayZincCoQ10();
   removeJayCreatine();
+  seedJayMealPlanV8();
+  updateJaySupplementsV8();
 });
 
 const shutdown = async (signal: string) => {
