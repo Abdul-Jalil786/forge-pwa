@@ -451,7 +451,6 @@ async function seedJayNutritionSuppsV1() {
     if (state.nutritionSuppsV1) return;
     const canonical: any[] = [
       { id: "supp-sidr-honey", name: "Sidr Honey", dose: "1 tsp in warm water", time: "07:30", mealId: "", timing: "on-waking", withFood: false, critical: true, notes: "Morning ritual" },
-      { id: "supp-multivitamin", name: "Multivitamin", dose: "2 tablets", time: "12:00", mealId: "", timing: "meal-1", withFood: true, critical: false, notes: "" },
       { id: "vit-d", name: "Vitamin D3", dose: "4,000 IU", time: "12:00", mealId: "", timing: "meal-1", withFood: true, critical: true, notes: "Fat-soluble — take with food" },
       { id: "omega-3", name: "Omega 3", dose: "2 capsules", time: "15:00", mealId: "", timing: "meal-2", withFood: true, critical: true, notes: "Anti-inflammatory" },
       { id: "supp-omega3-2", name: "Omega 3 (2nd dose)", dose: "2 capsules", time: "17:30", mealId: "", timing: "meal-3", withFood: true, critical: true, notes: "Anti-inflammatory" },
@@ -459,7 +458,7 @@ async function seedJayNutritionSuppsV1() {
       { id: "metformin-am", name: "Metformin", dose: "1000mg", time: "12:00", mealId: "", timing: "with-food", withFood: true, critical: true, notes: "Medication — take with food" },
       { id: "supp-mounjaro", name: "Mounjaro", dose: "5mg", time: "15:00", mealId: "", timing: "wednesday-meal-2", withFood: true, critical: true, frequency: "weekly-wednesday", notes: "GLP-1 — Wednesday injection after meal 2" },
       { id: "supp-zinc", name: "Zinc", dose: "30mg", time: "12:00", mealId: "", timing: "meal-1", withFood: true, critical: false, notes: "With meal 1 — testosterone + immune support" },
-      { id: "supp-coq10", name: "CoQ10", dose: "200mg", time: "15:00", mealId: "", timing: "meal-2", withFood: true, critical: false, notes: "With meal 2 — fat-soluble, statin-induced CoQ10 depletion support" },
+      { id: "supp-coq10", name: "CoQ10", dose: "2 caps (200mg total)", time: "15:00", mealId: "pre-workout", timing: "meal-2", withFood: true, critical: false, notes: "Fat-soluble · statin-induced CoQ10 depletion support · with pre-workout meal" },
     ];
     const existing: any[] = Array.isArray(state.supplements) ? state.supplements : [];
     const byId = new Map(existing.map((s: any) => [s.id, s]));
@@ -537,7 +536,9 @@ async function seedJayMealPlanV8() {
             { name: "100g steamed broccoli", cals: 35, protein: 3, carbs: 7, fat: 0 },
             { name: "1 tsp olive oil", cals: 35, protein: 0, carbs: 0, fat: 5 },
           ],
-          supplements: [],
+          supplements: [
+            { id: "supp-coq10", name: "CoQ10", dose: "2 caps (200mg)" },
+          ],
         },
         {
           id: "dinner",
@@ -575,6 +576,47 @@ async function seedJayMealPlanV8() {
     console.log("[migration] Jay meal plan V8 seeded (8h recomp window, Greek yoghurt evening)");
   } catch (err) {
     console.error("[migration] Jay meal plan V8 seed failed:", err);
+  }
+}
+
+// Phase 41c: remove multivitamin (Jay doesn't take it), update CoQ10 dose spec,
+// and link CoQ10 to M3 pre-workout in the existing meal plan.
+async function patchJaySupplementsAndMealsV8c() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.supplementsV8cPatched) return;
+
+    // Remove Multivitamin from supplements list (user doesn't take it)
+    if (Array.isArray(state.supplements)) {
+      state.supplements = state.supplements.filter((s: any) => s?.id !== "supp-multivitamin");
+      // Update CoQ10 dose + mealId on existing entry
+      for (const s of state.supplements) {
+        if (s?.id === "supp-coq10") {
+          s.dose = "2 caps (200mg total)";
+          s.mealId = "pre-workout";
+          s.notes = "Fat-soluble · statin-induced CoQ10 depletion support · with pre-workout meal";
+        }
+      }
+    }
+
+    // Add CoQ10 to M3 pre-workout meal's supplement array (only if not already there)
+    if (state.mealPlan && Array.isArray(state.mealPlan.meals)) {
+      const pw = state.mealPlan.meals.find((m: any) => m.id === "pre-workout");
+      if (pw) {
+        if (!Array.isArray(pw.supplements)) pw.supplements = [];
+        if (!pw.supplements.some((x: any) => x?.id === "supp-coq10")) {
+          pw.supplements.push({ id: "supp-coq10", name: "CoQ10", dose: "2 caps (200mg)" });
+        }
+      }
+    }
+
+    state.supplementsV8cPatched = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay: removed Multivitamin, linked CoQ10 to M3 pre-workout");
+  } catch (err) {
+    console.error("[migration] patchJaySupplementsAndMealsV8c failed:", err);
   }
 }
 
@@ -673,7 +715,7 @@ async function seedJayZincCoQ10() {
     if (state.suppsZincCoQ10Added) return;
     const additions: any[] = [
       { id: "supp-zinc",  name: "Zinc",  dose: "30mg",  time: "12:00", mealId: "", timing: "meal-1", withFood: true, critical: false, notes: "With meal 1 — testosterone + immune support" },
-      { id: "supp-coq10", name: "CoQ10", dose: "200mg", time: "15:00", mealId: "", timing: "meal-2", withFood: true, critical: false, notes: "With meal 2 — fat-soluble, statin-induced CoQ10 depletion support" },
+      { id: "supp-coq10", name: "CoQ10", dose: "2 caps (200mg total)", time: "15:00", mealId: "pre-workout", timing: "meal-2", withFood: true, critical: false, notes: "Fat-soluble · statin-induced CoQ10 depletion support · with pre-workout meal" },
     ];
     const existing: any[] = Array.isArray(state.supplements) ? state.supplements : [];
     const ids = new Set(existing.map((s: any) => s?.id));
@@ -707,6 +749,7 @@ const server = app.listen(PORT, () => {
   seedJayMealPlanV8();
   updateJaySupplementsV8();
   fixJayBreakfastEggsBoiled();
+  patchJaySupplementsAndMealsV8c();
 });
 
 const shutdown = async (signal: string) => {

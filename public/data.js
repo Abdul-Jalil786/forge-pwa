@@ -1581,12 +1581,11 @@ function getMostSkippedStretch(days,type){
 function JAY_SUPPLEMENTS_V39(){
   return [
     {id:'supp-sidr-honey',name:'Sidr Honey',dose:'1 tsp in warm water',time:'07:30',mealId:'',timing:'on-waking',withFood:false,critical:true,notes:'Morning ritual'},
-    {id:'supp-multivitamin',name:'Multivitamin',dose:'2 tablets',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:false,notes:''},
     {id:'vit-d',name:'Vitamin D3',dose:'4,000 IU',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:true,notes:'Fat-soluble — take with food'},
     {id:'omega-3',name:'Omega 3',dose:'2 caps (Bare Biology, 1,700mg total)',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:true,notes:'Anti-inflammatory · therapeutic dose for CRP + ALT'},
     {id:'supp-zinc',name:'Zinc',dose:'25mg',time:'12:00',mealId:'',timing:'meal-1',withFood:true,critical:false,notes:'With meal 1 — testosterone + immune support'},
     {id:'metformin-am',name:'Metformin',dose:'1000mg',time:'12:00',mealId:'',timing:'with-food',withFood:true,critical:true,notes:'Medication — take with food'},
-    {id:'supp-coq10',name:'CoQ10',dose:'200mg',time:'15:00',mealId:'',timing:'meal-2',withFood:true,critical:false,notes:'Fat-soluble, statin-induced CoQ10 depletion support'},
+    {id:'supp-coq10',name:'CoQ10',dose:'2 caps (200mg total)',time:'15:00',mealId:'pre-workout',timing:'meal-2',withFood:true,critical:false,notes:'Fat-soluble · statin-induced CoQ10 depletion support · with pre-workout meal'},
     {id:'supp-magnesium',name:'Magnesium Glycinate',dose:'300mg',time:'22:00',mealId:'',timing:'bedtime',withFood:false,critical:true,notes:'Sleep support'},
     {id:'supp-mounjaro',name:'Mounjaro',dose:'5mg',time:'18:00',mealId:'',timing:'wednesday-meal-2',withFood:true,critical:true,frequency:'weekly-wednesday',notes:'GLP-1 — Wednesday injection post-workout'},
   ];
