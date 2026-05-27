@@ -579,6 +579,39 @@ async function seedJayMealPlanV8() {
   }
 }
 
+// Phase 41f: harder-purge the legacy Protein supplement — the previous Phase 41e
+// migration used strict exact-match filters and missed name variants (e.g.
+// "Protein 20g") and slug suffixes ("protein-2"). This catches any id or name
+// containing "protein"/"whey" (case-insensitive substring). Safe because there
+// is no legitimate stand-alone protein/whey supplement in the canonical list —
+// protein flows through the M4 shake as a meal ingredient.
+async function purgeJayProteinSupplementV2() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.proteinSuppPurgedV2) return;
+    if (Array.isArray(state.supplements)) {
+      const before = state.supplements.length;
+      const removed: any[] = [];
+      state.supplements = state.supplements.filter((s: any) => {
+        if (!s) return false;
+        const id = String(s.id || "").toLowerCase();
+        const name = String(s.name || "").toLowerCase();
+        if (id.includes("protein") || id.includes("whey")) { removed.push({ id: s.id, name: s.name }); return false; }
+        if (name.includes("protein") || name.includes("whey")) { removed.push({ id: s.id, name: s.name }); return false; }
+        return true;
+      });
+      const n = before - state.supplements.length;
+      state.proteinSuppPurgedV2 = true;
+      await prisma.user.update({ where: { id: user.id }, data: { state } });
+      console.log(`[migration] Jay protein/whey supplement V2 purge: removed ${n} entries — ${JSON.stringify(removed)}`);
+    }
+  } catch (err) {
+    console.error("[migration] purgeJayProteinSupplementV2 failed:", err);
+  }
+}
+
 // Phase 41e: purge legacy standalone "Protein" entry from supplement list.
 // Protein for Jay comes through the M4 post-workout shake as a meal ingredient,
 // not as a tracked supplement. The entry was likely a manual add at some point.
@@ -809,6 +842,7 @@ const server = app.listen(PORT, () => {
   patchJaySupplementsAndMealsV8c();
   purgeJayMultivitamin();
   purgeJayProteinSupplement();
+  purgeJayProteinSupplementV2();
 });
 
 const shutdown = async (signal: string) => {
