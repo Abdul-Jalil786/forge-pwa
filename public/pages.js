@@ -2763,6 +2763,39 @@ function renderProteinDistribution(){
 }
 
 // ============================================================
+// PHASE 41i — CARDIO CARD on Train page (rest days only)
+// ============================================================
+function renderCardioCard(date){
+  date=date||todayStr();
+  if(typeof isRestDay==='function'&&!isRestDay(date))return ''; // only on rest days
+  const entry=getCardioLog(date);
+  const comp=getCardioCompliance(7);
+  const target=CARDIO_TARGET_PER_WEEK;
+  const weeklyChip=`<span style="font-size:11px;color:${comp.sessions>=target?'var(--green)':comp.sessions>=2?'var(--lime)':'var(--text2)'};font-weight:600;">${comp.sessions}/${target} this week</span>`;
+  if(entry&&entry.duration){
+    const effortEmoji={easy:'😌',moderate:'💪',hard:'🔥'}[entry.perceivedEffort]||'';
+    return `<div class="sec-label" style="margin-top:18px;display:flex;justify-content:space-between;align-items:center;"><span>Zone-2 Cardio</span>${weeklyChip}</div>
+      <div class="card" style="margin-bottom:10px;border-color:var(--green);background:linear-gradient(135deg,rgba(0,232,122,.05),transparent);">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:var(--green);">✅ Logged · ${entry.duration} min ${effortEmoji}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px;">
+              ${entry.avgHr?`Avg HR ${entry.avgHr} bpm · `:''}${entry.type||'zone-2'}${entry.notes?` · ${_esc(entry.notes)}`:''}
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;flex-shrink:0;" onclick="openCardioLog('${date}')">Edit</button>
+        </div>
+      </div>`;
+  }
+  return `<div class="sec-label" style="margin-top:18px;display:flex;justify-content:space-between;align-items:center;"><span>Zone-2 Cardio</span>${weeklyChip}</div>
+    <div class="card" style="margin-bottom:10px;border-color:var(--cyan);background:linear-gradient(135deg,rgba(0,210,255,.05),transparent);">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:var(--cyan);">🚶 Rest-day cardio</div>
+      <div style="font-size:12px;color:var(--text2);margin:4px 0 10px;line-height:1.5;">30 min incline treadmill (5 km/h · 6–8% incline · HR 110–125 bpm). Builds VO₂ max + protective for LVH, ALT, CRP.</div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openCardioLog('${date}')">Log session</button>
+    </div>`;
+}
+
+// ============================================================
 // PHASE 41h — VO2 MAX CARD (Track page)
 // ============================================================
 function renderVO2MaxCard(){

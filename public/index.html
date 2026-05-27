@@ -704,6 +704,42 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
   </div>
 </div>
 
+<div class="modal-bg" id="modal-cardio">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="cardio-title">Log Cardio Session</div>
+      <button class="modal-close" onclick="closeModal('modal-cardio')">✕</button>
+    </div>
+    <input type="hidden" id="cardio-date" value="" />
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Type</div>
+    <select id="cardio-type" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;">
+      <option value="zone-2">Zone-2 (incline walk / steady bike)</option>
+      <option value="long-walk">Long walk</option>
+      <option value="hiit">HIIT / intervals</option>
+      <option value="other">Other</option>
+    </select>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Duration (min)</div>
+        <input id="cardio-duration" type="number" min="5" max="180" inputmode="numeric" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Avg HR (bpm)</div>
+        <input id="cardio-hr" type="number" min="60" max="200" inputmode="numeric" placeholder="optional" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Perceived effort</div>
+    <div id="cardio-effort-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
+      <button class="btn btn-ghost btn-sm cardio-effort-btn" data-effort="easy" onclick="selectCardioEffort('easy')" style="padding:10px 0;">😌 Easy</button>
+      <button class="btn btn-ghost btn-sm cardio-effort-btn" data-effort="moderate" onclick="selectCardioEffort('moderate')" style="padding:10px 0;">💪 Moderate</button>
+      <button class="btn btn-ghost btn-sm cardio-effort-btn" data-effort="hard" onclick="selectCardioEffort('hard')" style="padding:10px 0;">🔥 Hard</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Notes</div>
+    <textarea id="cardio-notes" rows="2" maxlength="200" placeholder="e.g. 5 km/h at 7% incline, treadmill" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:14px;"></textarea>
+    <button class="btn btn-lime btn-full" onclick="saveCardioLog()">Save</button>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-injury-edit">
   <div class="modal">
     <div class="modal-hdr">

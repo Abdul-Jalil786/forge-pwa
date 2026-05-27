@@ -706,6 +706,32 @@ function buildContext(state: any): string {
   }
   lines.push("");
 
+  // Phase 41i: cardio compliance (zone-2 sessions logged separately from gym training)
+  const cardioLog = state.cardioLog || {};
+  let cardioSessions7 = 0, cardioMinutes7 = 0, cardioHrSum = 0, cardioHrN = 0, restDayCount = 0, nonRestCount = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = daysAgoUK(i);
+    const e = cardioLog[d];
+    if (!e || !e.duration) continue;
+    cardioSessions7++;
+    cardioMinutes7 += +e.duration || 0;
+    if (typeof e.avgHr === "number") { cardioHrSum += e.avgHr; cardioHrN++; }
+    // Determine if this date was a rest day per the training cycle
+    const startDate = state.trainingStartDate || "2026-05-08";
+    const start = new Date(startDate + "T12:00:00").getTime();
+    const target = new Date(d + "T12:00:00").getTime();
+    const days = Math.floor((target - start) / 86400000);
+    const cycle = ((days % 4) + 4) % 4;
+    const wasTrainingDay = (cycle === 0 || cycle === 2);
+    if (wasTrainingDay) nonRestCount++; else restDayCount++;
+  }
+  if (cardioSessions7 > 0 || cardioLog && Object.keys(cardioLog).length > 0) {
+    lines.push("CARDIO COMPLIANCE (zone-2 / steady-state sessions, last 7d — target 3 on rest days):");
+    lines.push(`  Sessions: ${cardioSessions7}/3 · Total: ${cardioMinutes7} min${cardioHrN ? ` · Avg HR: ${Math.round(cardioHrSum / cardioHrN)} bpm` : ""}`);
+    lines.push(`  On rest days: ${restDayCount} · on training days: ${nonRestCount} (rest-day scheduling is preferred — interference risk if cardio piled onto lifting days)`);
+    lines.push("");
+  }
+
   // Phase 41h: VO2 max — cardio fitness trend (only emit if Oura supplied data)
   const vo2log = state.vo2maxLog || {};
   const vo2Dates = Object.keys(vo2log).filter((d) => typeof vo2log[d]?.vo2 === "number").sort();
@@ -1021,6 +1047,12 @@ INTERPRETATION RULES:
   - Effort letters per set: (e)=easy, (s)=solid, (t)=tough. A lift logged all-easy for 2+ sessions is under-loaded; all-tough may be too heavy or signal under-recovery.
   - Rest times: average rest far above the prescription can blunt the stimulus on accessories — mention only if clearly excessive.
   - ACTIVE INJURIES: never tell the user to add load to an injured lift. Loads are already auto-reduced (mild −20%, moderate −35%, severe = hold). Reinforce pain-free range of motion and advise when to consider seeing a professional.
+- CARDIO COMPLIANCE (only when a CARDIO COMPLIANCE block is present):
+  - Target: 3 zone-2 sessions of 30+ min per week, scheduled on training rest days (avoids cardio-strength interference effect).
+  - If sessions < 3/week, flag it as a Priority Action candidate — name zone-2 explicitly + remind that it's protective for LVH/ALT/CRP/T (not muscle-killing at this intensity).
+  - If sessions are on training days rather than rest days, gently nudge toward rest-day scheduling.
+  - Total minutes < 75/week = same flag as sessions < 3.
+  - If user is already hitting 3+ sessions on rest days, celebrate it — this is high-leverage work that drives the VO₂ max number.
 - CARDIO FITNESS (only when a CARDIO FITNESS block is present — Oura VO₂ max):
   - VO₂ max < band-floor for the user's age = important cardiovascular health risk, especially with LVH / elevated ALT / elevated CRP context.
   - Zone-2 cardio (heart rate ~60-70% of max, sustained 30+ min) is the highest-leverage non-pharmaceutical intervention. Prescribe 3× per week for 4-6 weeks before expecting a meaningful VO₂ delta (1-3 ml/kg/min).

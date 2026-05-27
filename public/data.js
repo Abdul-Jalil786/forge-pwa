@@ -97,6 +97,7 @@ let STATE = {
   exerciseNotes: {},
   manualSteps: {},
   vo2maxLog: {},
+  cardioLog: {},
   stretchLog: {},
   stretchStreak: { morning: 0, evening: 0, combined: 0, lastMorningDate: null, lastEveningDate: null },
 };
@@ -1729,7 +1730,35 @@ function getVO2MaxBand(value,age,sex){
   }
   return {label:labels[labels.length-1],color:colors[colors.length-1],nextThreshold:null,index:labels.length-1};
 }
-function getVO2MaxTrend(days){
+// ---- Phase 41i: Cardio log (zone-2 etc., owner-tracked, rest-day-only nudging) ----
+const CARDIO_TARGET_PER_WEEK=3;
+function getCardioLog(date){return (pGet('cardioLog',{})[date||todayStr()])||null;}
+function setCardioLog(date,entry){
+  const log=pGet('cardioLog',{});
+  log[date]={...(log[date]||{}),...entry,loggedAt:new Date().toISOString()};
+  STATE.cardioLog=log;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/cardio-log/${date}`,{value:log[date]});
+}
+function isRestDay(date){
+  return (typeof getSessionTypeForDate==='function')&&getSessionTypeForDate(date||todayStr())===null;
+}
+// Sessions logged in the last N days
+function getCardioCompliance(days){
+  const log=pGet('cardioLog',{});
+  let sessions=0,totalMin=0,hrSum=0,hrN=0,restDayMatch=0,nonRestDay=0;
+  for(let i=0;i<days;i++){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const ds=_ukDate(d);
+    const e=log[ds];
+    if(!e)continue;
+    sessions++;
+    totalMin+=(+e.duration)||0;
+    if(typeof e.avgHr==='number'){hrSum+=e.avgHr;hrN++;}
+    if(isRestDay(ds))restDayMatch++;else nonRestDay++;
+  }
+  return{sessions,totalMin,avgHr:hrN?Math.round(hrSum/hrN):null,restDayMatch,nonRestDay,days};
+}
   const log=getVO2MaxLog();
   const cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
   const cutoffStr=_ukDate(cutoff);

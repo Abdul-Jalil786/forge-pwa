@@ -1693,6 +1693,52 @@ function confirmReset(){
 }
 
 // ============================================================
+// PHASE 41i — CARDIO LOG
+// ============================================================
+let _cardioEffort=null;
+function selectCardioEffort(effort){
+  _cardioEffort=effort;
+  document.querySelectorAll('.cardio-effort-btn').forEach(b=>{
+    if(b.dataset.effort===effort){b.style.background='var(--lime)';b.style.color='var(--bg)';b.style.fontWeight='700';}
+    else{b.style.background='';b.style.color='';b.style.fontWeight='';}
+  });
+}
+function openCardioLog(date){
+  date=date||todayStr();
+  const existing=getCardioLog(date)||{};
+  document.getElementById('cardio-date').value=date;
+  document.getElementById('cardio-title').textContent=existing.duration?'Edit Cardio Session':'Log Cardio Session';
+  document.getElementById('cardio-type').value=existing.type||'zone-2';
+  document.getElementById('cardio-duration').value=existing.duration||'';
+  document.getElementById('cardio-hr').value=existing.avgHr||'';
+  document.getElementById('cardio-notes').value=existing.notes||'';
+  _cardioEffort=existing.perceivedEffort||null;
+  // reset all buttons then highlight selected
+  document.querySelectorAll('.cardio-effort-btn').forEach(b=>{b.style.background='';b.style.color='';b.style.fontWeight='';});
+  if(_cardioEffort)selectCardioEffort(_cardioEffort);
+  openModal('modal-cardio');
+}
+function saveCardioLog(){
+  const date=document.getElementById('cardio-date').value||todayStr();
+  const duration=parseInt(document.getElementById('cardio-duration').value,10);
+  if(!duration||duration<5){showToast('Enter duration ≥5 min');return;}
+  const hr=parseInt(document.getElementById('cardio-hr').value,10);
+  const entry={
+    type:document.getElementById('cardio-type').value,
+    duration:Math.min(180,duration),
+    avgHr:(hr&&hr>=60&&hr<=200)?hr:null,
+    perceivedEffort:_cardioEffort||null,
+    notes:document.getElementById('cardio-notes').value.trim().slice(0,200),
+    date,
+  };
+  setCardioLog(date,entry);
+  closeModal('modal-cardio');
+  _cardioEffort=null;
+  showToast(`Cardio logged ✓ ${duration} min`);
+  if(typeof renderWorkout==='function')renderWorkout();
+}
+
+// ============================================================
 // PHASE 41 — GUIDED STRETCH MODE (owner-only)
 // ============================================================
 let sm = { active:false, type:null, idx:0, side:null, repCount:0, sideStartedAt:0, totalStartedAt:0, timerInterval:null, paused:false };

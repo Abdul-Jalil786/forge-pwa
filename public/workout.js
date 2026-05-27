@@ -37,6 +37,8 @@ function renderWorkout(){
       <div class="rest-title">Rest Day</div>
       <div class="rest-sub">${isToday?'Recovery is where the gains happen.<br>Walk, swim, sleep well.':'Rest day.'}</div>
     </div>`;
+    // Phase 41i: zone-2 cardio card — rest days only, today only
+    if(isToday&&typeof renderCardioCard==='function')html+=renderCardioCard(date);
     // Phase 41: mobility section visible on rest days too (today only)
     if(isToday&&typeof renderStretchCards==='function')html+=renderStretchCards();
     el.innerHTML=html;
