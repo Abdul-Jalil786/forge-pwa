@@ -1759,6 +1759,8 @@ function getCardioCompliance(days){
   }
   return{sessions,totalMin,avgHr:hrN?Math.round(hrSum/hrN):null,restDayMatch,nonRestDay,days};
 }
+
+function getVO2MaxTrend(days){
   const log=getVO2MaxLog();
   const cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
   const cutoffStr=_ukDate(cutoff);
