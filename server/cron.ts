@@ -43,6 +43,26 @@ function addStateNotification(state: any, notif: { type: string; title: string; 
   return true;
 }
 
+// Phase 41g: server-side mirror of skinDueOn() from data.js — is a skincare
+// product due to be applied on a given date?
+function skinDueOnServer(product: any, dateStr: string): boolean {
+  const freq = product?.frequency || "daily";
+  if (freq === "daily") return true;
+  if (freq === "5x-week") {
+    const dow = new Date(dateStr + "T12:00:00").getDay();
+    return dow >= 1 && dow <= 5;
+  }
+  const start = product?.frequencyStartedAt || product?.startedDate;
+  if (!start) return true;
+  const d0 = new Date(start + "T12:00:00").getTime();
+  const d1 = new Date(dateStr + "T12:00:00").getTime();
+  const days = Math.round((d1 - d0) / 86400000);
+  if (days < 0) return false;
+  const stepMap: Record<string, number> = { "every-2-days": 2, "every-3-days": 3, "every-4-days": 4, "weekly": 7 };
+  const step = stepMap[freq];
+  return step ? (days % step === 0) : true;
+}
+
 // Phase 41: server-side session-type lookup (mirrors data.js _trainingDayInCycle)
 function sessionTypeFor(state: any, dateStr: string): "upper" | "lower" | null {
   const startDate = state.trainingStartDate || "2026-05-08";
@@ -441,6 +461,55 @@ export function startCron() {
       console.log("Daily yesterday-recap complete");
     } catch (err) {
       console.error("Daily yesterday-recap error:", err);
+    }
+  }, { timezone: "Europe/London" });
+
+  // Phase 41g: nightly retinol reminder — 21:30 UK on retinol-due nights only.
+  // Owner-only (skincare feature is gated to jay@afjltd.co.uk). Distinct triple-buzz
+  // vibration + requireInteraction so the notification persists on the lock screen.
+  cron.schedule("30 21 * * *", async () => {
+    console.log("Running 21:30 retinol reminder check...");
+    try {
+      const today = ukToday();
+      const users = await prisma.user.findMany({
+        where: { pushSubscriptions: { some: {} } },
+        include: { pushSubscriptions: true },
+      });
+      for (const user of users) {
+        if (user.email !== "jay@afjltd.co.uk") continue; // owner-only feature
+        const state: any = user.state || {};
+        const products = state.skinCare?.products;
+        if (!Array.isArray(products)) continue;
+        const retinol = products.find((p: any) => p?.type === "retinol");
+        if (!retinol) continue;
+        if (!skinDueOnServer(retinol, today)) continue;
+        // Skip if already ticked tonight
+        const log = (state.skinCareLog || {})[today] || {};
+        if (log[`${retinol.id}_pm`] === true) continue;
+
+        const payload = JSON.stringify({
+          title: "🧴 Retinol night",
+          body: "Retinol is due tonight. Apply to dry skin (wait 5 min after washing), then Cicaplast on top. Skip if <4h before you'd wash it off.",
+          tag: "retinol-reminder",
+          vibrate: [300, 100, 300, 100, 300], // distinct triple-buzz vs default single
+          requireInteraction: true, // persists until tapped
+        });
+        for (const sub of user.pushSubscriptions) {
+          try {
+            await webpush.sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              payload
+            );
+          } catch (e: any) {
+            if (e?.statusCode === 410 || e?.statusCode === 404) {
+              await prisma.pushSubscription.delete({ where: { id: sub.id } });
+            }
+          }
+        }
+        console.log(`[cron] retinol reminder sent to ${user.email} (${retinol.frequency})`);
+      }
+    } catch (err) {
+      console.error("21:30 retinol reminder error:", err);
     }
   }, { timezone: "Europe/London" });
 

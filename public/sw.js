@@ -31,10 +31,12 @@ self.addEventListener("push", (e) => {
   try { data = e.data ? e.data.json() : data; } catch {}
   e.waitUntil(self.registration.showNotification(data.title, {
     body: data.body || "",
-    tag: data.mealId || "forge-reminder",
+    tag: data.tag || data.mealId || "forge-reminder",
     renotify: true,
-    vibrate: [200, 100, 200],
-    requireInteraction: false,
+    // Phase 41g: cron payloads can override vibration + persistence per notification type
+    vibrate: data.vibrate || [200, 100, 200],
+    requireInteraction: !!data.requireInteraction,
+    icon: "/icon-192.png",
   }));
 });
 

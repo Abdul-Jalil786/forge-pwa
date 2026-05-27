@@ -579,6 +579,35 @@ async function seedJayMealPlanV8() {
   }
 }
 
+// Phase 41g: advance Jay to retinol Phase 3 (every-2-days = every other day).
+// Mirrors data.js setSkinPhase(3). Re-frequencies retinol + cicaplast products
+// and stamps a fresh phaseStartDate so the 3-week tolerance clock starts today.
+async function setJaySkinPhase3() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.skinPhase3SetAt) return;
+    if (!state.skinCare) return;
+    const today = new Date().toISOString().slice(0, 10);
+    state.skinCare.phase = 3;
+    state.skinCare.phaseStartDate = today;
+    if (Array.isArray(state.skinCare.products)) {
+      for (const p of state.skinCare.products) {
+        if (p?.type === "retinol" || p?.id === "skn-cicaplast") {
+          p.frequency = "every-2-days";
+          p.frequencyStartedAt = today;
+        }
+      }
+    }
+    state.skinPhase3SetAt = today;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] Jay skin Phase 3 set (every-2-days) starting ${today}`);
+  } catch (err) {
+    console.error("[migration] setJaySkinPhase3 failed:", err);
+  }
+}
+
 // Phase 41f: harder-purge the legacy Protein supplement — the previous Phase 41e
 // migration used strict exact-match filters and missed name variants (e.g.
 // "Protein 20g") and slug suffixes ("protein-2"). This catches any id or name
@@ -843,6 +872,7 @@ const server = app.listen(PORT, () => {
   purgeJayMultivitamin();
   purgeJayProteinSupplement();
   purgeJayProteinSupplementV2();
+  setJaySkinPhase3();
 });
 
 const shutdown = async (signal: string) => {
