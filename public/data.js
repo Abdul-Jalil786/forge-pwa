@@ -96,6 +96,7 @@ let STATE = {
   notifications: [],
   exerciseNotes: {},
   manualSteps: {},
+  vo2maxLog: {},
   stretchLog: {},
   stretchStreak: { morning: 0, evening: 0, combined: 0, lastMorningDate: null, lastEveningDate: null },
 };
@@ -1701,6 +1702,42 @@ function getSessionCalorieBurn(){
   const cal=(pGet('calorieLog',{})[todayStr()]);
   if(cal&&cal.workout)return Math.round(cal.workout);
   return st==='lower'?450:350;
+}
+
+// ---- Phase 41h: Oura VO2 max ----
+function getVO2MaxLog(){return pGet('vo2maxLog',{})||{};}
+function getCurrentVO2Max(){
+  const log=getVO2MaxLog();
+  const dates=Object.keys(log).filter(d=>typeof log[d]?.vo2==='number').sort();
+  if(!dates.length)return null;
+  return log[dates[dates.length-1]].vo2;
+}
+function getVO2MaxBand(value,age,sex){
+  if(value==null)return null;
+  // Cooper Institute norms, simplified. Female bands ~5 lower.
+  const isFemale=sex==='female';
+  const adjust=isFemale?-5:0;
+  let bands;
+  if(!age||age<40)bands=[35,40,45,50,55];
+  else if(age<50) bands=[32,37,42,47,52];
+  else if(age<60) bands=[26,31,36,41,45];
+  else            bands=[24,28,32,36,40];
+  const labels=['Poor','Fair','Average','Good','Excellent','Superior'];
+  const colors=['var(--red)','var(--orange)','#ffc107','var(--lime)','var(--green)','var(--cyan)'];
+  for(let i=0;i<bands.length;i++){
+    if(value<bands[i]+adjust)return {label:labels[i],color:colors[i],nextThreshold:bands[i]+adjust,index:i};
+  }
+  return {label:labels[labels.length-1],color:colors[colors.length-1],nextThreshold:null,index:labels.length-1};
+}
+function getVO2MaxTrend(days){
+  const log=getVO2MaxLog();
+  const cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
+  const cutoffStr=_ukDate(cutoff);
+  const recent=Object.keys(log).filter(d=>d>=cutoffStr&&typeof log[d]?.vo2==='number').sort();
+  if(recent.length<2)return null;
+  const first=log[recent[0]].vo2;
+  const last=log[recent[recent.length-1]].vo2;
+  return {first,last,delta:Math.round((last-first)*10)/10,days,direction:last>first?'up':last<first?'down':'flat'};
 }
 
 // ---- Phase 40: notifications ----

@@ -706,6 +706,20 @@ function buildContext(state: any): string {
   }
   lines.push("");
 
+  // Phase 41h: VO2 max — cardio fitness trend (only emit if Oura supplied data)
+  const vo2log = state.vo2maxLog || {};
+  const vo2Dates = Object.keys(vo2log).filter((d) => typeof vo2log[d]?.vo2 === "number").sort();
+  if (vo2Dates.length > 0) {
+    const cur = vo2log[vo2Dates[vo2Dates.length - 1]].vo2;
+    const cutoff14d = daysAgoUK(14);
+    const last14 = vo2Dates.filter((d) => d >= cutoff14d);
+    const delta = last14.length >= 2 ? (vo2log[last14[last14.length - 1]].vo2 - vo2log[last14[0]].vo2) : null;
+    lines.push("CARDIO FITNESS (Oura VO₂ max):");
+    lines.push(`  Current: ${cur} ml/kg/min · 14-day Δ: ${delta != null ? (delta >= 0 ? "+" : "") + delta.toFixed(1) : "—"}`);
+    lines.push("  Norms (male 50-59): <26 Poor · 26-30 Fair · 31-35 Average · 36-40 Good · 41-44 Excellent · 45+ Superior");
+    lines.push("");
+  }
+
   lines.push("RECOVERY (Oura last 7d, scores 0-100; rising HRV + falling RHR = recovering well):");
   let anyRec = false;
   for (let i = 6; i >= 0; i--) {
@@ -1007,6 +1021,12 @@ INTERPRETATION RULES:
   - Effort letters per set: (e)=easy, (s)=solid, (t)=tough. A lift logged all-easy for 2+ sessions is under-loaded; all-tough may be too heavy or signal under-recovery.
   - Rest times: average rest far above the prescription can blunt the stimulus on accessories — mention only if clearly excessive.
   - ACTIVE INJURIES: never tell the user to add load to an injured lift. Loads are already auto-reduced (mild −20%, moderate −35%, severe = hold). Reinforce pain-free range of motion and advise when to consider seeing a professional.
+- CARDIO FITNESS (only when a CARDIO FITNESS block is present — Oura VO₂ max):
+  - VO₂ max < band-floor for the user's age = important cardiovascular health risk, especially with LVH / elevated ALT / elevated CRP context.
+  - Zone-2 cardio (heart rate ~60-70% of max, sustained 30+ min) is the highest-leverage non-pharmaceutical intervention. Prescribe 3× per week for 4-6 weeks before expecting a meaningful VO₂ delta (1-3 ml/kg/min).
+  - Improving VO₂ max is PROTECTIVE for LVH, not risky — a common misconception. Frame this explicitly if the user has LVH context.
+  - Improving VO₂ correlates with lower CRP, lower ALT (cardio reduces fatty liver), better insulin sensitivity. Make the link.
+  - If 14-day delta is negative AND consistent, flag it as a top-3 priority. If positive, celebrate it explicitly.
 - SLEEP VS PERFORMANCE: use the correlation block. If sessions following short (<6.5h) or low-deep-sleep nights consistently show lower volume or more "tough" tags, state it plainly and tell the user to protect sleep the night before training days.
 - MOBILITY & STRETCHING (only when a STRETCHING COMPLIANCE block is present):
   - If morning compliance is below 4/7: explicitly call out hip-flexor + pelvic-tilt as the user's most direct anti-anterior-pelvic-tilt and lower-back-pain intervention — missing them slows postural correction and prolongs pain.

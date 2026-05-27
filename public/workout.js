@@ -1036,7 +1036,68 @@ function wmStartNextSet(){
   }
   saveExLogForDate(date,dayLog);
   if(wm.restInterval){clearInterval(wm.restInterval);wm.restInterval=null;}
+  // Phase 41h: 15s transition window — walking to bench, lying down, getting positioned
+  wm.mode='transition';
+  wm.transitionStarted=Date.now();
+  wm.prevSetIdx=wm.setIdx; // remember which set the transition belongs to
   wm.setIdx++;
+  renderWmTransition();
+}
+
+function renderWmTransition(){
+  if(wm.restInterval){clearInterval(wm.restInterval);wm.restInterval=null;}
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  if(!ex)return;
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const prev=getPreviousSessionData(date,wm.session);
+  const prevSessions=getPreviousSessions(date,wm.session,5);
+  const gate=checkRecoveryGate();
+  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
+  const timed=isTimeBased(ex);
+  const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
+  const startKg=existingSet?.kg||sug?.kg||'';
+  const repMatch=String(ex.reps).match(/(\d+)[–-](\d+)/);
+  const targetReps=existingSet?.reps||sug?.reps||(repMatch?parseInt(repMatch[2]):8);
+  const upcoming=timed
+    ? `${fmtSec(sug?.seconds||0)} hold`
+    : `${startKg||'?'}kg × ${targetReps} reps`;
+  document.getElementById('wmContent').innerHTML=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Get into position</div>
+    <div class="wm-title" style="font-size:22px;margin-top:6px;">${ex.name}</div>
+    <div class="wm-sub" style="margin-bottom:30px;">Set ${wm.setIdx+1} of ${ex.sets} · ${upcoming}</div>
+    <div style="text-align:center;padding:30px 0;">
+      <div id="wm-trans" style="font-family:'Archivo Black',sans-serif;font-size:96px;letter-spacing:-4px;color:var(--blue);line-height:1;">15</div>
+      <div style="font-size:14px;color:var(--text2);margin-top:8px;">walk over · lie down · grip the bar</div>
+    </div>
+    <button class="wm-cta" onclick="wmFinishTransition()">I'M READY →</button>
+  `;
+  let r=15;
+  wm.transitionInterval=setInterval(()=>{
+    r--;
+    const el=document.getElementById('wm-trans');
+    if(el){el.textContent=Math.max(0,r); if(r<=5)el.style.color='var(--orange)';}
+    if(r<=0){clearInterval(wm.transitionInterval);wm.transitionInterval=null;wmFinishTransition();}
+  },1000);
+}
+
+function wmFinishTransition(){
+  if(wm.transitionInterval){clearInterval(wm.transitionInterval);wm.transitionInterval=null;}
+  const elapsed=Math.round((Date.now()-(wm.transitionStarted||Date.now()))/1000);
+  // Stamp transition time on the PREVIOUS set's record (which the transition followed)
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  if(ex && typeof wm.prevSetIdx==='number'){
+    const date=todayStr();
+    const dayLog=getExLogForDate(date);
+    const prevSet=dayLog[ex.id]?.sets?.[wm.prevSetIdx];
+    if(prevSet){
+      prevSet.transitionSeconds=elapsed;
+      saveExLogForDate(date,dayLog);
+    }
+  }
   wm.mode='set';
   wm.setStartedAt=Date.now();
   renderWmSet();

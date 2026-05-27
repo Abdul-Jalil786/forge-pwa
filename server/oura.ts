@@ -45,12 +45,14 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
 
   let updated = 0;
   try {
-    const [dailySleep, sleepDetail, readiness, activity, workouts] = await Promise.all([
+    const [dailySleep, sleepDetail, readiness, activity, workouts, vo2Resp] = await Promise.all([
       ouraGet(token, "daily_sleep", params),
       ouraGet(token, "sleep", params),
       ouraGet(token, "daily_readiness", params),
       ouraGet(token, "daily_activity", params),
       ouraGet(token, "workout", params),
+      // Phase 41h: VO2 max — not all users have it; tolerate failure silently
+      ouraGet(token, "vO2_max", params).catch(() => ({ data: [] })),
     ]);
 
     const sleepLog = state.sleepLog || {};
@@ -58,6 +60,7 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     const recovery = state.recovery || {};
     const calorieLog = state.calorieLog || {};
     const ouraWorkouts = state.ouraWorkouts || {};
+    const vo2maxLog = state.vo2maxLog || {};
 
     // Sleep score -> quality 1-4
     const scoreByDay: Record<string, number> = {};
@@ -159,6 +162,13 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       updated++;
     }
 
+    // Phase 41h: VO2 max — keep the most recent reading per day
+    for (const e of (vo2Resp.data || [])) {
+      if (!e?.day || typeof e?.vo2_max !== "number") continue;
+      vo2maxLog[e.day] = { vo2: Math.round(e.vo2_max * 10) / 10, timestamp: e.timestamp || null };
+      updated++;
+    }
+
     await prisma.user.update({
       where: { id: userId },
       data: {
@@ -169,6 +179,7 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
           recovery,
           calorieLog,
           ouraWorkouts,
+          vo2maxLog,
           ouraLastSync: new Date().toISOString(),
         },
       },

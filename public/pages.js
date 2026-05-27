@@ -1012,6 +1012,8 @@ function renderTrack(){
     ${_progressCard('Lean Mass',`current — target: hold ${_v(p.targetLBM)}kg`,clbm,'kg',lPct,'var(--blue)',hasEnoughL?lRate:null,' kg',lCaption,lSpark,lAlert)}
     ${cvf!=null||svf!=null?_progressCard('Visceral Fat',`current → target: ${_v(p.targetVisceralFat)} or less`,cvf,'',vPct,'var(--purple)',hasEnoughV?vRate:null,'',vCaption,vSpark):''}
 
+    ${renderVO2MaxCard()}
+
     ${(()=>{
       if(!proj)return'<div class="card" style="margin-bottom:10px;"><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">GOAL DATE</div><div style="font-size:12px;color:var(--text2);padding:12px 0;">Pending — need profile targets set</div></div>';
       if(!proj.goalDate){
@@ -2757,6 +2759,50 @@ function renderProteinDistribution(){
       }).join('')}
     </div>
     ${score?`<div style="font-size:11px;color:var(--text2);">${score.label} · ${score.hits}/${score.total} meals ≥40g</div>`:''}
+  </div>`;
+}
+
+// ============================================================
+// PHASE 41h — VO2 MAX CARD (Track page)
+// ============================================================
+function renderVO2MaxCard(){
+  const current=(typeof getCurrentVO2Max==='function')?getCurrentVO2Max():null;
+  if(current==null)return ''; // no VO2 max data yet — Oura needs activity history
+  const personal=(STATE.profile&&STATE.profile.personal)||{};
+  const age=personal.age||52;
+  const sex=personal.sex||'male';
+  const band=(typeof getVO2MaxBand==='function')?getVO2MaxBand(current,age,sex):null;
+  const trend=(typeof getVO2MaxTrend==='function')?getVO2MaxTrend(14):null;
+  // 14-day sparkline
+  const log=getVO2MaxLog();
+  const recent=Object.keys(log).filter(d=>typeof log[d]?.vo2==='number').sort().slice(-14).map(d=>log[d].vo2);
+  const sparkSvg=(recent.length>=2&&typeof spark==='function')?spark(recent,band?band.color:'var(--cyan)'):'';
+  const deltaStr=trend?(trend.delta>0?'+':'')+trend.delta:'—';
+  const deltaColor=trend?(trend.direction==='up'?'var(--green)':trend.direction==='down'?'var(--red)':'var(--text3)'):'var(--text3)';
+  const arrowSpan=trend?(trend.direction==='up'?'↑':trend.direction==='down'?'↓':'→'):'';
+  const nextStr=band&&band.nextThreshold?`next band ${band.nextThreshold}+`:'top band';
+  return `<div class="card" style="margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">VO₂ MAX · Cardio fitness</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">Oura · age ${age} ${sex}</div>
+      </div>
+      <div style="text-align:right;">${sparkSvg}</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:42px;color:${band?band.color:'var(--cyan)'};letter-spacing:-2px;">${current.toFixed(1)}<span style="font-size:14px;color:var(--text2);"> ml/kg/min</span></div>
+      <div style="text-align:right;font-size:11px;">
+        <div style="color:${deltaColor};font-weight:700;">${arrowSpan} ${deltaStr}</div>
+        <div style="color:var(--text3);">14-day</div>
+      </div>
+    </div>
+    ${band?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span style="background:${band.color};color:#000;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.5px;">${band.label}</span>
+      <span style="font-size:11px;color:var(--text3);">${nextStr}</span>
+    </div>`:''}
+    <div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+      💡 Zone-2 cardio 30 min × 3/week is the highest-leverage VO₂ improvement — also therapeutic for LVH, ALT and CRP.
+    </div>
   </div>`;
 }
 
