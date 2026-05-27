@@ -579,6 +579,36 @@ async function seedJayMealPlanV8() {
   }
 }
 
+// Phase 41e: purge legacy standalone "Protein" entry from supplement list.
+// Protein for Jay comes through the M4 post-workout shake as a meal ingredient,
+// not as a tracked supplement. The entry was likely a manual add at some point.
+async function purgeJayProteinSupplement() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.proteinSuppPurged) return;
+    if (Array.isArray(state.supplements)) {
+      const before = state.supplements.length;
+      state.supplements = state.supplements.filter((s: any) => {
+        if (!s) return false;
+        // Exact id matches first (avoid catching things like supp-omega3 etc.)
+        if (s.id === "protein" || s.id === "supp-protein" || s.id === "whey" || s.id === "supp-whey") return false;
+        // Exact name match (case-insensitive). DO NOT regex-match — would catch "Protein shake" if it existed as a supp.
+        const n = String(s.name || "").trim().toLowerCase();
+        if (n === "protein" || n === "whey protein" || n === "whey") return false;
+        return true;
+      });
+      const removed = before - state.supplements.length;
+      state.proteinSuppPurged = true;
+      await prisma.user.update({ where: { id: user.id }, data: { state } });
+      console.log(`[migration] Jay standalone Protein supplement purged (${removed} entries removed)`);
+    }
+  } catch (err) {
+    console.error("[migration] purgeJayProteinSupplement failed:", err);
+  }
+}
+
 // Phase 41d: harder purge of Multivitamin — earlier patch only caught the
 // canonical id `supp-multivitamin`, but the user's manual entry may use the
 // slugified id `multivitamin`. Match by both ids AND name pattern.
@@ -778,6 +808,7 @@ const server = app.listen(PORT, () => {
   fixJayBreakfastEggsBoiled();
   patchJaySupplementsAndMealsV8c();
   purgeJayMultivitamin();
+  purgeJayProteinSupplement();
 });
 
 const shutdown = async (signal: string) => {
