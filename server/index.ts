@@ -579,6 +579,33 @@ async function seedJayMealPlanV8() {
   }
 }
 
+// Phase 41d: harder purge of Multivitamin — earlier patch only caught the
+// canonical id `supp-multivitamin`, but the user's manual entry may use the
+// slugified id `multivitamin`. Match by both ids AND name pattern.
+async function purgeJayMultivitamin() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.multivitaminPurged) return;
+    if (Array.isArray(state.supplements)) {
+      const before = state.supplements.length;
+      state.supplements = state.supplements.filter((s: any) => {
+        if (!s) return false;
+        if (s.id === "supp-multivitamin" || s.id === "multivitamin") return false;
+        if (typeof s.name === "string" && /multi.?vitamin/i.test(s.name)) return false;
+        return true;
+      });
+      const removed = before - state.supplements.length;
+      state.multivitaminPurged = true;
+      await prisma.user.update({ where: { id: user.id }, data: { state } });
+      console.log(`[migration] Jay Multivitamin purged (${removed} entries removed)`);
+    }
+  } catch (err) {
+    console.error("[migration] purgeJayMultivitamin failed:", err);
+  }
+}
+
 // Phase 41c: remove multivitamin (Jay doesn't take it), update CoQ10 dose spec,
 // and link CoQ10 to M3 pre-workout in the existing meal plan.
 async function patchJaySupplementsAndMealsV8c() {
@@ -750,6 +777,7 @@ const server = app.listen(PORT, () => {
   updateJaySupplementsV8();
   fixJayBreakfastEggsBoiled();
   patchJaySupplementsAndMealsV8c();
+  purgeJayMultivitamin();
 });
 
 const shutdown = async (signal: string) => {
