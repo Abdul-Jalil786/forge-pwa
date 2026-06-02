@@ -587,14 +587,32 @@ function buildContext(state: any): string {
     };
   });
 
-  const supps = state.supps || [];
+  // Phase 41m: fix — was reading the deprecated `state.supps`, which is empty,
+  // so adherence has been 0/0 in every weekly report. Now reads the live
+  // `state.supplements` and counts only supplements actually due that day.
+  const supps = state.supplements || [];
   const suppLog = state.supplementLog || {};
   const suppAdherence: any[] = [];
+  const suppPerId: Record<string, { name: string; taken: number; total: number; critical: boolean }> = {};
+  for (const s of (supps as any[])) {
+    suppPerId[s.id] = { name: s.name || s.id, taken: 0, total: 0, critical: !!s.critical };
+  }
   for (let i = 0; i < 7; i++) {
     const d = daysAgoUK(i);
     const day = suppLog[d] || {};
-    const taken = supps.filter((s: any) => day[s.id]).length;
-    suppAdherence.push({ date: d, taken, of: supps.length });
+    const dow = new Date(d + "T12:00:00").getDay();
+    let taken = 0, dueToday = 0;
+    for (const s of (supps as any[])) {
+      // Skip weekly-Wednesday supplements when it isn't Wednesday
+      if (s.frequency === "weekly-wednesday" && dow !== 3) continue;
+      dueToday++;
+      suppPerId[s.id].total++;
+      if (day[s.id] === true) {
+        taken++;
+        suppPerId[s.id].taken++;
+      }
+    }
+    suppAdherence.push({ date: d, taken, of: dueToday });
   }
 
   const currentWeight = wl.length ? wl[wl.length - 1].weight : profile.startWeight;
@@ -797,8 +815,20 @@ function buildContext(state: any): string {
   if (!anyRec) lines.push("  (no Oura recovery data)");
   lines.push("");
 
-  lines.push("SUPPLEMENT ADHERENCE (last 7d, taken/total):");
+  lines.push("SUPPLEMENT ADHERENCE (last 7d, taken/total — counts only supplements due that day):");
   for (const a of suppAdherence) lines.push(`  ${a.date}: ${a.taken}/${a.of}`);
+  // Phase 41m: per-supplement breakdown so suggestions can name specific items
+  const perIdList = Object.values(suppPerId).filter((s) => s.total > 0);
+  if (perIdList.length > 0) {
+    const lowSupps = perIdList.filter((s) => s.taken / s.total < 0.5);
+    const highSupps = perIdList.filter((s) => s.taken / s.total >= 0.8);
+    if (lowSupps.length > 0) {
+      lines.push("  Below 50%: " + lowSupps.map((s) => `${s.name} ${s.taken}/${s.total}${s.critical ? " ⚠️ CRITICAL" : ""}`).join(" · "));
+    }
+    if (highSupps.length > 0) {
+      lines.push("  Above 80%: " + highSupps.map((s) => `${s.name} ${s.taken}/${s.total}`).join(" · "));
+    }
+  }
   lines.push("");
 
   // Phase 39: nutrition system blocks (fasting / water / Mounjaro / protein distribution)
@@ -1339,7 +1369,7 @@ function buildPlanContext(state: any): string {
   const profile = state.profile || {};
   const macros = profile.macros || {};
   const prefs = profile.foodPrefs || {};
-  const supps = state.supps || [];
+  const supps = state.supplements || []; // Phase 41m fix: was reading deprecated state.supps
   const cutoff14 = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(d); })();
 
   // Recent intake patterns — what does the user actually eat?
