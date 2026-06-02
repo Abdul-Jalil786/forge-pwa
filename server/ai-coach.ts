@@ -491,28 +491,44 @@ function buildNutritionContext(state: any): string {
   }
 
   // Protein distribution (7d, 40g/meal threshold)
+  // Phase 41m fix: previous version averaged sum / n where n incremented every
+  // day with any food logged — so a meal logged 2/7 days at 60g each showed up
+  // as "17g average," conflating "meal composition is low protein" with "meal
+  // wasn't logged most days." Split the two:
+  //   - loggedDays = days the meal had ≥1 entry with mealId === m.id
+  //   - avgWhenLogged = sum / loggedDays (real composition signal)
   const plan = state.mealPlan;
   if (plan && Array.isArray(plan.meals) && plan.meals.length) {
     let allHit = 0, dayN = 0;
-    const mealSums: Record<string, { sum: number; n: number }> = {};
+    const mealStats: Record<string, { name: string; sum: number; loggedDays: number; totalDays: number; hitDays: number }> = {};
+    for (const m of plan.meals.slice(0, 3)) {
+      mealStats[m.id] = { name: m.name, sum: 0, loggedDays: 0, totalDays: 0, hitDays: 0 };
+    }
     for (let i = 0; i < 7; i++) {
       const foods = (state.foods || {})[daysAgoUK(i)] || [];
       if (!foods.length) continue;
       dayN++;
       let hits = 0;
       for (const m of plan.meals.slice(0, 3)) {
-        const p = foods.filter((f: any) => f.mealId === m.id).reduce((s: number, f: any) => s + (+f.protein || 0), 0);
-        if (!mealSums[m.name]) mealSums[m.name] = { sum: 0, n: 0 };
-        mealSums[m.name].sum += p; mealSums[m.name].n++;
-        if (p >= 40) hits++;
+        const entries = foods.filter((f: any) => f.mealId === m.id);
+        const p = entries.reduce((s: number, f: any) => s + (+f.protein || 0), 0);
+        mealStats[m.id].totalDays++;
+        if (entries.length > 0) {
+          mealStats[m.id].loggedDays++;
+          mealStats[m.id].sum += p;
+          if (p >= 40) { mealStats[m.id].hitDays++; hits++; }
+        }
       }
       if (hits === 3) allHit++;
     }
     if (dayN) {
       lines.push("PROTEIN DISTRIBUTION (last 7d — 40g/meal triggers muscle protein synthesis, important at 52yo):");
       lines.push(`  Days all 3 meals hit 40g: ${allHit}/${dayN}`);
-      const avgs = Object.entries(mealSums).map(([n, v]) => `${n} ${Math.round(v.sum / v.n)}g`).join(" · ");
-      if (avgs) lines.push(`  Avg per meal: ${avgs}`);
+      for (const v of Object.values(mealStats)) {
+        const avgWhenLogged = v.loggedDays ? Math.round(v.sum / v.loggedDays) : 0;
+        const composition = v.loggedDays ? `avg ${avgWhenLogged}g when logged${avgWhenLogged >= 40 ? " ✓ above 40g threshold" : " — below 40g threshold"}` : "never logged this week";
+        lines.push(`  ${v.name}: logged ${v.loggedDays}/${v.totalDays} days · ${composition}`);
+      }
       lines.push("");
     }
   }
@@ -1089,7 +1105,10 @@ INTERPRETATION RULES:
   - NEVER make a definitive medical diagnosis. Frame everything as "consistent with X, recommend GP discussion" not "you have X".
 - NUTRITION SYSTEM (Phase 39 — fasting / water / Mounjaro / protein distribution data):
   - FASTING: user runs a 12:00-20:00 eating window (16h fast, 8h eating). If the window is broken on a recurring weekday, name it and propose a fix. Don't moralise occasional breaks.
-  - PROTEIN DISTRIBUTION: at 52, each meal needs >=40g protein to maximally trigger muscle protein synthesis. If "days all 3 meals hit 40g" is low, that is a top-priority fix — identify the consistently-low meal by name.
+  - PROTEIN DISTRIBUTION: at 52, each meal needs >=40g protein to maximally trigger muscle protein synthesis. The PROTEIN DISTRIBUTION block reports two separate things per meal: "logged X/Y days" (the COMPLIANCE side) AND "avg Zg when logged" (the COMPOSITION side). Diagnose correctly:
+    * If "avg when logged" is ABOVE 40g but logged days are LOW → the meal composition is fine, the user just isn't logging it (or skipping it). Fix is meal-logging compliance, not changing the meal. Do NOT suggest adding protein to a meal that already exceeds 40g when actually eaten.
+    * If "avg when logged" is BELOW 40g → composition is genuinely under threshold. Suggest adding 100g chicken / scoop whey / etc. to that specific meal.
+    * If "never logged this week" → it's a compliance problem only; don't analyse composition.
   - MOUNJARO (Wednesday injection): expect lower intake Wed/Thu. Judge those days on the 150g protein floor, NOT calories. Correlate logged side effects (nausea/reflux) with intake; if nausea recurs, reinforce the priority-food list rather than pushing calories.
   - WATER: target 3L (3.5L on gym days). With ALT + CRP elevated, hydration supports the liver — flag if the 7-day average is well under target.
   - DYNAMIC TARGETS: calorie/macro targets recalculate from current weight (Mifflin-St Jeor minus 500 deficit, +100 upper / +150 lower training day). As weight falls, targets fall — frame this as expected progress, not punishment.
