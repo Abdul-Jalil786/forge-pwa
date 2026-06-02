@@ -55,7 +55,17 @@ function renderWorkout(){
     <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">${w.muscles}</div>`;
 
   if(isToday && !isFuture){
-    html+=`<button class="btn btn-lime btn-full" style="margin-bottom:14px;font-size:17px;padding:16px;" onclick="startGuidedWorkout()">🚀 START WORKOUT</button>`;
+    // Phase 41k: if a workout is minimized for today, show RESUME instead of START
+    const saved=(typeof _loadWmState==='function')?_loadWmState():null;
+    if(saved&&saved.active){
+      const exName=(saved.exIdx!=null&&w.exercises[saved.exIdx])?w.exercises[saved.exIdx].name:'';
+      const setInfo=(saved.mode==='set'&&saved.setIdx!=null)?` · Set ${saved.setIdx+1}`:'';
+      const modeLabel=({outline:'overview',set:'lifting',rest:'resting',transition:'getting set',effort:'rating effort','timed-effort':'rating effort',exDone:'between exercises'})[saved.mode]||'';
+      html+=`<button class="btn btn-lime btn-full" style="margin-bottom:6px;font-size:17px;padding:16px;" onclick="resumeGuidedWorkout()">▶ RESUME${exName?` · ${exName}${setInfo}`:''}</button>
+        <div style="text-align:center;margin-bottom:14px;"><span style="font-size:10px;color:var(--text3);">in progress · ${modeLabel}</span> · <span onclick="discardGuidedWorkout()" style="font-size:10px;color:var(--text3);text-decoration:underline;cursor:pointer;">discard</span></div>`;
+    } else {
+      html+=`<button class="btn btn-lime btn-full" style="margin-bottom:14px;font-size:17px;padding:16px;" onclick="startGuidedWorkout()">🚀 START WORKOUT</button>`;
+    }
   }
 
   if(isFuture){
@@ -297,15 +307,50 @@ function finishSession(){
 // ============================================================
 let wm = { active:false, exIdx:0, setIdx:0, mode:'outline', restTarget:0, restStarted:0, restInterval:null, setStartedAt:0 };
 
+// Phase 41k: 5s auto-save tick — covers OS-kill / refresh / background-eviction cases
+let _wmAutoSaveInterval=null;
+function _wmStartAutoSave(){
+  if(_wmAutoSaveInterval)return;
+  _wmAutoSaveInterval=setInterval(()=>{
+    if(wm&&wm.active)_saveWmState();
+    else _wmStopAutoSave();
+  },5000);
+}
+function _wmStopAutoSave(){
+  if(_wmAutoSaveInterval){clearInterval(_wmAutoSaveInterval);_wmAutoSaveInterval=null;}
+}
+
 function startGuidedWorkout(){
+  // Phase 41k: if there's already a minimized in-progress session for today, resume it
+  const saved=(typeof _loadWmState==='function')?_loadWmState():null;
+  if(saved&&saved.active){resumeGuidedWorkout();return;}
   const session=getTodaySession(); if(!session)return showToast('Rest day — no workout');
   wm = { active:true, exIdx:0, setIdx:0, mode:'outline', session, restTarget:0, restStarted:0, restInterval:null, setStartedAt:0 };
+  _saveWmState();
+  _wmStartAutoSave();
   document.getElementById('workoutMode').classList.add('open');
   renderWmOutline();
 }
 
+// Phase 41k: ✕ now MINIMIZES the workout — preserves in-progress state for resume.
+// True session finish (with reflection + state clear) is finishGuidedWorkout().
 function exitGuidedWorkout(){
   if(wm.restInterval)clearInterval(wm.restInterval);
+  if(wm.transitionInterval)clearInterval(wm.transitionInterval);
+  if(wmTimer.interval)clearInterval(wmTimer.interval);
+  wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
+  _saveWmState();
+  _wmStopAutoSave();
+  document.getElementById('workoutMode').classList.remove('open');
+  renderWorkout();
+  renderToday();
+}
+
+// Phase 41k: true session finish — fires reflection, clears persisted state.
+// Called from the FINISH button on the workout-complete screen.
+function finishGuidedWorkout(){
+  if(wm.restInterval)clearInterval(wm.restInterval);
+  if(wm.transitionInterval)clearInterval(wm.transitionInterval);
   if(wmTimer.interval)clearInterval(wmTimer.interval);
   wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
 
@@ -325,9 +370,80 @@ function exitGuidedWorkout(){
   }
 
   wm.active=false;
+  _wmStopAutoSave();
+  try{localStorage.removeItem('forge_active_workout');}catch{}
   document.getElementById('workoutMode').classList.remove('open');
   renderWorkout();
   renderToday();
+}
+
+// Phase 41k: persist/restore the in-progress workout across nav + reload.
+function _saveWmState(){
+  try{
+    if(!wm.active){localStorage.removeItem('forge_active_workout');return;}
+    const stripped={...wm};
+    delete stripped.restInterval;
+    delete stripped.transitionInterval;
+    delete stripped.timerInterval;
+    stripped._savedAt=Date.now();
+    localStorage.setItem('forge_active_workout',JSON.stringify(stripped));
+  }catch{}
+}
+function _loadWmState(){
+  try{
+    const raw=localStorage.getItem('forge_active_workout');
+    if(!raw)return null;
+    const parsed=JSON.parse(raw);
+    if(!parsed||!parsed.active)return null;
+    // Stale if > 8 hours old
+    if(Date.now()-(parsed._savedAt||0)>8*60*60*1000){
+      localStorage.removeItem('forge_active_workout');return null;
+    }
+    // Stale if session type no longer matches today (e.g. clock rolled past midnight)
+    if(typeof getSessionTypeForDate==='function'){
+      const todaySession=getSessionTypeForDate(todayStr());
+      if(todaySession!==parsed.session){
+        localStorage.removeItem('forge_active_workout');return null;
+      }
+    }
+    return parsed;
+  }catch{return null;}
+}
+
+// Phase 41k: resume a minimized workout exactly where it was left.
+function resumeGuidedWorkout(){
+  const saved=_loadWmState();
+  if(!saved){
+    // Nothing to resume — fall through to fresh start
+    startGuidedWorkout();
+    return;
+  }
+  wm={...saved,active:true,restInterval:null,transitionInterval:null,timerInterval:null};
+  _wmStartAutoSave();
+  document.getElementById('workoutMode').classList.add('open');
+  switch(wm.mode){
+    case 'outline':       renderWmOutline(); break;
+    case 'set':           renderWmSet(); break;
+    case 'rest':          // restart the rest timer cleanly from now (preserves the remaining feel)
+                          wm.restStarted=Date.now(); renderWmRest(); break;
+    case 'transition':    wm.transitionStarted=Date.now(); renderWmTransition(); break;
+    case 'effort':        renderWmEffort(); break;
+    case 'timed-effort':  renderWmTimedEffort(); break;
+    case 'exDone':        renderWmExerciseDone(); break;
+    default:              renderWmOutline();
+  }
+}
+
+// Phase 41k: explicit discard from the Train page resume area.
+function discardGuidedWorkout(){
+  if(!confirm('Discard the in-progress workout? Sets you have logged so far are kept — only the resume state is cleared.'))return;
+  if(wm.restInterval)clearInterval(wm.restInterval);
+  if(wm.transitionInterval)clearInterval(wm.transitionInterval);
+  if(wmTimer.interval)clearInterval(wmTimer.interval);
+  wm.active=false;
+  _wmStopAutoSave();
+  try{localStorage.removeItem('forge_active_workout');}catch{}
+  renderWorkout();
 }
 
 // Phase 28: per-lift increment scales
@@ -1167,7 +1283,7 @@ function wmFinish(){
     <div class="wm-title" style="text-align:center;font-size:36px;color:var(--green);margin-top:8px;">✓ ${w.name} DONE</div>
     <div style="text-align:center;font-size:48px;margin:24px 0;">🔥</div>
     <div style="text-align:center;color:var(--text2);font-size:14px;margin-bottom:16px;">${w.exercises.length}/${w.exercises.length} exercises · ${totalSets} sets${volStr}${durStr}</div>
-    <button class="wm-cta" onclick="exitGuidedWorkout()">FINISH</button>
+    <button class="wm-cta" onclick="finishGuidedWorkout()">FINISH</button>
   `;
   document.getElementById('wmContent').innerHTML=html;
   showToast('🔥 Session complete! Great work!');
