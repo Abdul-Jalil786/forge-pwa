@@ -502,9 +502,9 @@ async function seedJayMealPlanV8() {
           id: "breakfast",
           name: "Breakfast: Eggs, Yoghurt & Oats",
           time: "12:00",
-          cals: 630, protein: 52, carbs: 54, fat: 24,
+          cals: 634, protein: 61, carbs: 55, fat: 19,
           ingredients: [
-            { name: "4 whole eggs boiled", cals: 280, protein: 24, carbs: 1, fat: 20 },
+            { name: "3 whole eggs boiled + 4 egg whites", cals: 284, protein: 33, carbs: 2, fat: 15 },
             { name: "200g Greek yoghurt 0%", cals: 110, protein: 20, carbs: 8, fat: 1 },
             { name: "50g rolled oats", cals: 190, protein: 7, carbs: 33, fat: 3 },
             { name: "100g mixed berries", cals: 50, protein: 1, carbs: 12, fat: 0 },
@@ -742,6 +742,47 @@ async function patchJaySupplementsAndMealsV8c() {
   }
 }
 
+// Phase 41n: swap breakfast eggs from "4 whole boiled" to "3 whole boiled +
+// 4 egg whites" (what Jay actually eats). Adds 9g protein, saves 5g fat,
+// virtually the same calories. Meal totals updated to reflect the swap.
+async function swapJayBreakfastEggsToWhites() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.eggsSwap34Done) return;
+    const plan = state.mealPlan;
+    if (!plan || !Array.isArray(plan.meals)) return;
+    const breakfast = plan.meals.find((m: any) => m.id === "breakfast");
+    if (!breakfast || !Array.isArray(breakfast.ingredients)) return;
+    let swapped = false;
+    for (const ing of breakfast.ingredients) {
+      if (typeof ing?.name === "string" && /eggs?\b/i.test(ing.name) && !/white/i.test(ing.name)) {
+        ing.name = "3 whole eggs boiled + 4 egg whites";
+        ing.cals = 284;
+        ing.protein = 33;
+        ing.carbs = 2;
+        ing.fat = 15;
+        swapped = true;
+        break;
+      }
+    }
+    if (swapped) {
+      // Recompute meal totals from ingredients
+      const sum = (k: string) => breakfast.ingredients.reduce((s: number, i: any) => s + (+i[k] || 0), 0);
+      breakfast.cals = Math.round(sum("cals"));
+      breakfast.protein = Math.round(sum("protein"));
+      breakfast.carbs = Math.round(sum("carbs"));
+      breakfast.fat = Math.round(sum("fat"));
+    }
+    state.eggsSwap34Done = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] Jay breakfast eggs swapped to 3 whole + 4 whites (${swapped ? "patched, totals=" + breakfast.cals + "/" + breakfast.protein + "/" + breakfast.carbs + "/" + breakfast.fat : "no match"})`);
+  } catch (err) {
+    console.error("[migration] swapJayBreakfastEggsToWhites failed:", err);
+  }
+}
+
 // Phase 41b patch: change breakfast eggs from scrambled to boiled (Jay's preference).
 // Idempotent — runs once, only updates if the name still contains "scrambled".
 async function fixJayBreakfastEggsBoiled() {
@@ -871,6 +912,7 @@ const server = app.listen(PORT, () => {
   seedJayMealPlanV8();
   updateJaySupplementsV8();
   fixJayBreakfastEggsBoiled();
+  swapJayBreakfastEggsToWhites();
   patchJaySupplementsAndMealsV8c();
   purgeJayMultivitamin();
   purgeJayProteinSupplement();
