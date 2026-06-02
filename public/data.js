@@ -99,6 +99,7 @@ let STATE = {
   vo2maxLog: {},
   cardioLog: {},
   bpLog: [],
+  dexaScans: [],
   stretchLog: {},
   stretchStreak: { morning: 0, evening: 0, combined: 0, lastMorningDate: null, lastEveningDate: null },
 };
@@ -1745,6 +1746,84 @@ function isRestDay(date){
   return (typeof getSessionTypeForDate==='function')&&getSessionTypeForDate(date||todayStr())===null;
 }
 // Sessions logged in the last N days
+// ---- Phase 41o: DEXA body-composition scans (gold-standard reference) ----
+const DEXA_VAT_BANDS=[
+  {max:100,label:'Normal',color:'var(--green)'},
+  {max:160,label:'Increased',color:'#ffc107'},
+  {max:9999,label:'High',color:'var(--red)'},
+];
+const DEXA_TSCORE_BANDS=[
+  {min:-1,label:'Normal',color:'var(--green)'},
+  {min:-2.5,label:'Osteopenia',color:'#ffc107'},
+  {min:-9,label:'Osteoporosis',color:'var(--red)'},
+];
+function getDexaScans(){
+  const arr=pGet('dexaScans',[]);
+  return Array.isArray(arr)?arr:[];
+}
+function getLatestDexaScan(){
+  const arr=getDexaScans();
+  if(!arr.length)return null;
+  return [...arr].sort((a,b)=>(a.date||'').localeCompare(b.date||''))[arr.length-1];
+}
+function getDexaVATBand(vatCm2){
+  if(vatCm2==null)return null;
+  for(const b of DEXA_VAT_BANDS)if(vatCm2<b.max)return b;
+  return DEXA_VAT_BANDS[DEXA_VAT_BANDS.length-1];
+}
+function getDexaTScoreBand(tScore){
+  if(tScore==null)return null;
+  if(tScore>-1)return DEXA_TSCORE_BANDS[0];
+  if(tScore>-2.5)return DEXA_TSCORE_BANDS[1];
+  return DEXA_TSCORE_BANDS[2];
+}
+function addDexaScan(scan){
+  const arr=getDexaScans();
+  const entry={
+    id:'dexa_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+    date:scan.date||todayStr(),
+    provider:String(scan.provider||'').slice(0,80),
+    weight:scan.weight?+scan.weight:null,
+    bodyFatPct:scan.bodyFatPct?+scan.bodyFatPct:null,
+    fatMass:scan.fatMass?+scan.fatMass:null,
+    leanMass:scan.leanMass?+scan.leanMass:null,
+    boneMass:scan.boneMass?+scan.boneMass:null,
+    vatCm2:scan.vatCm2?+scan.vatCm2:null,
+    bmdTotal:scan.bmdTotal?+scan.bmdTotal:null,
+    tScore:scan.tScore!=null?+scan.tScore:null,
+    zScore:scan.zScore!=null?+scan.zScore:null,
+    lmi:scan.lmi?+scan.lmi:null,
+    almi:scan.almi?+scan.almi:null,
+    fmi:scan.fmi?+scan.fmi:null,
+    androidFatPct:scan.androidFatPct?+scan.androidFatPct:null,
+    gynoidFatPct:scan.gynoidFatPct?+scan.gynoidFatPct:null,
+    muscleSymmetryPct:scan.muscleSymmetryPct?+scan.muscleSymmetryPct:null,
+    longevityIndex:scan.longevityIndex?+scan.longevityIndex:null,
+    notes:String(scan.notes||'').slice(0,400),
+    loggedAt:new Date().toISOString(),
+  };
+  arr.push(entry);
+  STATE.dexaScans=arr;
+  updateLocalCache();
+  saveFieldToServer('/api/state/dexa-scans',{dexaScans:arr});
+  return entry;
+}
+function updateDexaScan(id,patch){
+  const arr=getDexaScans();
+  const i=arr.findIndex(s=>s&&s.id===id);
+  if(i<0)return;
+  arr[i]={...arr[i],...patch,id};
+  STATE.dexaScans=arr;
+  updateLocalCache();
+  saveFieldToServer('/api/state/dexa-scans',{dexaScans:arr});
+}
+function deleteDexaScan(id){
+  const arr=getDexaScans().filter(s=>s&&s.id!==id);
+  STATE.dexaScans=arr;
+  updateLocalCache();
+  saveFieldToServer('/api/state/dexa-scans',{dexaScans:arr});
+}
+
 // ---- Phase 41l: Blood pressure tracking (LVH-aware) ----
 const BP_TARGET_SYS=130, BP_TARGET_DIA=80; // ACC/AHA target for LVH / elevated CV risk
 const BP_BANDS=[

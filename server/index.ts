@@ -742,6 +742,47 @@ async function patchJaySupplementsAndMealsV8c() {
   }
 }
 
+// Phase 41o: seed Jay's first DEXA scan (BodyView Edgbaston, 2 June 2026).
+// One-shot; user can add future scans via the modal.
+async function seedJayDexa20260602() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.dexa20260602Seeded) return;
+    if (!Array.isArray(state.dexaScans)) state.dexaScans = [];
+    const entry = {
+      id: "dexa_seed_2026_06_02",
+      date: "2026-06-02",
+      provider: "BodyView Edgbaston",
+      weight: 113.8,
+      bodyFatPct: 29.9,
+      fatMass: 34.0,
+      leanMass: 76.8,
+      boneMass: 2.94,
+      vatCm2: 197,
+      bmdTotal: 1.235,
+      tScore: 0.4,
+      zScore: 0.5,
+      lmi: 24.1,
+      almi: 10.8,
+      fmi: 10.7,
+      androidFatPct: 34.9,
+      gynoidFatPct: 33.4,
+      muscleSymmetryPct: 9.06,
+      longevityIndex: 50.5,
+      notes: "First DEXA. BMD normal/above-average despite low T. Visceral fat HIGH band — primary focus for cut. LBM 93rd percentile.",
+      loggedAt: new Date().toISOString(),
+    };
+    if (!state.dexaScans.some((s: any) => s?.id === entry.id)) state.dexaScans.push(entry);
+    state.dexa20260602Seeded = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay DEXA scan 2026-06-02 seeded (BodyView Edgbaston)");
+  } catch (err) {
+    console.error("[migration] seedJayDexa20260602 failed:", err);
+  }
+}
+
 // Phase 41n: swap breakfast eggs from "4 whole boiled" to "3 whole boiled +
 // 4 egg whites" (what Jay actually eats). Adds 9g protein, saves 5g fat,
 // virtually the same calories. Meal totals updated to reflect the swap.
@@ -913,6 +954,7 @@ const server = app.listen(PORT, () => {
   updateJaySupplementsV8();
   fixJayBreakfastEggsBoiled();
   swapJayBreakfastEggsToWhites();
+  seedJayDexa20260602();
   patchJaySupplementsAndMealsV8c();
   purgeJayMultivitamin();
   purgeJayProteinSupplement();

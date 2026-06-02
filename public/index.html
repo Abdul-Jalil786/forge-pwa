@@ -704,6 +704,107 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
   </div>
 </div>
 
+<div class="modal-bg" id="modal-dexa">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="dexa-title">Add DEXA Scan</div>
+      <button class="modal-close" onclick="closeModal('modal-dexa')">✕</button>
+    </div>
+    <input type="hidden" id="dexa-id" value="" />
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Date</div>
+        <input id="dexa-date" type="date" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Provider</div>
+        <input id="dexa-provider" type="text" maxlength="80" placeholder="e.g. BodyView Edgbaston" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:6px 0 4px;">Core body composition</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:9px;color:var(--text3);">WEIGHT kg</div>
+        <input id="dexa-weight" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;text-align:center;font-family:'Archivo Black',sans-serif;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--lime);">BF %</div>
+        <input id="dexa-bf" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;text-align:center;font-family:'Archivo Black',sans-serif;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--orange);">FAT kg</div>
+        <input id="dexa-fat" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;text-align:center;font-family:'Archivo Black',sans-serif;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--cyan);">LEAN kg</div>
+        <input id="dexa-lean" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;text-align:center;font-family:'Archivo Black',sans-serif;" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:9px;color:var(--text3);">BONE kg</div>
+        <input id="dexa-bone" type="number" step="0.01" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--red);">VAT cm²</div>
+        <input id="dexa-vat" type="number" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:6px 0 4px;">Bone density</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:9px;color:var(--text3);">BMD g/cm²</div>
+        <input id="dexa-bmd" type="number" step="0.001" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--text3);">T-SCORE</div>
+        <input id="dexa-tscore" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--text3);">Z-SCORE</div>
+        <input id="dexa-zscore" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:6px 0 4px;">Indices &amp; symmetry (optional)</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:9px;color:var(--text3);">LMI</div>
+        <input id="dexa-lmi" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--text3);">ALMI</div>
+        <input id="dexa-almi" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--text3);">FMI</div>
+        <input id="dexa-fmi" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--text3);">L/R %</div>
+        <input id="dexa-symm" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:9px;color:var(--text3);">Android Fat %</div>
+        <input id="dexa-android" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--text3);">Gynoid Fat %</div>
+        <input id="dexa-gynoid" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--text3);">Longevity Idx</div>
+        <input id="dexa-longevity" type="number" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Notes</div>
+    <textarea id="dexa-notes" rows="2" maxlength="400" placeholder="optional" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:14px;"></textarea>
+    <button class="btn btn-lime btn-full" onclick="saveDexaScan()" style="margin-bottom:8px;">Save scan</button>
+    <button id="dexa-delete-btn" class="btn btn-ghost btn-full" style="color:var(--red);border-color:var(--red);display:none;" onclick="deleteDexaScanFromModal()">Delete this scan</button>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-bp">
   <div class="modal">
     <div class="modal-hdr">

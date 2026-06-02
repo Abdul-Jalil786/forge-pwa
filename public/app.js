@@ -1693,6 +1693,99 @@ function confirmReset(){
 }
 
 // ============================================================
+// PHASE 41o — DEXA SCAN LOG
+// ============================================================
+function openDexaEdit(id){
+  const existing=id?getDexaScans().find(s=>s.id===id):null;
+  const set=(elId,v)=>{const el=document.getElementById(elId);if(el)el.value=v==null?'':v;};
+  document.getElementById('dexa-title').textContent=existing?'Edit DEXA Scan':'Add DEXA Scan';
+  document.getElementById('dexa-id').value=id||'';
+  set('dexa-date',existing?existing.date:todayStr());
+  set('dexa-provider',existing?existing.provider:'BodyView Edgbaston');
+  set('dexa-weight',existing?existing.weight:'');
+  set('dexa-bf',existing?existing.bodyFatPct:'');
+  set('dexa-fat',existing?existing.fatMass:'');
+  set('dexa-lean',existing?existing.leanMass:'');
+  set('dexa-bone',existing?existing.boneMass:'');
+  set('dexa-vat',existing?existing.vatCm2:'');
+  set('dexa-bmd',existing?existing.bmdTotal:'');
+  set('dexa-tscore',existing?existing.tScore:'');
+  set('dexa-zscore',existing?existing.zScore:'');
+  set('dexa-lmi',existing?existing.lmi:'');
+  set('dexa-almi',existing?existing.almi:'');
+  set('dexa-fmi',existing?existing.fmi:'');
+  set('dexa-symm',existing?existing.muscleSymmetryPct:'');
+  set('dexa-android',existing?existing.androidFatPct:'');
+  set('dexa-gynoid',existing?existing.gynoidFatPct:'');
+  set('dexa-longevity',existing?existing.longevityIndex:'');
+  set('dexa-notes',existing?existing.notes:'');
+  document.getElementById('dexa-delete-btn').style.display=id?'block':'none';
+  openModal('modal-dexa');
+}
+function saveDexaScan(){
+  const id=document.getElementById('dexa-id').value;
+  const val=elId=>{const v=document.getElementById(elId).value;return v===''?null:v;};
+  const data={
+    date:document.getElementById('dexa-date').value||todayStr(),
+    provider:document.getElementById('dexa-provider').value.trim(),
+    weight:val('dexa-weight'),
+    bodyFatPct:val('dexa-bf'),
+    fatMass:val('dexa-fat'),
+    leanMass:val('dexa-lean'),
+    boneMass:val('dexa-bone'),
+    vatCm2:val('dexa-vat'),
+    bmdTotal:val('dexa-bmd'),
+    tScore:val('dexa-tscore'),
+    zScore:val('dexa-zscore'),
+    lmi:val('dexa-lmi'),
+    almi:val('dexa-almi'),
+    fmi:val('dexa-fmi'),
+    muscleSymmetryPct:val('dexa-symm'),
+    androidFatPct:val('dexa-android'),
+    gynoidFatPct:val('dexa-gynoid'),
+    longevityIndex:val('dexa-longevity'),
+    notes:document.getElementById('dexa-notes').value.trim(),
+  };
+  if(!data.bodyFatPct&&!data.leanMass&&!data.fatMass){showToast('Enter at least body fat %, lean or fat mass');return;}
+  if(id&&typeof updateDexaScan==='function')updateDexaScan(id,data);
+  else if(typeof addDexaScan==='function')addDexaScan(data);
+  closeModal('modal-dexa');
+  showToast(id?'Scan updated ✓':'Scan saved ✓');
+  if(typeof renderTrack==='function')renderTrack();
+}
+function deleteDexaScanFromModal(){
+  const id=document.getElementById('dexa-id').value;
+  if(!id)return;
+  if(!confirm('Delete this DEXA scan? This cannot be undone.'))return;
+  if(typeof deleteDexaScan==='function')deleteDexaScan(id);
+  closeModal('modal-dexa');
+  showToast('Scan deleted');
+  if(typeof renderTrack==='function')renderTrack();
+}
+function showDexaHistory(){
+  const scans=getDexaScans();
+  if(scans.length<2){showToast('Only one scan logged');return;}
+  const sorted=[...scans].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const html=sorted.map(s=>{
+    const vatBand=getDexaVATBand(s.vatCm2);
+    const tBand=getDexaTScoreBand(s.tScore);
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="closeModal('modal-info');setTimeout(()=>openDexaEdit('${_esc(s.id)}'),120);">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <div style="font-size:13px;font-weight:600;">${fmtDate(s.date)}</div>
+        <div style="font-size:11px;color:var(--text3);">${_esc(s.provider||'')}</div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;">
+        ${s.bodyFatPct!=null?`<span>BF ${s.bodyFatPct.toFixed(1)}%</span>`:''}
+        ${s.leanMass!=null?`<span>Lean ${s.leanMass.toFixed(1)}kg</span>`:''}
+        ${s.vatCm2!=null?`<span style="color:${vatBand?vatBand.color:'var(--text2)'};">VAT ${s.vatCm2}cm²</span>`:''}
+        ${s.tScore!=null?`<span style="color:${tBand?tBand.color:'var(--text2)'};">T ${s.tScore.toFixed(1)}</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  if(typeof _showInfoModal==='function')_showInfoModal('DEXA History',html);
+}
+
+// ============================================================
 // PHASE 41l — BLOOD PRESSURE LOGGING
 // ============================================================
 function openBPEdit(){

@@ -600,6 +600,58 @@ dateKeyedRoute("/supplement-log/:date", "supplementLog");
 dateKeyedRoute("/stretch-log/:date", "stretchLog"); // Phase 41 (owner-only feature, but endpoint is per-user data)
 dateKeyedRoute("/cardio-log/:date", "cardioLog"); // Phase 41i (zone-2 cardio sessions, any user)
 
+// Phase 41o: DEXA body-composition scans (full-array PUT pattern, like bp-log)
+router.put("/dexa-scans", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { dexaScans } = req.body || {};
+    if (!Array.isArray(dexaScans)) { res.status(400).json({ error: "dexaScans must be an array" }); return; }
+    if (dexaScans.length > 200) { res.status(400).json({ error: "max 200 scans" }); return; }
+    const num = (v: any, lo: number, hi: number) => {
+      if (v == null || v === "") return null;
+      const n = +v;
+      if (!Number.isFinite(n) || n < lo || n > hi) return null;
+      return n;
+    };
+    const clean = dexaScans.map((s: any) => {
+      if (!s || typeof s !== "object") return null;
+      return {
+        id: String(s.id || "").slice(0, 60) || ("dexa_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
+        date: String(s.date || "").slice(0, 10),
+        provider: String(s.provider || "").slice(0, 80),
+        weight: num(s.weight, 30, 300),
+        bodyFatPct: num(s.bodyFatPct, 1, 70),
+        fatMass: num(s.fatMass, 0, 200),
+        leanMass: num(s.leanMass, 10, 200),
+        boneMass: num(s.boneMass, 0.5, 10),
+        vatCm2: num(s.vatCm2, 0, 500),
+        bmdTotal: num(s.bmdTotal, 0.3, 2.5),
+        tScore: num(s.tScore, -6, 6),
+        zScore: num(s.zScore, -6, 6),
+        lmi: num(s.lmi, 5, 40),
+        almi: num(s.almi, 3, 20),
+        fmi: num(s.fmi, 0, 30),
+        androidFatPct: num(s.androidFatPct, 1, 80),
+        gynoidFatPct: num(s.gynoidFatPct, 1, 80),
+        muscleSymmetryPct: num(s.muscleSymmetryPct, 0, 100),
+        longevityIndex: num(s.longevityIndex, 0, 100),
+        notes: String(s.notes || "").slice(0, 400),
+        loggedAt: String(s.loggedAt || new Date().toISOString()).slice(0, 30),
+      };
+    }).filter(Boolean);
+    const valueJson = JSON.stringify(clean);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{dexaScans}', ${valueJson}::jsonb, true),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true, count: clean.length });
+  } catch (err) {
+    console.error("Put dexa-scans error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 41l: blood pressure log (array of readings, full-array PUT pattern)
 router.put("/bp-log", requireAuth, async (req: Request, res: Response) => {
   try {

@@ -1016,6 +1016,8 @@ function renderTrack(){
 
     ${renderBPCard()}
 
+    ${renderDexaCard()}
+
     ${(()=>{
       if(!proj)return'<div class="card" style="margin-bottom:10px;"><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">GOAL DATE</div><div style="font-size:12px;color:var(--text2);padding:12px 0;">Pending — need profile targets set</div></div>';
       if(!proj.goalDate){
@@ -2805,6 +2807,72 @@ function renderCardioCard(date){
       <div style="font-size:12px;color:var(--text2);margin:4px 0 10px;line-height:1.5;">30 min incline treadmill (5 km/h · 6–8% incline · HR 110–125 bpm). Builds VO₂ max + protective for LVH, ALT, CRP.</div>
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openCardioLog('${date}')">Log session</button>
     </div>`;
+}
+
+// ============================================================
+// PHASE 41o — DEXA SCAN CARD (Track page)
+// ============================================================
+function renderDexaCard(){
+  const latest=(typeof getLatestDexaScan==='function')?getLatestDexaScan():null;
+  if(!latest){
+    return `<div class="card" style="margin-bottom:10px;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">DEXA Scan</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Gold-standard body composition — measures fat %, lean mass, visceral fat in cm², bone density. Re-scan every 3 months for true recomp tracking.</div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openDexaEdit()">+ Add first scan</button>
+    </div>`;
+  }
+  const vatBand=getDexaVATBand(latest.vatCm2);
+  const tBand=getDexaTScoreBand(latest.tScore);
+  const dateStr=fmtDate(latest.date);
+  // Next-scan target (3 months out)
+  const nextDate=new Date(latest.date+'T12:00:00');
+  nextDate.setMonth(nextDate.getMonth()+3);
+  const nextStr=nextDate.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  return `<div class="card" style="margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">DEXA · Body composition</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${dateStr}${latest.provider?` · ${_esc(latest.provider)}`:''}</div>
+      </div>
+      ${latest.longevityIndex!=null?`<div style="text-align:right;"><div style="font-size:10px;color:var(--text3);">LONGEVITY</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:#ffc107;">${latest.longevityIndex}</div></div>`:''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Body fat</div><div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--lime);">${latest.bodyFatPct!=null?latest.bodyFatPct.toFixed(1)+'%':'—'}</div></div>
+      <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Lean</div><div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--cyan);">${latest.leanMass!=null?latest.leanMass.toFixed(1):'—'}<span style="font-size:11px;color:var(--text3);">kg</span></div></div>
+      <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Fat mass</div><div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--orange);">${latest.fatMass!=null?latest.fatMass.toFixed(1):'—'}<span style="font-size:11px;color:var(--text3);">kg</span></div></div>
+    </div>
+    ${latest.vatCm2!=null?`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg2);border-radius:8px;margin-bottom:8px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Visceral fat</div>
+        <div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:${vatBand?vatBand.color:'var(--text)'};">${latest.vatCm2} cm²</div>
+      </div>
+      <div style="text-align:right;">
+        ${vatBand?`<span style="background:${vatBand.color};color:#000;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.5px;">${vatBand.label}</span>`:''}
+        <div style="font-size:10px;color:var(--text3);margin-top:4px;">target &lt;100 cm²</div>
+      </div>
+    </div>`:''}
+    ${latest.tScore!=null?`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg2);border-radius:8px;margin-bottom:8px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Bone density</div>
+        <div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:${tBand?tBand.color:'var(--text)'};">T ${latest.tScore.toFixed(1)}${latest.zScore!=null?` · Z ${latest.zScore.toFixed(1)}`:''}</div>
+      </div>
+      <div style="text-align:right;">
+        ${tBand?`<span style="background:${tBand.color};color:#000;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.5px;">${tBand.label}</span>`:''}
+        ${latest.bmdTotal!=null?`<div style="font-size:10px;color:var(--text3);margin-top:4px;">${latest.bmdTotal.toFixed(3)} g/cm²</div>`:''}
+      </div>
+    </div>`:''}
+    ${latest.almi!=null||latest.lmi!=null||latest.fmi!=null?`<div style="font-size:11px;color:var(--text2);padding:6px 0;display:flex;gap:14px;flex-wrap:wrap;">
+      ${latest.lmi!=null?`<span><strong style="color:var(--text);">LMI</strong> ${latest.lmi.toFixed(1)}</span>`:''}
+      ${latest.almi!=null?`<span><strong style="color:var(--text);">ALMI</strong> ${latest.almi.toFixed(1)} ${latest.almi>=7.26?'<span style="color:var(--green);">✓</span>':'<span style="color:var(--red);">⚠</span>'}</span>`:''}
+      ${latest.fmi!=null?`<span><strong style="color:var(--text);">FMI</strong> ${latest.fmi.toFixed(1)}</span>`:''}
+      ${latest.muscleSymmetryPct!=null?`<span><strong style="color:var(--text);">L/R imbalance</strong> ${latest.muscleSymmetryPct.toFixed(1)}%</span>`:''}
+    </div>`:''}
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">Next scan recommended: <strong style="color:var(--text2);">${nextStr}</strong> (3 months)</div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn btn-lime btn-sm" style="flex:1;" onclick="openDexaEdit()">+ Add scan</button>
+      ${getDexaScans().length>1?`<button class="btn btn-ghost btn-sm" style="flex:1;" onclick="showDexaHistory()">History (${getDexaScans().length})</button>`:''}
+    </div>
+  </div>`;
 }
 
 // ============================================================
