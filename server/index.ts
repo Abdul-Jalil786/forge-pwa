@@ -75,6 +75,9 @@ app.use("/api/coaching-reports", coachingRouter);
 import coachSettingsRouter from "./coach-settings";
 app.use("/api/coach", coachSettingsRouter);
 
+import adminRouter from "./admin";
+app.use("/api/admin", adminRouter);
+
 // Static files — use process.cwd() so it works in both dev (tsx) and prod (dist/)
 const publicDir = path.join(process.cwd(), "public");
 app.use(express.static(publicDir));

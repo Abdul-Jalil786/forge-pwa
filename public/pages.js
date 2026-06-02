@@ -2661,6 +2661,13 @@ function renderMore(){
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px;" onclick="logOut()">Log Out</button>
       <button class="btn btn-red btn-sm" style="width:100%;" onclick="deleteAccount()">Delete Account</button>
     </div>
+
+    ${(typeof isOwner==='function'&&isOwner())?`
+    <div class="sec-label" style="margin-top:18px;">Forge Admin · Stats</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div id="admin-stats-body" style="font-size:12px;color:var(--text2);">Loading…</div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px;" onclick="loadAdminStats()">↻ Refresh</button>
+    </div>`:''}
   `;
 
   loadOuraStatus();
@@ -2672,6 +2679,7 @@ function renderMore(){
   renderBloodMarkersList();
   loadSessionTimesUI();
   renderInjuryList();
+  if(typeof isOwner==='function'&&isOwner()&&typeof loadAdminStats==='function')loadAdminStats();
 }
 
 // ============================================================

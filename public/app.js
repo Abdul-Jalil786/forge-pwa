@@ -1693,6 +1693,49 @@ function confirmReset(){
 }
 
 // ============================================================
+// PHASE 41j — ADMIN STATS (owner-only)
+// ============================================================
+async function loadAdminStats(){
+  const el=document.getElementById('admin-stats-body');
+  if(!el)return;
+  el.innerHTML='<span style="color:var(--text3);">Loading…</span>';
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/admin/stats',{headers:{Authorization:'Bearer '+jwt}});
+    if(res.status===403){el.innerHTML='<span style="color:var(--red);">Owner only</span>';return;}
+    if(!res.ok){const e=await res.json().catch(()=>({}));el.innerHTML='<span style="color:var(--red);">Error: '+_esc(e.error||res.status)+'</span>';return;}
+    const d=await res.json();
+    const fmt=v=>v==null?'—':String(v);
+    const dateOnly=s=>s?String(s).slice(0,10):'—';
+    el.innerHTML=`
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;">
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Total users</div><div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:var(--lime);">${fmt(d.total)}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Active 7d</div><div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:var(--green);">${fmt(d.active7d)}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Active 30d</div><div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:var(--text);">${fmt(d.active30d)}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Push devices</div><div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:var(--text);">${fmt(d.pushDevices)}<span style="font-size:11px;color:var(--text3);"> · ${fmt(d.usersWithPush)}u</span></div></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:12px;padding-top:10px;border-top:1px solid var(--border);line-height:1.6;">
+        🧠 BYOK coaching keys: <strong style="color:var(--text2);">${fmt(d.hasCoachingKey)}</strong> ·
+        💍 Oura: <strong style="color:var(--text2);">${fmt(d.hasOura)}</strong> ·
+        ⚖️ Withings: <strong style="color:var(--text2);">${fmt(d.hasWithings)}</strong>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px;">First signup: ${dateOnly(d.firstSignup)} · Latest: ${dateOnly(d.latestSignup)}</div>
+      ${d.users&&d.users.length?`
+        <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Users (sorted by recent activity)</div>
+          ${d.users.map(u=>`<div style="font-size:11px;padding:6px 0;display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border);">
+            <span style="color:var(--text);overflow:hidden;text-overflow:ellipsis;min-width:0;">${_esc(u.email)}</span>
+            <span style="color:var(--text3);flex-shrink:0;">${u.daysSinceUpdate===0?'today':u.daysSinceUpdate+'d ago'}${u.hasKey?' 🧠':''}${u.hasOura?' 💍':''}${u.hasWithings?' ⚖️':''}</span>
+          </div>`).join('')}
+        </div>`:''}
+      <div style="font-size:9px;color:var(--text3);margin-top:10px;text-align:right;">Generated ${new Date(d.generatedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
+    `;
+  }catch(e){
+    el.innerHTML='<span style="color:var(--red);">Error: '+_esc(e.message||'network')+'</span>';
+  }
+}
+
+// ============================================================
 // PHASE 41i — CARDIO LOG
 // ============================================================
 let _cardioEffort=null;
