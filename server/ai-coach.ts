@@ -1085,7 +1085,7 @@ INTERPRETATION RULES:
 - BLOOD PRESSURE (only when a BLOOD PRESSURE block is present):
   - User has LVH context — target is <130/80 mmHg (tighter than general population's <140/90).
   - If 7-day-avg systolic ≥130 OR diastolic ≥80, flag as a Priority Action candidate. Be specific about the number, not vague.
-  - Identify timing patterns (morning vs evening, post-coffee, post-workout) by reading the `notes` field on best/worst readings.
+  - Identify timing patterns (morning vs evening, post-coffee, post-workout) by reading the notes field on best/worst readings.
   - If readings show large swings (>20 mmHg systolic variation in same week), mention it as worth investigating with GP — could be white-coat, monitor accuracy, or autonomic instability.
   - If 7-day avg is improving vs 14-day avg (lower), celebrate and tie to body composition + cardio + sleep work.
   - Never prescribe BP medication. Never adjust existing medication dose. Frame anything concerning as "discuss with your GP at the next review."
