@@ -704,6 +704,59 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
   </div>
 </div>
 
+<div class="modal-bg" id="modal-bp">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">Log Blood Pressure</div>
+      <button class="modal-close" onclick="closeModal('modal-bp')">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Date</div>
+        <input id="bp-date" type="date" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Time</div>
+        <input id="bp-time" type="time" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px;color:var(--red);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Systolic</div>
+        <input id="bp-systolic" type="number" min="60" max="250" inputmode="numeric" placeholder="120" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:18px;font-family:'Archivo Black',sans-serif;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Diastolic</div>
+        <input id="bp-diastolic" type="number" min="30" max="200" inputmode="numeric" placeholder="80" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:18px;font-family:'Archivo Black',sans-serif;text-align:center;" />
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--cyan);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Pulse</div>
+        <input id="bp-pulse" type="number" min="30" max="220" inputmode="numeric" placeholder="opt" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:18px;font-family:'Archivo Black',sans-serif;text-align:center;" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Arm</div>
+        <select id="bp-arm" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+          <option value="left">Left arm</option>
+          <option value="right">Right arm</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Position</div>
+        <select id="bp-position" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+          <option value="sitting">Sitting</option>
+          <option value="standing">Standing</option>
+          <option value="lying">Lying</option>
+        </select>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Notes (optional)</div>
+    <textarea id="bp-notes" rows="2" maxlength="200" placeholder="e.g. morning, pre-coffee · after walk · post-workout" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:14px;"></textarea>
+    <button class="btn btn-lime btn-full" onclick="saveBPReading()">Save reading</button>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-cardio">
   <div class="modal">
     <div class="modal-hdr">

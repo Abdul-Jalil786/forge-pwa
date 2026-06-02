@@ -1693,6 +1693,53 @@ function confirmReset(){
 }
 
 // ============================================================
+// PHASE 41l — BLOOD PRESSURE LOGGING
+// ============================================================
+function openBPEdit(){
+  document.getElementById('bp-date').value=todayStr();
+  document.getElementById('bp-time').value=fmtNow();
+  document.getElementById('bp-systolic').value='';
+  document.getElementById('bp-diastolic').value='';
+  document.getElementById('bp-pulse').value='';
+  document.getElementById('bp-arm').value='left';
+  document.getElementById('bp-position').value='sitting';
+  document.getElementById('bp-notes').value='';
+  openModal('modal-bp');
+  setTimeout(()=>{const el=document.getElementById('bp-systolic');if(el)el.focus();},100);
+}
+function saveBPReading(){
+  const sys=parseInt(document.getElementById('bp-systolic').value,10);
+  const dia=parseInt(document.getElementById('bp-diastolic').value,10);
+  if(!sys||sys<60||sys>250){showToast('Enter systolic 60–250');return;}
+  if(!dia||dia<30||dia>200){showToast('Enter diastolic 30–200');return;}
+  const pulse=parseInt(document.getElementById('bp-pulse').value,10);
+  const reading={
+    date:document.getElementById('bp-date').value||todayStr(),
+    time:document.getElementById('bp-time').value||fmtNow(),
+    systolic:sys,
+    diastolic:dia,
+    pulse:(pulse&&pulse>=30&&pulse<=220)?pulse:null,
+    arm:document.getElementById('bp-arm').value||'left',
+    position:document.getElementById('bp-position').value||'sitting',
+    notes:document.getElementById('bp-notes').value.trim(),
+  };
+  if(typeof addBPReading==='function')addBPReading(reading);
+  closeModal('modal-bp');
+  const band=(typeof getBPBand==='function')?getBPBand(sys,dia):null;
+  showToast(`Logged ${sys}/${dia}${band?' · '+band.label:''} ✓`);
+  // Crisis warning
+  if(sys>=180||dia>=120){
+    setTimeout(()=>alert('⚠️ HYPERTENSIVE CRISIS RANGE\n\nReading ≥180 systolic OR ≥120 diastolic = medical emergency.\n\nSit quietly 5 min · re-check.\nIf still in this range or you have chest pain, shortness of breath, vision changes: call 999 / NHS 111 immediately.'),500);
+  }
+  if(typeof renderTrack==='function')renderTrack();
+}
+function delBPReading(id){
+  if(!confirm('Delete this BP reading?'))return;
+  if(typeof deleteBPReading==='function')deleteBPReading(id);
+  if(typeof renderTrack==='function')renderTrack();
+}
+
+// ============================================================
 // PHASE 41j — ADMIN STATS (owner-only)
 // ============================================================
 async function loadAdminStats(){

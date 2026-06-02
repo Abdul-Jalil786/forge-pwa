@@ -98,6 +98,7 @@ let STATE = {
   manualSteps: {},
   vo2maxLog: {},
   cardioLog: {},
+  bpLog: [],
   stretchLog: {},
   stretchStreak: { morning: 0, evening: 0, combined: 0, lastMorningDate: null, lastEveningDate: null },
 };
@@ -1744,6 +1745,90 @@ function isRestDay(date){
   return (typeof getSessionTypeForDate==='function')&&getSessionTypeForDate(date||todayStr())===null;
 }
 // Sessions logged in the last N days
+// ---- Phase 41l: Blood pressure tracking (LVH-aware) ----
+const BP_TARGET_SYS=130, BP_TARGET_DIA=80; // ACC/AHA target for LVH / elevated CV risk
+const BP_BANDS=[
+  {max_s:120,max_d:80,label:'Normal',color:'var(--green)',code:'normal'},
+  {max_s:130,max_d:80,label:'Elevated',color:'#ffc107',code:'elevated'},
+  {max_s:140,max_d:90,label:'Stage 1',color:'var(--orange)',code:'stage1'},
+  {max_s:180,max_d:120,label:'Stage 2',color:'var(--red)',code:'stage2'},
+  {max_s:9999,max_d:9999,label:'Crisis',color:'#ff0000',code:'crisis'},
+];
+function getBPLog(){
+  const arr=pGet('bpLog',[]);
+  return Array.isArray(arr)?arr:[];
+}
+function getBPBand(systolic,diastolic){
+  if(systolic==null||diastolic==null)return null;
+  for(const b of BP_BANDS){
+    if(systolic<b.max_s&&diastolic<b.max_d)return b;
+  }
+  return BP_BANDS[BP_BANDS.length-1];
+}
+function getCurrentBP(){
+  const arr=getBPLog();
+  if(!arr.length)return null;
+  // Sort by date then time (most recent last)
+  const sorted=[...arr].sort((a,b)=>{
+    const ad=(a.date||'')+(a.time||''),bd=(b.date||'')+(b.time||'');
+    return ad<bd?-1:ad>bd?1:0;
+  });
+  return sorted[sorted.length-1];
+}
+function getBPAverage(days){
+  const cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
+  const cutoffStr=_ukDate(cutoff);
+  const recent=getBPLog().filter(r=>r&&r.date>=cutoffStr&&r.systolic&&r.diastolic);
+  if(!recent.length)return null;
+  const sumS=recent.reduce((s,r)=>s+r.systolic,0);
+  const sumD=recent.reduce((s,r)=>s+r.diastolic,0);
+  const pulseReadings=recent.filter(r=>r.pulse);
+  const sumP=pulseReadings.reduce((s,r)=>s+r.pulse,0);
+  return {
+    systolic:Math.round(sumS/recent.length),
+    diastolic:Math.round(sumD/recent.length),
+    pulse:pulseReadings.length?Math.round(sumP/pulseReadings.length):null,
+    n:recent.length,
+    days,
+  };
+}
+function getBPTrend(){
+  const week1=getBPAverage(7);
+  const week2=getBPAverage(14);
+  if(!week1||!week2)return null;
+  return {
+    sysDelta:week1.systolic-week2.systolic,
+    diaDelta:week1.diastolic-week2.diastolic,
+    direction:week1.systolic<week2.systolic?'down':week1.systolic>week2.systolic?'up':'flat',
+  };
+}
+function addBPReading(reading){
+  const arr=getBPLog();
+  const entry={
+    id:'bp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+    date:reading.date||todayStr(),
+    time:reading.time||fmtNow(),
+    systolic:parseInt(reading.systolic)||0,
+    diastolic:parseInt(reading.diastolic)||0,
+    pulse:reading.pulse?parseInt(reading.pulse):null,
+    arm:reading.arm||'left',
+    position:reading.position||'sitting',
+    notes:String(reading.notes||'').slice(0,200),
+    loggedAt:new Date().toISOString(),
+  };
+  arr.push(entry);
+  STATE.bpLog=arr;
+  updateLocalCache();
+  saveFieldToServer('/api/state/bp-log',{bpLog:arr});
+  return entry;
+}
+function deleteBPReading(id){
+  const arr=getBPLog().filter(r=>r&&r.id!==id);
+  STATE.bpLog=arr;
+  updateLocalCache();
+  saveFieldToServer('/api/state/bp-log',{bpLog:arr});
+}
+
 function getCardioCompliance(days){
   const log=pGet('cardioLog',{});
   let sessions=0,totalMin=0,hrSum=0,hrN=0,restDayMatch=0,nonRestDay=0;

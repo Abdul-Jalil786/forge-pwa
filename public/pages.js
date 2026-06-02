@@ -1014,6 +1014,8 @@ function renderTrack(){
 
     ${renderVO2MaxCard()}
 
+    ${renderBPCard()}
+
     ${(()=>{
       if(!proj)return'<div class="card" style="margin-bottom:10px;"><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">GOAL DATE</div><div style="font-size:12px;color:var(--text2);padding:12px 0;">Pending — need profile targets set</div></div>';
       if(!proj.goalDate){
@@ -1085,6 +1087,8 @@ function renderTrack(){
         ${rows}`;
       })()}
     </div>
+
+    ${renderBPHistory()}
 
     <div class="sec-label">Steps</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -2800,6 +2804,84 @@ function renderCardioCard(date){
       <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:var(--cyan);">🚶 Rest-day cardio</div>
       <div style="font-size:12px;color:var(--text2);margin:4px 0 10px;line-height:1.5;">30 min incline treadmill (5 km/h · 6–8% incline · HR 110–125 bpm). Builds VO₂ max + protective for LVH, ALT, CRP.</div>
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openCardioLog('${date}')">Log session</button>
+    </div>`;
+}
+
+// ============================================================
+// PHASE 41l — BLOOD PRESSURE CARD (Track page)
+// ============================================================
+function renderBPCard(){
+  const current=(typeof getCurrentBP==='function')?getCurrentBP():null;
+  const avg7=(typeof getBPAverage==='function')?getBPAverage(7):null;
+  const trend=(typeof getBPTrend==='function')?getBPTrend():null;
+  // Empty state — first time
+  if(!current){
+    return `<div class="card" style="margin-bottom:10px;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Blood Pressure</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Track your BP — LVH context means &lt;130/80 is your target. Best taken 5 min after sitting, pre-coffee, same arm + position each time.</div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openBPEdit()">+ Add first reading</button>
+    </div>`;
+  }
+  const band=getBPBand(current.systolic,current.diastolic);
+  const sparkArr=getBPLog().slice(-14).map(r=>r.systolic).filter(v=>v);
+  const sparkSvg=(sparkArr.length>=2&&typeof spark==='function')?spark(sparkArr,band?band.color:'var(--text)'):'';
+  // Time since last reading
+  const last=current.loggedAt?new Date(current.loggedAt):null;
+  let agoStr='';
+  if(last){
+    const mins=Math.floor((Date.now()-last.getTime())/60000);
+    if(mins<60)agoStr=mins+' min ago';
+    else if(mins<24*60)agoStr=Math.floor(mins/60)+'h ago';
+    else agoStr=Math.floor(mins/(24*60))+'d ago';
+  }
+  const trendArrow=trend?(trend.direction==='down'?'↓':trend.direction==='up'?'↑':'→'):'';
+  const trendColor=trend?(trend.direction==='down'?'var(--green)':trend.direction==='up'?'var(--orange)':'var(--text3)'):'var(--text3)';
+  return `<div class="card" style="margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Blood Pressure</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">Last reading ${agoStr}</div>
+      </div>
+      <div style="text-align:right;">${sparkSvg}</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:36px;color:${band?band.color:'var(--text)'};letter-spacing:-1px;">${current.systolic}<span style="font-size:18px;color:var(--text3);"> / </span>${current.diastolic}<span style="font-size:14px;color:var(--text2);"> mmHg</span></div>
+      ${current.pulse?`<div style="text-align:right;"><div style="font-size:11px;color:var(--text3);">pulse</div><div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--text);">${current.pulse}</div></div>`:''}
+    </div>
+    ${band?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <span style="background:${band.color};color:#000;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.5px;">${band.label}</span>
+      <span style="font-size:11px;color:var(--text3);">target &lt;${BP_TARGET_SYS}/${BP_TARGET_DIA} (LVH)</span>
+    </div>`:''}
+    ${avg7?`<div style="font-size:11px;color:var(--text2);padding-top:8px;border-top:1px solid var(--border);">
+      <strong style="color:var(--text);">7-day avg:</strong> ${avg7.systolic} / ${avg7.diastolic}${avg7.pulse?` · pulse ${avg7.pulse}`:''} <span style="color:var(--text3);">(n=${avg7.n})</span>
+      ${trend?`<span style="color:${trendColor};font-weight:600;margin-left:6px;">${trendArrow} ${Math.abs(trend.sysDelta)}/${Math.abs(trend.diaDelta)} vs 14d</span>`:''}
+    </div>`:''}
+    <button class="btn btn-lime btn-sm" style="width:100%;margin-top:10px;" onclick="openBPEdit()">+ Add reading</button>
+  </div>`;
+}
+
+// BP history section (below the Body Fat list on Track page)
+function renderBPHistory(){
+  const arr=getBPLog();
+  if(!arr.length)return '';
+  const sorted=[...arr].sort((a,b)=>{
+    const ad=(a.date||'')+(a.time||''),bd=(b.date||'')+(b.time||'');
+    return ad<bd?1:ad>bd?-1:0;
+  }).slice(0,30);
+  return `<div class="sec-label">Blood Pressure History</div>
+    <div class="card" style="margin-bottom:10px;">
+      ${sorted.map(r=>{
+        const band=getBPBand(r.systolic,r.diastolic);
+        const dt=`${fmtDate(r.date)}${r.time?' · '+r.time:''}`;
+        return `<div class="step-row" style="border-bottom:1px solid var(--border);">
+          <div class="step-date">${dt}</div>
+          <div class="step-bar-wrap" style="text-align:left;padding-left:10px;font-family:'Archivo Black',sans-serif;font-size:15px;color:${band?band.color:'var(--text)'};">${r.systolic}/${r.diastolic}${r.pulse?` <span style="font-size:11px;color:var(--text3);font-family:inherit;">· pulse ${r.pulse}</span>`:''}</div>
+          <div class="step-count" style="text-align:right;">
+            <span style="font-size:10px;color:var(--text3);">${(r.arm||'left')[0].toUpperCase()} · ${r.position||'sitting'}</span>
+            <button class="del-btn" onclick="event.stopPropagation();delBPReading('${r.id}')" style="margin-left:4px;">×</button>
+          </div>
+        </div>`;
+      }).join('')}
     </div>`;
 }
 

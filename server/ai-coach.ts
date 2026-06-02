@@ -732,6 +732,41 @@ function buildContext(state: any): string {
     lines.push("");
   }
 
+  // Phase 41l: blood pressure — only emit if at least one reading
+  const bpLog = Array.isArray(state.bpLog) ? state.bpLog : [];
+  if (bpLog.length > 0) {
+    const cutoff7 = daysAgoUK(7);
+    const cutoff14 = daysAgoUK(14);
+    const last7 = bpLog.filter((r: any) => r && r.date >= cutoff7 && r.systolic && r.diastolic);
+    const last14 = bpLog.filter((r: any) => r && r.date >= cutoff14 && r.systolic && r.diastolic);
+    const avg = (rows: any[]) => {
+      if (!rows.length) return null;
+      return {
+        s: Math.round(rows.reduce((a, b) => a + b.systolic, 0) / rows.length),
+        d: Math.round(rows.reduce((a, b) => a + b.diastolic, 0) / rows.length),
+        n: rows.length,
+      };
+    };
+    const a7 = avg(last7);
+    const a14 = avg(last14);
+    const sorted = [...bpLog].sort((a: any, b: any) => ((a.date || "") + (a.time || "")).localeCompare((b.date || "") + (b.time || "")));
+    const latest = sorted[sorted.length - 1];
+    // Best + worst in last 14d
+    let best: any = null, worst: any = null;
+    for (const r of last14) {
+      if (!best || r.systolic < best.systolic) best = r;
+      if (!worst || r.systolic > worst.systolic) worst = r;
+    }
+    lines.push("BLOOD PRESSURE (LVH context — target <130/80):");
+    if (a7) lines.push(`  7-day avg: ${a7.s}/${a7.d} (n=${a7.n})${a7.s >= 130 || a7.d >= 80 ? " — ABOVE target" : " — within target"}`);
+    if (a14) lines.push(`  14-day avg: ${a14.s}/${a14.d} (n=${a14.n})`);
+    if (latest) lines.push(`  Latest: ${latest.systolic}/${latest.diastolic}${latest.pulse ? ` · pulse ${latest.pulse}` : ""} on ${latest.date} ${latest.time || ""}${latest.notes ? ` — "${latest.notes}"` : ""}`);
+    if (best && worst && best.id !== worst.id) {
+      lines.push(`  Range last 14d: best ${best.systolic}/${best.diastolic}${best.notes ? ` ("${best.notes}")` : ""} · worst ${worst.systolic}/${worst.diastolic}${worst.notes ? ` ("${worst.notes}")` : ""}`);
+    }
+    lines.push("");
+  }
+
   // Phase 41h: VO2 max — cardio fitness trend (only emit if Oura supplied data)
   const vo2log = state.vo2maxLog || {};
   const vo2Dates = Object.keys(vo2log).filter((d) => typeof vo2log[d]?.vo2 === "number").sort();
@@ -1047,6 +1082,14 @@ INTERPRETATION RULES:
   - Effort letters per set: (e)=easy, (s)=solid, (t)=tough. A lift logged all-easy for 2+ sessions is under-loaded; all-tough may be too heavy or signal under-recovery.
   - Rest times: average rest far above the prescription can blunt the stimulus on accessories — mention only if clearly excessive.
   - ACTIVE INJURIES: never tell the user to add load to an injured lift. Loads are already auto-reduced (mild −20%, moderate −35%, severe = hold). Reinforce pain-free range of motion and advise when to consider seeing a professional.
+- BLOOD PRESSURE (only when a BLOOD PRESSURE block is present):
+  - User has LVH context — target is <130/80 mmHg (tighter than general population's <140/90).
+  - If 7-day-avg systolic ≥130 OR diastolic ≥80, flag as a Priority Action candidate. Be specific about the number, not vague.
+  - Identify timing patterns (morning vs evening, post-coffee, post-workout) by reading the `notes` field on best/worst readings.
+  - If readings show large swings (>20 mmHg systolic variation in same week), mention it as worth investigating with GP — could be white-coat, monitor accuracy, or autonomic instability.
+  - If 7-day avg is improving vs 14-day avg (lower), celebrate and tie to body composition + cardio + sleep work.
+  - Never prescribe BP medication. Never adjust existing medication dose. Frame anything concerning as "discuss with your GP at the next review."
+  - If any single reading is ≥180/120, treat as urgent — the app already alerts the user but call it out in the report too.
 - CARDIO COMPLIANCE (only when a CARDIO COMPLIANCE block is present):
   - Target: 3 zone-2 sessions of 30+ min per week, scheduled on training rest days (avoids cardio-strength interference effect).
   - If sessions < 3/week, flag it as a Priority Action candidate — name zone-2 explicitly + remind that it's protective for LVH/ALT/CRP/T (not muscle-killing at this intensity).

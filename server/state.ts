@@ -600,6 +600,47 @@ dateKeyedRoute("/supplement-log/:date", "supplementLog");
 dateKeyedRoute("/stretch-log/:date", "stretchLog"); // Phase 41 (owner-only feature, but endpoint is per-user data)
 dateKeyedRoute("/cardio-log/:date", "cardioLog"); // Phase 41i (zone-2 cardio sessions, any user)
 
+// Phase 41l: blood pressure log (array of readings, full-array PUT pattern)
+router.put("/bp-log", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { bpLog } = req.body || {};
+    if (!Array.isArray(bpLog)) { res.status(400).json({ error: "bpLog must be an array" }); return; }
+    if (bpLog.length > 5000) { res.status(400).json({ error: "max 5000 readings" }); return; }
+    // Validate each entry
+    const clean = bpLog.map((r: any) => {
+      if (!r || typeof r !== "object") return null;
+      const sys = parseInt(r.systolic, 10);
+      const dia = parseInt(r.diastolic, 10);
+      if (!sys || sys < 60 || sys > 250) return null;
+      if (!dia || dia < 30 || dia > 200) return null;
+      const pulse = r.pulse ? parseInt(r.pulse, 10) : null;
+      return {
+        id: String(r.id || "").slice(0, 60) || ("bp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
+        date: String(r.date || "").slice(0, 10),
+        time: String(r.time || "").slice(0, 5),
+        systolic: sys,
+        diastolic: dia,
+        pulse: pulse && pulse >= 30 && pulse <= 220 ? pulse : null,
+        arm: ["left", "right"].includes(r.arm) ? r.arm : "left",
+        position: ["sitting", "standing", "lying"].includes(r.position) ? r.position : "sitting",
+        notes: String(r.notes || "").slice(0, 200),
+        loggedAt: String(r.loggedAt || new Date().toISOString()).slice(0, 30),
+      };
+    }).filter(Boolean);
+    const valueJson = JSON.stringify(clean);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{bpLog}', ${valueJson}::jsonb, true),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true, count: clean.length });
+  } catch (err) {
+    console.error("Put bp-log error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 39: dynamic calorie/macro targets (subfield of profile)
 router.put("/profile/dynamic-targets", requireAuth, async (req: Request, res: Response) => {
   try {
