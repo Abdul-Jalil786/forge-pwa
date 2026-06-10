@@ -536,6 +536,47 @@ function buildNutritionContext(state: any): string {
   return lines.join("\n");
 }
 
+// Phase 44: recovery-gate calibration — what actually happened each time the
+// gate fired, so the coach can test whether readiness predicts performance for
+// THIS user (shifted sleep schedules depress Oura readiness scores).
+function buildCalibrationContext(state: any): string {
+  const overrides = state.recoveryOverrides || {};
+  const dates = Object.keys(overrides).sort().slice(-8);
+  if (dates.length === 0) return "";
+  const exLog = state.exLog || {};
+  const injuries = Object.values(state.injuries || {}) as any[];
+  const lines: string[] = [];
+  lines.push("RECOVERY GATE CALIBRATION (each gate firing — readiness vs feel vs choice vs outcome):");
+  let trained = 0, eased = 0;
+  const trainedScores: number[] = [];
+  for (const d of dates) {
+    const ov: any = overrides[d] || {};
+    const score = exLog[d]?._session?.score;
+    const scoreStr = score?.pct != null
+      ? `session score ${score.pct}% of 4w avg (vol ${score.volume})`
+      : (score?.volume ? `vol ${score.volume}, no 4w baseline yet` : "no session logged");
+    const mix = score?.effortMix && score.effortMix.rated > 0
+      ? ` · effort ${score.effortMix.easy}easy/${score.effortMix.solid}solid/${score.effortMix.tough}tough`
+      : "";
+    const end = new Date(d + "T12:00:00");
+    end.setDate(end.getDate() + 7);
+    const endStr = end.toISOString().slice(0, 10);
+    const injAfter = injuries
+      .filter((j: any) => j?.createdAt && j.createdAt > d && j.createdAt <= endStr)
+      .map((j: any) => j.name);
+    if (ov.choice === "train") { trained++; if (score?.pct != null) trainedScores.push(score.pct); }
+    if (ov.choice === "easy") eased++;
+    const holds = ov.deloadHolds ? ` · held instead of deload: ${Object.keys(ov.deloadHolds).join(",")}` : "";
+    lines.push(`  ${d}${ov.sessionType ? ` (${ov.sessionType})` : ""}: readiness ${ov.readiness ?? "?"}, HRV↓3d ${ov.hrvDown3d ? "yes" : "no"} · felt: ${ov.feel || "?"} · chose: ${ov.choice === "train" ? "TRAIN AS PLANNED" : ov.choice === "easy" ? "take it easy" : "?"} → ${scoreStr}${mix} · ${injAfter.length ? "⚠ injury flagged within 7d: " + injAfter.join(", ") : "no injury in following 7d"}${holds}`);
+  }
+  const avgTrained = trainedScores.length
+    ? Math.round(trainedScores.reduce((a, b) => a + b, 0) / trainedScores.length)
+    : null;
+  lines.push(`  → Summary: gate fired ${dates.length}×, trained through ${trained}×, took it easy ${eased}×${avgTrained != null ? ` · avg session score when training through: ${avgTrained}%` : ""}`);
+  lines.push("");
+  return lines.join("\n");
+}
+
 function buildContext(state: any): string {
   const today = ukToday();
   const cutoff14 = daysAgoUK(14);
@@ -854,6 +895,10 @@ function buildContext(state: any): string {
   // Phase 41: stretching / mobility compliance block (between Recovery and Skin Care)
   const stretchBlock = buildStretchContext(state);
   if (stretchBlock) lines.push(stretchBlock);
+
+  // Phase 44: recovery-gate calibration — gate firings vs choices vs outcomes
+  const calibrationBlock = buildCalibrationContext(state);
+  if (calibrationBlock) lines.push(calibrationBlock);
 
   // Phase 29 + 30: Oura activity. NOTE: total_calories ≈ TDEE (BMR + active);
   // active_calories alone is just movement burn above BMR. Use total for TDEE.
@@ -1185,6 +1230,7 @@ OUTPUT FORMAT:
    ## This week — 2-3 sentence summary; weight delta, FAT MASS delta, LBM delta.
    ## Body & training — composition trend, training adherence, per-lift progression highlights.
    ## Nutrition & recovery — calorie/protein/fasting/supplement compliance, sleep + HRV + readiness trend.
+   ## Recovery calibration — ONLY include when a RECOVERY GATE CALIBRATION block is present. Answer EXPLICITLY: does readiness <60 predict weak sessions FOR THIS USER? Compare the session scores on trained-through days against 100% (their own 4-week average), and check whether any override was followed by an injury within 7 days. If overrides consistently score ≥95% with no injuries, say plainly that their personal readiness threshold should move and suggest a number (e.g. 55 or 50). Consider that a consistently late sleep schedule depresses Oura readiness without necessarily reflecting true recovery — check the sleep data. If overrides score poorly or precede injuries, say the gate is earning its keep and they should respect it.
    ## Mobility & stretching — ONLY include this section when a STRETCHING COMPLIANCE block is present. Open with the compliance score and trend, name the most-skipped stretch, correlate with HRV / sleep / lower-back pain where relevant.
    ## Skin & medical — retinol phase + compliance (if present), any blood-marker improvements or concerns.
    ## Priority actions — exactly 3, ranked by importance, each one specific and doable this week.
@@ -1636,7 +1682,26 @@ export async function generateSessionBrief(
   if (new Date(today + "T12:00:00").getDay() === 3) {
     lines.push("  Wednesday = Mounjaro injection day — keep intensity moderate, train before the injection if possible.");
   }
+  // Phase 44: pre-session feel (asked before any prescription was shown)
+  const todayFeel = (state.sessionFeel || {})[today];
+  if (todayFeel) lines.push(`  Pre-session feel (self-reported, unanchored): ${todayFeel}`);
+  const todayOv = (state.recoveryOverrides || {})[today];
+  if (todayOv?.choice) lines.push(`  Recovery gate fired today (readiness ${todayOv.readiness ?? "?"}) — user chose to ${todayOv.choice === "train" ? "TRAIN AS PLANNED" : "take it easy"}.`);
   lines.push("");
+
+  // Phase 44: last 3 gate-override outcomes — cite when relevant, e.g.
+  // "last time you trained through at readiness 55 you scored 104%".
+  const ovAll = state.recoveryOverrides || {};
+  const ovDates = Object.keys(ovAll).filter((d) => d < today).sort().slice(-3);
+  if (ovDates.length) {
+    lines.push("RECOVERY OVERRIDE HISTORY (past gate firings — reference these when today's gate fired):");
+    for (const d of ovDates) {
+      const ov: any = ovAll[d];
+      const score = (state.exLog || {})[d]?._session?.score;
+      lines.push(`  ${d}: readiness ${ov.readiness ?? "?"} · felt ${ov.feel || "?"} · chose ${ov.choice || "?"} → ${score?.pct != null ? `scored ${score.pct}% of 4w avg` : "no session score"}`);
+    }
+    lines.push("");
+  }
 
   lines.push("TODAY'S PRESCRIPTIONS (formula-computed — DO NOT change):");
   for (const p of prescriptions) {

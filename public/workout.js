@@ -329,7 +329,77 @@ function startGuidedWorkout(){
   _saveWmState();
   _wmStartAutoSave();
   document.getElementById('workoutMode').classList.add('open');
-  renderWmOutline();
+  _renderWmEntry();
+}
+
+// Phase 44: entry router. Order matters — the feel tap comes BEFORE any
+// prescription or recovery warning so the answer isn't anchored, then the
+// advisory gate choice (if it fires), then the outline.
+function _renderWmEntry(){
+  const today=todayStr();
+  if(typeof getSessionFeel==='function'&&!getSessionFeel(today)){
+    wm.mode='feel';_saveWmState();renderWmFeel();return;
+  }
+  const gate=checkRecoveryGate();
+  const ov=(typeof getRecoveryOverride==='function')?getRecoveryOverride(today):null;
+  if(gate.lowRecovery&&!(ov&&ov.choice)){
+    wm.mode='gate';_saveWmState();renderWmGateChoice(gate);return;
+  }
+  wm.mode='outline';_saveWmState();renderWmOutline();
+}
+
+function renderWmFeel(){
+  const btn=(feel,emoji,label,sub)=>`
+    <button onclick="wmSetFeel('${feel}')" style="display:block;width:100%;padding:18px 16px;margin-bottom:10px;background:transparent;border:1px solid var(--border);border-radius:14px;cursor:pointer;text-align:left;">
+      <div style="font-size:16px;font-weight:700;color:var(--text);">${emoji} ${label}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px;">${sub}</div>
+    </button>`;
+  document.getElementById('wmContent').innerHTML=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div class="wm-title" style="margin-top:70px;">How do you feel?</div>
+    <div class="wm-sub" style="margin-bottom:24px;">One tap, before you see today's numbers — it keeps the answer honest.</div>
+    ${btn('strong','💪','Strong','Ready to push')}
+    ${btn('ok','👍','OK','Normal day')}
+    ${btn('tired','😴','Tired','Low energy / rough night')}
+  `;
+}
+function wmSetFeel(feel){
+  if(typeof setSessionFeel==='function')setSessionFeel(feel);
+  _renderWmEntry();
+}
+
+function renderWmGateChoice(gate){
+  gate=gate||checkRecoveryGate();
+  const feel=(typeof getSessionFeel==='function')?getSessionFeel(todayStr()):null;
+  const feelLabel={strong:'💪 Strong',ok:'👍 OK',tired:'😴 Tired'}[feel]||'—';
+  document.getElementById('wmContent').innerHTML=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:#ffc107;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:70px;">Recovery flag</div>
+    <div class="wm-title" style="margin-top:6px;">Oura says recover<br>(${gate.reason})</div>
+    <div class="wm-sub" style="margin-bottom:8px;">You said you feel: <strong style="color:var(--text);">${feelLabel}</strong></div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:22px;">This is advisory, not an order — readiness scores can under-read shifted sleep schedules. Your call. Either way, the choice is logged so the weekly report can learn what readiness actually predicts for you.</div>
+    <button onclick="wmGateChoice('train')" style="display:block;width:100%;padding:16px;margin-bottom:10px;background:rgba(200,255,0,.1);border:1px solid var(--lime);border-radius:14px;cursor:pointer;text-align:left;">
+      <div style="font-size:15px;font-weight:700;color:var(--lime);">💪 Train as planned</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px;">Normal progression prescriptions</div>
+    </button>
+    <button onclick="wmGateChoice('easy')" style="display:block;width:100%;padding:16px;background:transparent;border:1px solid var(--border);border-radius:14px;cursor:pointer;text-align:left;">
+      <div style="font-size:15px;font-weight:700;color:var(--text);">🌙 Take it easy</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px;">Hold all weights — form and completion, not PRs</div>
+    </button>
+  `;
+}
+function wmGateChoice(choice){
+  const gate=checkRecoveryGate();
+  if(typeof saveRecoveryOverride==='function'){
+    saveRecoveryOverride({
+      readiness:gate.readiness!=null?gate.readiness:null,
+      hrvDown3d:!!gate.hrvDown3d,
+      feel:(typeof getSessionFeel==='function')?getSessionFeel(todayStr()):null,
+      choice,
+      sessionType:wm.session,
+    });
+  }
+  wm.mode='outline';_saveWmState();renderWmOutline();
 }
 
 // Phase 41k: ✕ now MINIMIZES the workout — preserves in-progress state for resume.
@@ -422,6 +492,8 @@ function resumeGuidedWorkout(){
   _wmStartAutoSave();
   document.getElementById('workoutMode').classList.add('open');
   switch(wm.mode){
+    case 'feel':          _renderWmEntry(); break;
+    case 'gate':          _renderWmEntry(); break;
     case 'outline':       renderWmOutline(); break;
     case 'set':           renderWmSet(); break;
     case 'rest':          // restart the rest timer cleanly from now (preserves the remaining feel)
@@ -468,7 +540,7 @@ function checkRecoveryGate(){
   const todayRec = recovery[today];
   if(!todayRec) return { lowRecovery: false, reason: '' };
 
-  const readiness = todayRec.readiness;
+  const readiness = todayRec.readiness; // exposed in the return for Phase 44 logging
   // Check HRV trend over last 4 days (including today). Need 3+ falling days to flag.
   const hrvSeries = [];
   for(let i = 0; i < 4; i++){
@@ -486,12 +558,24 @@ function checkRecoveryGate(){
   const hrvDown3d = fallingStreak >= 3;
 
   if(typeof readiness === 'number' && readiness < 60){
-    return { lowRecovery: true, reason: `readiness ${readiness}` + (hrvDown3d ? `, HRV ↓3d` : '') };
+    return { lowRecovery: true, reason: `readiness ${readiness}` + (hrvDown3d ? `, HRV ↓3d` : ''), readiness, hrvDown3d };
   }
   if(hrvDown3d){
-    return { lowRecovery: true, reason: `HRV down 3 days running` };
+    return { lowRecovery: true, reason: `HRV down 3 days running`, readiness: typeof readiness==='number'?readiness:null, hrvDown3d };
   }
-  return { lowRecovery: false, reason: '' };
+  return { lowRecovery: false, reason: '', readiness: typeof readiness==='number'?readiness:null, hrvDown3d };
+}
+
+// Phase 44: the gate is ADVISORY. Oura under-scores shifted sleep schedules, so
+// the user decides — "train" restores normal progression prescriptions for the
+// day, "easy" keeps the hold behaviour. The choice is logged for calibration.
+function effectiveRecoveryGate(){
+  const gate=checkRecoveryGate();
+  if(!gate.lowRecovery)return gate;
+  const ov=(typeof getRecoveryOverride==='function')?getRecoveryOverride(todayStr()):null;
+  if(ov&&ov.choice==='train')return {...gate,lowRecovery:false,overridden:'train'};
+  if(ov&&ov.choice==='easy')return {...gate,overridden:'easy'};
+  return gate;
 }
 
 // Phase 28: stall detection — has weight been held same for 3+ sessions without hitting upper rep?
@@ -604,7 +688,9 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
   if(opts?.prevSessions){
     const stall = detectStall(exId, exObj, opts.prevSessions);
     if(stall){
-      return { kg:stall.deloadKg, reps:upperRep||lastReps, reason:stall.reason, dir:'down', deload:true };
+      // Phase 44: holdKg exposes the stalled weight so the UI can offer
+      // "hold instead" — the deload math itself is unchanged.
+      return { kg:stall.deloadKg, reps:upperRep||lastReps, reason:stall.reason, dir:'down', deload:true, holdKg:stall.baselineKg };
     }
   }
 
@@ -669,10 +755,12 @@ function renderWmOutline(){
   const date=todayStr();
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
-  const gate=checkRecoveryGate();
+  const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
   const opts={ lowRecovery: gate.lowRecovery, recoveryReason: gate.reason, prevSessions };
-  const banner = gate.lowRecovery
-    ? `<div style="background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:#ffc107;line-height:1.5;">⚠️ <strong>Lower recovery today</strong> (${gate.reason}). Today is about form and finishing every set — not PRs. Suggestions are set to hold weights.</div>`
+  const banner = gate.overridden==='train'
+    ? `<div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.25);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:var(--text2);line-height:1.5;">⚡ Low recovery flagged (${gate.reason}) — <strong style="color:var(--lime);">you chose to train as planned.</strong> Normal prescriptions below; listen to your body set to set.</div>`
+    : gate.lowRecovery
+    ? `<div style="background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:#ffc107;line-height:1.5;">🌙 <strong>Taking it easy today</strong> (${gate.reason}). Form and finishing every set — not PRs. Suggestions hold last weights.</div>`
     : '';
 
   // Phase 38: injury banner — lists active injuries affecting today's lifts
@@ -820,7 +908,7 @@ function renderWmSet(){
   const dayLog=getExLogForDate(date);
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
-  const gate=checkRecoveryGate();
+  const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
   const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const startKg=existingSet?.kg||sug?.kg||'';
@@ -851,6 +939,10 @@ function renderWmSet(){
       <button class="wm-step-btn" onclick="wmStepKg(2.5)">+</button>
     </div>
     ${sug?`<div class="wm-progress-hint">${sug.reason}</div>`:`<div class="wm-progress-hint" style="color:var(--blue);">First time on this lift — find a weight you could manage for ${ex.reps} reps with ~2 left in the tank. Logged today, auto-progressed next session.</div>`}
+    ${sug&&sug.deload&&sug.holdKg?`
+      ${((STATE.profile&&STATE.profile.personal&&STATE.profile.personal.phase)||null)==='cut'?`<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-top:6px;">On a cut, holding the same weight while your bodyweight drops <strong style="color:var(--text2);">is</strong> progress. A deload is a tool, not a failure — but it's your call.</div>`:''}
+      <button onclick="wmHoldInsteadOfDeload('${ex.id}',${sug.holdKg})" style="display:block;width:100%;margin-top:8px;padding:11px;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--text2);font-size:12px;cursor:pointer;">Hold ${sug.holdKg}kg instead</button>
+    `:''}
     <div class="wm-h" style="margin-top:24px;">Reps</div>
     <div class="wm-stepper">
       <button class="wm-step-btn" onclick="wmStepReps(-1)">−</button>
@@ -860,6 +952,18 @@ function renderWmSet(){
     <button class="wm-cta" onclick="wmMarkSetDone(${ex.rest})">SET DONE</button>
   `;
   document.getElementById('wmContent').innerHTML=html;
+}
+
+// Phase 44: user opts out of a prescribed deload — keep the stalled weight,
+// log the choice for the weekly calibration review.
+function wmHoldInsteadOfDeload(exId,kg){
+  const inp=document.getElementById('wm-kg');
+  if(inp)inp.value=kg;
+  if(typeof saveRecoveryOverride==='function'&&typeof getRecoveryOverride==='function'){
+    const ov=getRecoveryOverride(todayStr())||{};
+    saveRecoveryOverride({deloadHolds:{...(ov.deloadHolds||{}),[exId]:'hold'}});
+  }
+  showToast('Holding '+kg+'kg — aim to beat last session\'s reps');
 }
 
 // Timer state for time-based exercises
@@ -872,7 +976,7 @@ function renderWmSetTimed(){
   const dayLog=getExLogForDate(date);
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
-  const gate=checkRecoveryGate();
+  const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
   const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const alreadyDone=existingSet?.done&&existingSet?.seconds;
@@ -1178,7 +1282,7 @@ function renderWmTransition(){
   const dayLog=getExLogForDate(date);
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
-  const gate=checkRecoveryGate();
+  const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
   const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
   const timed=isTimeBased(ex);
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
@@ -1277,6 +1381,11 @@ function wmFinish(){
   if(dayLog._session&&typeof dayLog._session==='object'){
     dayLog._session.completedAt=Date.now();
     if(dayLog._session.startedAt)dayLog._session.totalDuration=Math.round((Date.now()-dayLog._session.startedAt)/1000);
+    // Phase 44: session score — volume vs 4-week average + effort mix.
+    // Stored with the session for the weekly calibration review.
+    if(typeof computeSessionScore==='function'){
+      dayLog._session.score=computeSessionScore(date,wm.session);
+    }
     saveExLogForDate(date,dayLog);
   }
   const totalVolume=Object.values(dayLog).reduce((tot,ex)=>tot+((ex&&ex.sets)||[]).reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0),0);

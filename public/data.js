@@ -144,6 +144,8 @@ function getAllExercises(){
 // ============================================================
 let STATE = {
   profile: null,
+  sessionFeel: {},        // Phase 44: {date: 'strong'|'ok'|'tired'} — asked before prescriptions
+  recoveryOverrides: {},  // Phase 44: {date: {readiness, hrvDown3d, feel, choice, deloadHolds}}
   weightLog: [],
   foods: {},
   stepsLog: {},
@@ -1397,6 +1399,70 @@ function getDynamicTargetForDate(date){
   if(st&&dt&&dt.upper)return dt.upper;
   const p=STATE.profile||{};
   return {calories:st?(p.calsGym||2500):(p.calsRest||2400),protein:p.proteinTarget||180,carbs:p.carbsTarget||0,fat:p.fatTarget||0,sessionType:key};
+}
+
+// ---- Phase 44: pre-session feel + recovery gate overrides + session score ----
+function getSessionFeel(date){return pGet('sessionFeel',{})[date||todayStr()]||null;}
+function setSessionFeel(feel,date){
+  date=date||todayStr();
+  const all=pGet('sessionFeel',{});
+  all[date]=feel;
+  STATE.sessionFeel=all;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/session-feel/${date}`,{value:feel});
+}
+function getRecoveryOverride(date){return pGet('recoveryOverrides',{})[date||todayStr()]||null;}
+function saveRecoveryOverride(patch,date){
+  date=date||todayStr();
+  const all=pGet('recoveryOverrides',{});
+  all[date]={...(all[date]||{}),...patch};
+  STATE.recoveryOverrides=all;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/recovery-overrides/${date}`,{value:all[date]});
+  return all[date];
+}
+
+// Session volume: Σ kg×reps for loaded sets, seconds for timed holds.
+// Mixed units, but consistent per user — only ever compared to own history.
+function computeSessionVolume(dayLog){
+  let vol=0;
+  for(const [exId,ex] of Object.entries(dayLog||{})){
+    if(exId.startsWith('_')||!ex||!Array.isArray(ex.sets))continue;
+    const exObj=getAllExercises().find(e=>e.id===exId);
+    const timed=exObj?isTimeBased(exObj):false;
+    for(const s of ex.sets){
+      if(timed)vol+=parseFloat(s.seconds)||0;
+      else vol+=(parseFloat(s.kg)||0)*(parseInt(s.reps)||0);
+    }
+  }
+  return Math.round(vol);
+}
+// Score = volume as % of the 4-week average for this session type + effort mix.
+function computeSessionScore(date,sessionType){
+  const exLog=getExLog();
+  const dayLog=exLog[date]||{};
+  const volume=computeSessionVolume(dayLog);
+  const cutoff=new Date(date+'T12:00:00');
+  cutoff.setDate(cutoff.getDate()-28);
+  const cutoffStr=cutoff.toISOString().slice(0,10);
+  const vols=[];
+  for(const [d,log] of Object.entries(exLog)){
+    if(d>=date||d<cutoffStr)continue;
+    if(getSessionTypeForDate(d)!==sessionType)continue;
+    const v=computeSessionVolume(log);
+    if(v>0)vols.push(v);
+  }
+  const avg4w=vols.length?Math.round(vols.reduce((a,b)=>a+b,0)/vols.length):null;
+  const pct=avg4w?Math.round((volume/avg4w)*100):null;
+  const effortMix={easy:0,solid:0,tough:0,rated:0};
+  for(const [exId,ex] of Object.entries(dayLog)){
+    if(exId.startsWith('_')||!ex||!Array.isArray(ex.sets))continue;
+    for(const s of ex.sets){
+      const e=s.effort;
+      if(e==='easy'||e==='solid'||e==='tough'){effortMix[e]++;effortMix.rated++;}
+    }
+  }
+  return {volume,avg4w,pct,effortMix,sessions4w:vols.length};
 }
 
 // ---- S2: Fasting window ----
