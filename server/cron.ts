@@ -538,20 +538,29 @@ export function startCron() {
         } catch (e: any) {
           console.error(`[coach] Failed for ${user.email}:`, e?.message || e);
           // Phase 40: record a non-fatal error entry so the user sees what happened
+          // Phase 43: atomic jsonb prepend — the old read-modify-write of the whole
+          // state row could clobber concurrent writes (e.g. the user logging food
+          // while the cron ran). The 50-report cap is enforced by saveReport on the
+          // success path; error entries are at most one per week.
           try {
-            const fresh = await prisma.user.findUnique({ where: { id: user.id } });
-            const st: any = fresh?.state || {};
-            if (!Array.isArray(st.coachingReports)) st.coachingReports = [];
-            st.coachingReports.unshift({
+            const errEntry = JSON.stringify([{
               id: "rpt_err_" + Date.now(),
               createdAt: new Date().toISOString(),
               type: "error",
               title: "Report generation failed",
               content: "This week's coaching report could not be generated. Forge will retry next Sunday. If this keeps happening, check your Anthropic API key in More settings.",
               suggestions: [],
-            });
-            if (st.coachingReports.length > 50) st.coachingReports.length = 50;
-            await prisma.user.update({ where: { id: user.id }, data: { state: st } });
+            }]);
+            await prisma.$executeRaw`
+              UPDATE "User"
+              SET state = jsonb_set(
+                COALESCE(state, '{}')::jsonb,
+                '{coachingReports}',
+                ${errEntry}::jsonb || COALESCE(state->'coachingReports', '[]'::jsonb),
+                true
+              )
+              WHERE id = ${user.id}
+            `;
           } catch { /* swallow — never crash the cron */ }
         }
 

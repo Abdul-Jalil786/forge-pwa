@@ -65,7 +65,10 @@ body{display:flex;flex-direction:column;align-items:center;justify-content:cente
         <input class="inp" id="confirm" type="password" placeholder="Confirm password" autocomplete="new-password" minlength="8">
         <button type="button" class="pwd-toggle" onclick="togglePwd('confirm')" aria-label="Show password">👁</button>
       </div>
-      <div class="hint" id="hint" style="display:none;">Min 8 characters</div>
+      <div id="invite-wrap" style="display:none;">
+        <input class="inp" id="invite" type="text" placeholder="Invite code" autocomplete="off">
+      </div>
+      <div class="hint" id="hint" style="display:none;">Min 8 characters · invite code from the person who invited you</div>
       <button class="btn" type="submit" id="submit-btn">LOG IN</button>
     </form>
     <div class="error" id="error"></div>

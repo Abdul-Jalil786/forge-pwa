@@ -66,10 +66,17 @@ export async function requireOwnerCheck(req: Request, res: Response, next: NextF
 
 
 // POST /api/auth/signup
+// Phase 43: invite-only — INVITE_CODE env gates signups (family app, not a
+// public service). Unset env = open signup, so local dev keeps working.
 router.post("/signup", async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, inviteCode } = req.body;
 
+    const requiredCode = process.env.INVITE_CODE;
+    if (requiredCode && inviteCode !== requiredCode) {
+      res.status(403).json({ error: "Invalid invite code — ask the person who invited you" });
+      return;
+    }
     if (!email || !isValidEmail(email)) {
       res.status(400).json({ error: "Valid email is required" });
       return;
@@ -147,8 +154,22 @@ router.get("/me", requireAuth, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/auth/account
+// Phase 43: requires the account password — a stolen/left-open session (30-day
+// JWTs) can no longer irreversibly delete all data.
 router.delete("/account", requireAuth, async (req: Request, res: Response) => {
   try {
+    const { password } = req.body || {};
+    if (typeof password !== "string" || !password) {
+      res.status(400).json({ error: "Password required to delete account" });
+      return;
+    }
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+      res.status(401).json({ error: "Incorrect password" });
+      return;
+    }
     await prisma.user.delete({ where: { id: req.userId } });
     res.json({ success: true });
   } catch (err) {

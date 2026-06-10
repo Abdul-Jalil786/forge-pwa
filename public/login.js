@@ -7,6 +7,7 @@ function switchTab(tab) {
   document.getElementById('submit-btn').textContent = tab === 'login' ? 'LOG IN' : 'SIGN UP';
   document.getElementById('password').autocomplete = tab === 'login' ? 'current-password' : 'new-password';
   document.getElementById('confirm-wrap').style.display = tab === 'signup' ? '' : 'none';
+  document.getElementById('invite-wrap').style.display = tab === 'signup' ? '' : 'none';
   document.getElementById('hint').style.display = tab === 'signup' ? '' : 'none';
   if (tab === 'login') document.getElementById('confirm').value = '';
   document.getElementById('error').textContent = '';
@@ -37,10 +38,12 @@ async function handleSubmit(e) {
 
   try {
     const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+    const body = { email, password };
+    if (mode === 'signup') body.inviteCode = (document.getElementById('invite').value || '').trim();
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (!res.ok) {

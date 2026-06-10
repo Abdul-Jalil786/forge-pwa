@@ -12,21 +12,9 @@ model User {
   email             String             @unique
   passwordHash      String
   state             Json               @default("{}")
-  tokens            AccessToken[]
   pushSubscriptions PushSubscription[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
-}
-
-model AccessToken {
-  id         String    @id @default(cuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash  String    @unique
-  prefix     String?
-  name       String?
-  createdAt  DateTime  @default(now())
-  lastUsedAt DateTime?
 }
 
 model PushSubscription {

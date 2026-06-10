@@ -1769,10 +1769,22 @@ function logOut(){
 
 async function deleteAccount(){
   if(!confirm('Permanently delete your account? This cannot be undone.'))return;
+  // Phase 43: server requires the account password before deleting
+  const password=prompt('Enter your password to confirm deletion:');
+  if(!password)return;
   const token=localStorage.getItem('forge_token');
   try{
-    await fetch('/api/auth/account',{method:'DELETE',headers:{Authorization:'Bearer '+token}});
-  }catch{}
+    const res=await fetch('/api/auth/account',{
+      method:'DELETE',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},
+      body:JSON.stringify({password}),
+    });
+    if(!res.ok){
+      const data=await res.json().catch(()=>({}));
+      showToast(data.error||'Delete failed');
+      return; // account still exists — do NOT clear local data
+    }
+  }catch{showToast('Network error — account not deleted');return;}
   localStorage.clear();
   window.location.href='/login.html';
 }

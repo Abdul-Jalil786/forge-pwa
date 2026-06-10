@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { requireAuth } from "./auth";
@@ -6,6 +6,54 @@ import { encrypt, decrypt } from "./crypto-util";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection } from "./ai-coach";
 
 const router = Router();
+
+// Phase 43: daily AI budget — applied to every route that spends Anthropic
+// tokens. Counter lives in state.aiCallLog["YYYY-MM-DD"] (UK date, so it
+// resets at UK midnight) and is incremented via jsonb_set in a single UPDATE,
+// so concurrent requests can't lose increments to a read-modify-write race.
+// Increment-then-check: once over the limit every further attempt 429s.
+const AI_DAILY_LIMIT = 40;
+
+function ukToday(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" });
+}
+
+function aiBudget() {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const day = ukToday();
+      const rows = await prisma.$queryRaw<Array<{ count: number }>>`
+        UPDATE "User"
+        SET state = jsonb_set(
+          jsonb_set(COALESCE(state, '{}')::jsonb, '{aiCallLog}', COALESCE(state->'aiCallLog', '{}'), true),
+          ARRAY['aiCallLog', ${day}],
+          to_jsonb(COALESCE((state->'aiCallLog'->>${day})::int, 0) + 1),
+          true
+        )
+        WHERE id = ${req.userId}
+        RETURNING (state->'aiCallLog'->>${day})::int AS count
+      `;
+      const count = rows[0]?.count ?? 1;
+      if (count === 1) {
+        // First call of a new day — prune old day keys so aiCallLog never grows
+        await prisma.$executeRaw`
+          UPDATE "User"
+          SET state = jsonb_set(state, '{aiCallLog}', jsonb_build_object(${day}::text, state->'aiCallLog'->${day}))
+          WHERE id = ${req.userId}
+        `;
+      }
+      if (count > AI_DAILY_LIMIT) {
+        res.status(429).json({ error: `Daily AI limit reached (${AI_DAILY_LIMIT}/day) — resets at midnight UK time. Your Sunday report still runs automatically.` });
+        return;
+      }
+      next();
+    } catch (err) {
+      // Budget bookkeeping must never take the coach down — fail open
+      console.error("aiBudget error:", err);
+      next();
+    }
+  };
+}
 
 router.get("/key", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -31,11 +79,14 @@ router.put("/key", requireAuth, async (req: Request, res: Response) => {
       res.status(400).json({ error: "Key too long" }); return;
     }
     const enc = encrypt(apiKey);
-    const user = await prisma.user.findUnique({ where: { id: req.userId } });
-    if (!user) { res.status(404).json({ error: "User not found" }); return; }
-    const state: any = user.state || {};
-    state.coachingKey = enc;
-    await prisma.user.update({ where: { id: req.userId }, data: { state } });
+    // Phase 43: field-scoped write — no whole-state read-modify-write race
+    const affected = await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{coachingKey}', ${JSON.stringify(enc)}::jsonb, true),
+          "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    if (!affected) { res.status(404).json({ error: "User not found" }); return; }
     res.json({ success: true });
   } catch (err) {
     console.error("Set coach key error:", err);
@@ -45,11 +96,14 @@ router.put("/key", requireAuth, async (req: Request, res: Response) => {
 
 router.delete("/key", requireAuth, async (req: Request, res: Response) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.userId } });
-    if (!user) { res.status(404).json({ error: "User not found" }); return; }
-    const state: any = user.state || {};
-    delete state.coachingKey;
-    await prisma.user.update({ where: { id: req.userId }, data: { state } });
+    // Phase 43: field-scoped delete — no whole-state read-modify-write race
+    const affected = await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = (COALESCE(state, '{}')::jsonb) - 'coachingKey',
+          "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    if (!affected) { res.status(404).json({ error: "User not found" }); return; }
     res.json({ success: true });
   } catch (err) {
     console.error("Delete coach key error:", err);
@@ -57,7 +111,7 @@ router.delete("/key", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.post("/test", requireAuth, async (req: Request, res: Response) => {
+router.post("/test", requireAuth, aiBudget(), async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};
@@ -82,15 +136,16 @@ router.post("/test", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.post("/generate-now", requireAuth, async (req: Request, res: Response) => {
+router.post("/generate-now", requireAuth, aiBudget(), async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};
     if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
     const hrs = hoursSinceLastReport(st);
     const minSinceLast = hrs * 60;
-    if (minSinceLast < 1) {
-      res.status(429).json({ error: `Slow down — last report was ${Math.round(minSinceLast * 60)}s ago. Try again in ${Math.ceil(60 - minSinceLast * 60)}s.` });
+    // Phase 43: cooldown raised 60s -> 30min (a full report is the most expensive call)
+    if (minSinceLast < 30) {
+      res.status(429).json({ error: `Last report was ${Math.round(minSinceLast)} min ago. Try again in ${Math.ceil(30 - minSinceLast)} min.` });
       return;
     }
     const report = await generateWeeklyReport(req.userId as string);
@@ -102,7 +157,7 @@ router.post("/generate-now", requireAuth, async (req: Request, res: Response) =>
   }
 });
 
-router.post("/recompute-macros", requireAuth, async (req: Request, res: Response) => {
+router.post("/recompute-macros", requireAuth, aiBudget(), async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};
@@ -121,7 +176,7 @@ router.post("/recompute-macros", requireAuth, async (req: Request, res: Response
   }
 });
 
-router.post("/session-brief", requireAuth, async (req: Request, res: Response) => {
+router.post("/session-brief", requireAuth, aiBudget(), async (req: Request, res: Response) => {
   try {
     const { sessionType, prescriptions } = req.body || {};
     if (!sessionType || !Array.isArray(prescriptions)) {
@@ -139,7 +194,7 @@ router.post("/session-brief", requireAuth, async (req: Request, res: Response) =
   }
 });
 
-router.post("/session-reflection", requireAuth, async (req: Request, res: Response) => {
+router.post("/session-reflection", requireAuth, aiBudget(), async (req: Request, res: Response) => {
   try {
     const { sessionType, completedSession } = req.body || {};
     if (!sessionType || !completedSession) {
@@ -157,17 +212,20 @@ router.post("/session-reflection", requireAuth, async (req: Request, res: Respon
   }
 });
 
-router.post("/max-lbm", requireAuth, async (req: Request, res: Response) => {
+router.post("/max-lbm", requireAuth, aiBudget(), async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};
     if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
     const projection = await computeMaxLBM(req.userId as string);
-    // Save the latest projection to state for reuse
-    const fresh = await prisma.user.findUnique({ where: { id: req.userId } });
-    const state: any = fresh?.state || {};
-    state.maxLBMProjection = { ...projection, computedAt: new Date().toISOString() };
-    await prisma.user.update({ where: { id: req.userId }, data: { state } });
+    // Phase 43: field-scoped save — no whole-state read-modify-write race
+    const projJson = JSON.stringify({ ...projection, computedAt: new Date().toISOString() });
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{maxLBMProjection}', ${projJson}::jsonb, true),
+          "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
     res.json({ success: true, projection });
   } catch (err: any) {
     console.error("Max LBM error:", err);
@@ -175,7 +233,7 @@ router.post("/max-lbm", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.post("/regenerate-plan", requireAuth, async (req: Request, res: Response) => {
+router.post("/regenerate-plan", requireAuth, aiBudget(), async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};

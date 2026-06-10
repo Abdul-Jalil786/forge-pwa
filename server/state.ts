@@ -4,6 +4,22 @@ import { requireAuth, requireOwnerCheck } from "./auth";
 
 const router = Router();
 
+// Phase 43: server-only secrets. Never sent to the client (GET strips them) and
+// never client-writable (full PUT copies them back from the DB row). The
+// frontend never reads these fields — it uses the status endpoints instead.
+//   coachingKey       — AES-256-GCM-encrypted Anthropic API key
+//   ouraToken         — Oura PAT (encrypted, v1: prefix; legacy plaintext during migration)
+//   withings          — { accessToken, refreshToken (both encrypted), expiresAt, … }
+//   withingsOAuthState — short-lived OAuth state secret
+export const SERVER_ONLY_FIELDS = ["coachingKey", "ouraToken", "withings", "withingsOAuthState"] as const;
+
+export function stripServerOnlyFields(state: any): any {
+  if (!state || typeof state !== "object") return state;
+  const clean = JSON.parse(JSON.stringify(state));
+  for (const f of SERVER_ONLY_FIELDS) delete clean[f];
+  return clean;
+}
+
 router.get("/", requireAuth, async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
@@ -11,7 +27,7 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
       select: { state: true, updatedAt: true },
     });
     if (!user) { res.status(404).json({ error: "User not found" }); return; }
-    res.json({ state: user.state, updatedAt: user.updatedAt });
+    res.json({ state: stripServerOnlyFields(user.state), updatedAt: user.updatedAt });
   } catch (err) {
     console.error("Get state error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -27,6 +43,18 @@ router.put("/", requireAuth, async (req: Request, res: Response) => {
     }
     if (JSON.stringify(state).length > 5 * 1024 * 1024) {
       res.status(413).json({ error: "State too large (max 5MB)" }); return;
+    }
+    // Phase 43: secrets survive any full-state write — whatever the client sent
+    // for these fields is discarded and the stored values carried over.
+    const existing = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { state: true },
+    });
+    if (!existing) { res.status(404).json({ error: "User not found" }); return; }
+    const existingState: any = existing.state || {};
+    for (const f of SERVER_ONLY_FIELDS) {
+      if (existingState[f] !== undefined) state[f] = existingState[f];
+      else delete state[f];
     }
     await prisma.user.update({ where: { id: req.userId }, data: { state } });
     res.json({ success: true });
