@@ -2582,14 +2582,7 @@ function renderMore(){
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openInjuryEdit(null)">+ Flag an Injury</button>
     </div>
 
-    <div class="sec-label">Calorie Stage Guide</div>
-    <div class="card" style="margin-bottom:10px;">
-      ${[{w:114,c:'2,300–2,400'},{w:108,c:'2,200'},{w:102,c:'2,100'},{w:96,c:'2,050'},{w:90,c:'1,950'},{w:87,c:'Maintenance'}].map(s=>`
-        <div class="list-row">
-          <div style="font-weight:600;font-size:13px;">${s.w}kg</div>
-          <div style="font-size:12px;color:var(--lime);font-weight:700;">${s.c} kcal</div>
-        </div>`).join('')}
-    </div>
+    ${renderStageGuide()}
 
     <div class="sec-label">Profile Settings</div>
     <div class="card">
@@ -2623,6 +2616,34 @@ function renderMore(){
   if(typeof isOwner==='function'&&isOwner()&&typeof loadAdminStats==='function')loadAdminStats();
 }
 
+// Phase 42e: Calorie Stage Guide computed from the user's own profile + the
+// targets engine (replaces the hardcoded 114->87kg table). Cut phase only.
+function renderStageGuide(){
+  const p=STATE.profile||{};
+  const personal=p.personal||{};
+  if((personal.phase||'')!=='cut')return '';
+  const start=p.startWeight,target=p.targetWeight;
+  if(!start||!target||start<=target)return '';
+  const lean=(typeof getCurrentLeanMass==='function')?getCurrentLeanMass():null;
+  const step=Math.max(3,Math.round((start-target)/5));
+  const rows=[];
+  for(let w=start;w>target;w-=step){
+    const t=calculateDynamicTargets(Math.round(w*10)/10,lean,'rest');
+    if(t)rows.push({w:Math.round(w),c:t.calories.toLocaleString()+' kcal'});
+  }
+  rows.push({w:Math.round(target),c:'Maintenance'});
+  if(rows.length<2)return '';
+  return `<div class="sec-label">Calorie Stage Guide</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;line-height:1.4;">Rest-day calorie target at each stage of your cut — computed from your profile, updates as targets change.</div>
+      ${rows.map(s=>`
+        <div class="list-row">
+          <div style="font-weight:600;font-size:13px;">${s.w}kg</div>
+          <div style="font-size:12px;color:var(--lime);font-weight:700;">${s.c}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
 // ============================================================
 // PHASE 39 — FOOD PAGE NUTRITION CARDS
 // ============================================================
@@ -2635,6 +2656,7 @@ function _fmtHM(mins){
 function renderFastingCard(){
   if(typeof getWindowCountdown!=='function')return '';
   const c=getWindowCountdown();
+  if(!c)return ''; // Phase 42e: eating window disabled for this user
   let title,sub,detail,color,bg,pct;
   if(c.phase==='before'){
     title='Fasting Window Active';

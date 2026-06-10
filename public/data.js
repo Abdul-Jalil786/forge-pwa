@@ -190,7 +190,8 @@ function isOwner(){
   // Fallback: profile fields (older accounts may not have email captured yet)
   const p=STATE.profile||{};
   if((p.email||'').toLowerCase()===OWNER_EMAIL)return true;
-  return !!(p.name && p.name.toLowerCase().startsWith('jay'));
+  // Phase 42e: name-based fallback removed — any user named "Jay…" was passing
+  return false;
 }
 
 // ---- SKIN CARE (Phase 35) ----
@@ -271,7 +272,16 @@ function getSkinPhase(){
   const n=getSkinCare().phase||1;
   return SKIN_PHASES.find(p=>p.n===n)||SKIN_PHASES[0];
 }
-function isMounjaroDay(){return new Date().getDay()===3;} // Wednesday
+// Phase 42e: Mounjaro UI only shows for users actually ON it (meds or supplements),
+// mirroring the cron gate. Wednesday = injection day.
+function _userOnMounjaro(){
+  const rx=/mounjaro|tirzepatide/i;
+  const meds=(STATE.profile&&STATE.profile.medications)||[];
+  const supps=STATE.supplements||[];
+  return (Array.isArray(meds)&&meds.some(m=>rx.test((m&&m.name)||'')))
+    ||supps.some(s=>rx.test((s&&s.name)||'')||(s&&s.frequency)==='weekly-wednesday');
+}
+function isMounjaroDay(){return new Date().getDay()===3&&_userOnMounjaro();} // Wednesday
 function isRetinolNight(date){
   return getSkinProducts().some(p=>p.type==='retinol'&&skinDueOn(p,date));
 }
@@ -1251,8 +1261,14 @@ function gradeClass(pct){
 // ============================================================
 // PHASE 39 — NUTRITION SYSTEM
 // ============================================================
-const EATING_WINDOW_START=12;   // 12:00
-const EATING_WINDOW_END=20;     // 20:00 — Phase 41b: widened to 8h for recomp plan
+// Phase 42e: eating window is a per-user profile setting. Missing profile field
+// = legacy behaviour (enabled, 12:00–20:00) so existing users see no change;
+// the wizard writes it explicitly (default OFF) for new users.
+function getEatingWindow(){
+  const ew=STATE.profile&&STATE.profile.eatingWindow;
+  if(!ew)return {enabled:true,start:12,end:20};
+  return {enabled:ew.enabled!==false,start:ew.start!=null?ew.start:12,end:ew.end!=null?ew.end:20};
+}
 
 // ---- S1: Dynamic calorie targets (Mifflin-St Jeor) ----
 function getCurrentLeanMass(){
@@ -1328,25 +1344,30 @@ function getFastingLog(date){
   return (e&&Object.keys(e).length)?e:null;
 }
 function isFastingWindowOpen(){
+  const ew=getEatingWindow();
+  if(!ew.enabled)return true; // no window = always open
   const h=new Date().getHours()+new Date().getMinutes()/60;
-  return h>=EATING_WINDOW_START&&h<EATING_WINDOW_END;
+  return h>=ew.start&&h<ew.end;
 }
 // {phase:'before'|'open'|'after', minsToOpen, minsToClose, fastedMins / elapsedMins}
 function getWindowCountdown(){
+  const ew=getEatingWindow();
+  if(!ew.enabled)return null;
   const now=new Date();
   const h=now.getHours()+now.getMinutes()/60;
   const minsInDay=now.getHours()*60+now.getMinutes();
-  const openMin=EATING_WINDOW_START*60, closeMin=EATING_WINDOW_END*60;
-  if(h<EATING_WINDOW_START){
+  const openMin=ew.start*60, closeMin=ew.end*60;
+  if(h<ew.start){
     return {phase:'before',minsToOpen:openMin-minsInDay,minsToClose:closeMin-minsInDay,fastedMins:minsInDay+(24*60-closeMin)};
   }
-  if(h<EATING_WINDOW_END){
+  if(h<ew.end){
     return {phase:'open',minsToOpen:0,minsToClose:closeMin-minsInDay,elapsedMins:minsInDay-openMin,windowMins:closeMin-openMin};
   }
   return {phase:'after',minsToOpen:(24*60-minsInDay)+openMin,minsToClose:0,fastedMins:minsInDay-closeMin};
 }
 // Recompute today's fasting log from logged foods (called on each food change)
 function recomputeFastingLog(date){
+  if(!getEatingWindow().enabled)return; // Phase 42e: no window, no fasting tracking
   date=date||todayStr();
   const foods=(pGet('foods',{})[date]||[]).filter(f=>f);
   const log=pGet('fastingLog',{});
@@ -1361,7 +1382,8 @@ function recomputeFastingLog(date){
   }).filter(t=>t!=null).sort((a,b)=>a-b);
   if(!times.length)return;
   const first=times[0],last=times[times.length-1];
-  const openMin=EATING_WINDOW_START*60,closeMin=EATING_WINDOW_END*60;
+  const ew=getEatingWindow();
+  const openMin=ew.start*60,closeMin=ew.end*60;
   const broken=first<openMin||last>closeMin;
   const fmt=t=>String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
   const entry={
@@ -1378,6 +1400,7 @@ function recomputeFastingLog(date){
   saveFieldToServer(`/api/state/fasting-log/${date}`,{value:entry});
 }
 function getFastingStreak(){
+  if(!getEatingWindow().enabled)return 0; // Phase 42e
   const log=pGet('fastingLog',{});
   let streak=0;
   for(let i=0;i<400;i++){
@@ -1391,7 +1414,7 @@ function getFastingStreak(){
 }
 
 // ---- S3: Mounjaro mode ----
-function isPostInjectionDay(){return new Date().getDay()===4;} // Thursday
+function isPostInjectionDay(){return new Date().getDay()===4&&_userOnMounjaro();} // Thursday
 const MOUNJARO_PRIORITY_FOODS=[
   {name:'Protein shake',protein:20,cals:85,note:'easy on the stomach'},
   {name:'Greek yoghurt 200g',protein:20,cals:120,note:'cold, soothing'},

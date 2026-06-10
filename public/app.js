@@ -2438,9 +2438,10 @@ async function init(){
     if(!STATE.trainingStartDate) STATE.trainingStartDate = earliest;
     saveStateNow();
   }
-  // Phase 19 + 39: pre-populate supplements for Jay if empty (canonical 9 with timing/critical)
+  // Phase 19 + 39: pre-populate supplements for the owner if empty (canonical 9)
+  // Phase 42e: gate by email only — name-based matching gave any "Jay…" the owner seed
   if(STATE.profile && !STATE.supplements){
-    if(STATE.profile.email==='jay@afjltd.co.uk' || (STATE.profile.name && STATE.profile.name.toLowerCase().startsWith('jay'))){
+    if(typeof isOwner==='function' && isOwner()){
       STATE.supplements=JAY_SUPPLEMENTS_V39();
       saveStateNow();
     } else {
@@ -2449,9 +2450,9 @@ async function init(){
     }
   }
 
-  // Phase 22a: populate progress baseline for Jay (client-side fallback)
+  // Phase 22a: populate progress baseline for the owner (client-side fallback)
   if(STATE.profile && !STATE.profile.progressMigrationApplied){
-    if(STATE.profile.email==='jay@afjltd.co.uk' || (STATE.profile.name && STATE.profile.name.toLowerCase().startsWith('jay'))){
+    if(typeof isOwner==='function' && isOwner()){
       STATE.profile.startDate='2026-05-11';
       STATE.profile.startWeight=113.5;
       STATE.profile.startBF=32.1;
