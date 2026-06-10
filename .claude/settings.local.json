@@ -36,7 +36,8 @@
       "Bash(python -c ' *)",
       "Bash(node --check public/data.js)",
       "Bash(node --check public/app.js)",
-      "Bash(node --check public/pages.js)"
+      "Bash(node --check public/pages.js)",
+      "PowerShell(npm test 2>&1)"
     ]
   }
 }

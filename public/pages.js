@@ -1670,80 +1670,14 @@ function renderDayDetail(date){
 // Reference bands by metric, age, sex. Each band = {label, max, color}.
 // User falls in the FIRST band where value < max (last band catches everything else).
 const WYS = {
+  // Phase 42b: band data lives in targets.js (BF_BANDS/BMI_BANDS/LBMI_BANDS),
+  // shared with the onboarding recommendation engine. WYS keeps the same shape.
   bf: {
-    male: function(age){
-      if(age == null) return null;
-      if(age <= 39) return [
-        {label:'Athletic',  max:11, color:'var(--green)'},
-        {label:'Fitness',   max:17, color:'var(--lime)'},
-        {label:'Average',   max:22, color:'var(--blue)'},
-        {label:'Above avg', max:27, color:'var(--orange)'},
-        {label:'Obese',     max:Infinity, color:'var(--red)'},
-      ];
-      if(age <= 59) return [
-        {label:'Athletic',  max:13, color:'var(--green)'},
-        {label:'Fitness',   max:18, color:'var(--lime)'},
-        {label:'Average',   max:23, color:'var(--blue)'},
-        {label:'Above avg', max:28, color:'var(--orange)'},
-        {label:'Obese',     max:Infinity, color:'var(--red)'},
-      ];
-      return [
-        {label:'Athletic',  max:14, color:'var(--green)'},
-        {label:'Fitness',   max:19, color:'var(--lime)'},
-        {label:'Average',   max:24, color:'var(--blue)'},
-        {label:'Above avg', max:29, color:'var(--orange)'},
-        {label:'Obese',     max:Infinity, color:'var(--red)'},
-      ];
-    },
-    female: function(age){
-      if(age == null) return null;
-      if(age <= 39) return [
-        {label:'Athletic',  max:17, color:'var(--green)'},
-        {label:'Fitness',   max:23, color:'var(--lime)'},
-        {label:'Average',   max:28, color:'var(--blue)'},
-        {label:'Above avg', max:32, color:'var(--orange)'},
-        {label:'Obese',     max:Infinity, color:'var(--red)'},
-      ];
-      if(age <= 59) return [
-        {label:'Athletic',  max:18, color:'var(--green)'},
-        {label:'Fitness',   max:24, color:'var(--lime)'},
-        {label:'Average',   max:29, color:'var(--blue)'},
-        {label:'Above avg', max:33, color:'var(--orange)'},
-        {label:'Obese',     max:Infinity, color:'var(--red)'},
-      ];
-      return [
-        {label:'Athletic',  max:19, color:'var(--green)'},
-        {label:'Fitness',   max:25, color:'var(--lime)'},
-        {label:'Average',   max:30, color:'var(--blue)'},
-        {label:'Above avg', max:34, color:'var(--orange)'},
-        {label:'Obese',     max:Infinity, color:'var(--red)'},
-      ];
-    },
+    male: function(age){ return BF_BANDS('male', age); },
+    female: function(age){ return BF_BANDS('female', age); },
   },
-  bmi: [
-    {label:'Underweight', max:18.5, color:'var(--orange)'},
-    {label:'Normal',      max:25,   color:'var(--green)'},
-    {label:'Overweight',  max:30,   color:'var(--orange)'},
-    {label:'Obese I',     max:35,   color:'#ff7043'},
-    {label:'Obese II',    max:40,   color:'var(--red)'},
-    {label:'Obese III',   max:Infinity, color:'#d32f2f'},
-  ],
-  lbmi: { // Lean Body Mass Index = LBM / height_m². Men.
-    male: [
-      {label:'Low',         max:17, color:'var(--orange)'},
-      {label:'Average',     max:19, color:'var(--blue)'},
-      {label:'Above avg',   max:22, color:'var(--lime)'},
-      {label:'Excellent',   max:25, color:'var(--green)'},
-      {label:'Very high',   max:Infinity, color:'#4caf50'},
-    ],
-    female: [
-      {label:'Low',         max:14, color:'var(--orange)'},
-      {label:'Average',     max:16, color:'var(--blue)'},
-      {label:'Above avg',   max:18, color:'var(--lime)'},
-      {label:'Excellent',   max:21, color:'var(--green)'},
-      {label:'Very high',   max:Infinity, color:'#4caf50'},
-    ],
-  },
+  bmi: BMI_BANDS,
+  lbmi: LBMI_BANDS, // Lean Body Mass Index = LBM / height_m²
   rhr: { // Resting heart rate by age 50-65 (Mayo Clinic adult bands, men)
     bands: [
       {label:'Athletic',    max:56, color:'var(--green)'},
