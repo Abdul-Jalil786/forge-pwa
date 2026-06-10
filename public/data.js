@@ -1188,31 +1188,19 @@ function getCurrentLeanMass(){
   if(w&&bf)return Math.round(w*(1-bf/100)*10)/10;
   return null;
 }
+// Phase 42a: thin wrapper over the pure engine in targets.js.
+// Phase-driven (cut/recomp/lean-bulk/maintenance), sex-based floors, under-18
+// no-deficit guard. Legacy users keep exact pre-42 numbers via profile.targetOverrides
+// (seeded server-side). Returns null when the personal profile is incomplete.
 function calculateDynamicTargets(weight,leanMass,sessionType){
-  const personal=(STATE.profile&&STATE.profile.personal)||{};
-  const age=personal.age||52;
-  const heightCm=personal.heightCm||180;
-  const sexConst=(personal.sex==='female')?-161:5;
-  const bmr=(10*weight)+(6.25*heightCm)-(5*age)+sexConst;
-  const tdee=bmr*1.55;
-  // Phase 41b: deficit dropped 500 → 350 for recomp framing (lose fat + preserve / grow LBM)
-  const deficit=350;
-  const sessionBonus=sessionType==='lower'?150:sessionType==='upper'?100:0;
-  // Phase 41b: safety floor at 2,400 kcal — never let target drop into over-restriction territory
-  const calsTarget=Math.max(2400, tdee-deficit+sessionBonus);
-  // Phase 41b: protein floor 180 → 200 (40g × 5 meals at age 52, low T, on Mounjaro)
-  const proteinTarget=Math.max((leanMass||weight*0.7)*2.2,200);
-  const fatTarget=(calsTarget*0.30)/9;
-  const carbTarget=Math.max(0,(calsTarget-(proteinTarget*4)-(calsTarget*0.30))/4);
-  return {
-    calories:Math.round(calsTarget),
-    protein:Math.round(proteinTarget),
-    carbs:Math.round(carbTarget),
-    fat:Math.round(fatTarget),
-    bmr:Math.round(bmr),
-    tdee:Math.round(tdee),
-    sessionType,
-  };
+  const p=STATE.profile||{};
+  const personal=p.personal||{};
+  return computeTargets({
+    weight,leanMass,sessionType,
+    age:personal.age,heightCm:personal.heightCm,sex:personal.sex,
+    phase:personal.phase,activityLevel:personal.activityLevel,
+    overrides:p.targetOverrides,
+  });
 }
 // Recompute targets for all three session types + persist to profile
 function applyDynamicTargets(){
@@ -1220,8 +1208,10 @@ function applyDynamicTargets(){
   const weight=getCurrentWeight();
   if(!weight)return null;
   const lean=getCurrentLeanMass();
+  const rest=calculateDynamicTargets(weight,lean,'rest');
+  if(!rest)return null; // incomplete personal profile — keep existing targets
   const dt={
-    rest:calculateDynamicTargets(weight,lean,'rest'),
+    rest,
     upper:calculateDynamicTargets(weight,lean,'upper'),
     lower:calculateDynamicTargets(weight,lean,'lower'),
     calculatedFrom:weight,
@@ -1596,14 +1586,15 @@ function JAY_SUPPLEMENTS_V39(){
 }
 
 // ---- S6: Water tracker (ml) ----
-const WATER_TARGET_BASE=3000, WATER_TARGET_GYM=3500;
 function getWaterLog(date){
   const log=pGet('waterLog',{});
   return log[date||todayStr()]||{entries:[],total:0};
 }
+// Phase 42a: 35ml/kg (+500 gym days) via targets.js; profile.targetOverrides wins.
 function getWaterTarget(date){
   const st=(typeof getSessionTypeForDate==='function')?getSessionTypeForDate(date||todayStr()):null;
-  return st?WATER_TARGET_GYM:WATER_TARGET_BASE;
+  const w=(typeof getCurrentWeight==='function')?getCurrentWeight():null;
+  return computeWaterTarget({weight:w,isGymDay:!!st,overrides:(STATE.profile||{}).targetOverrides});
 }
 function getWaterTotal(date){return getWaterLog(date).total||0;}
 function _saveWaterLog(date,entry){
@@ -1633,7 +1624,7 @@ function getWaterCompliance(days){
     const e=log[_ukDate(d)];
     if(!e)continue;
     counted++;sum+=e.total||0;
-    if((e.total||0)>=(e.target||WATER_TARGET_BASE))hit++;
+    if((e.total||0)>=(e.target||3000))hit++;
     if(lo==null||e.total<lo)lo=e.total||0;
     if(hi==null||e.total>hi)hi=e.total||0;
   }
@@ -1647,7 +1638,7 @@ function migrateWaterCups(){
   Object.keys(cups).forEach(date=>{
     if(wl[date])return;
     const n=cups[date]||0;
-    if(n>0)wl[date]={entries:[{amount:n*250,time:'12:00',type:'migrated'}],total:n*250,target:WATER_TARGET_BASE};
+    if(n>0)wl[date]={entries:[{amount:n*250,time:'12:00',type:'migrated'}],total:n*250,target:3000};
   });
   STATE.waterLog=wl;
   STATE._waterMigrated=true;

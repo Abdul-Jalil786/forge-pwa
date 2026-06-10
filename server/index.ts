@@ -936,30 +936,63 @@ async function seedJayZincCoQ10() {
   }
 }
 
-const server = app.listen(PORT, () => {
+// Phase 42a: legacy users keep their exact pre-42 targets — the new phase-driven
+// engine reads profile.targetOverrides first, and this seeds Jay's current numbers
+// (fixed 350 deficit, LBM-based protein with 200g floor, 2400 floor, 3.0/3.5L water).
+async function seedJayTargetOverridesV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.targetOverridesSeededV1) return;
+    if (!state.profile) state.profile = {};
+    state.profile.targetOverrides = {
+      deficitFixed: 350,
+      proteinPerKgLBM: 2.2,
+      proteinMin: 200,
+      calorieFloor: 2400,
+      activityFactor: 1.55,
+      waterRest: 3000,
+      waterGym: 3500,
+    };
+    if (!state.profile.personal) state.profile.personal = {};
+    if (!state.profile.personal.phase) state.profile.personal.phase = "cut";
+    if (!state.profile.eatingWindow) state.profile.eatingWindow = { enabled: true, start: 12, end: 20 };
+    state.targetOverridesSeededV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay target overrides seeded (pre-42 parity)");
+  } catch (err) {
+    console.error("[migration] seedJayTargetOverridesV1 failed:", err);
+  }
+}
+
+const server = app.listen(PORT, async () => {
   console.log(`Forge server running on port ${PORT}`);
   startCron();
-  migrateJayProgress();
-  seedJayMealPlan();
-  fixJayVisceralTarget();
-  seedJayBloodMarkers();
-  fixJayPostWorkoutBerries();
-  fixJayOmega3Dose();
-  seedJaySkinCareV1();
-  seedJayInjuryV1();
-  seedJayNutritionSuppsV1();
-  seedJayZincCoQ10();
-  removeJayCreatine();
-  seedJayMealPlanV8();
-  updateJaySupplementsV8();
-  fixJayBreakfastEggsBoiled();
-  swapJayBreakfastEggsToWhites();
-  seedJayDexa20260602();
-  patchJaySupplementsAndMealsV8c();
-  purgeJayMultivitamin();
-  purgeJayProteinSupplement();
-  purgeJayProteinSupplementV2();
-  setJaySkinPhase3();
+  // Migrations run sequentially — they all read-modify-write the same state row,
+  // so concurrent execution can lose writes. Each is individually try/caught.
+  await migrateJayProgress();
+  await seedJayMealPlan();
+  await fixJayVisceralTarget();
+  await seedJayBloodMarkers();
+  await fixJayPostWorkoutBerries();
+  await fixJayOmega3Dose();
+  await seedJaySkinCareV1();
+  await seedJayInjuryV1();
+  await seedJayNutritionSuppsV1();
+  await seedJayZincCoQ10();
+  await removeJayCreatine();
+  await seedJayMealPlanV8();
+  await updateJaySupplementsV8();
+  await fixJayBreakfastEggsBoiled();
+  await swapJayBreakfastEggsToWhites();
+  await seedJayDexa20260602();
+  await patchJaySupplementsAndMealsV8c();
+  await purgeJayMultivitamin();
+  await purgeJayProteinSupplement();
+  await purgeJayProteinSupplementV2();
+  await setJaySkinPhase3();
+  await seedJayTargetOverridesV1();
 });
 
 const shutdown = async (signal: string) => {
