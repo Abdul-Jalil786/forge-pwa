@@ -472,30 +472,91 @@ async function loadState() {
   } catch {}
 }
 
+// ---- Phase 42f: offline-safe saves — failed writes queue + retry ----
+// Failures used to be silently swallowed (catch {}). Now: network errors and
+// 5xx responses queue the write in localStorage, a badge shows unsynced count,
+// and the queue flushes on reconnect / every 30s. One entry per endpoint
+// (each field-scoped endpoint writes the whole value, so latest-wins is correct).
+let _syncQueue = [];
+const _SYNC_QUEUE_KEY = "forge_sync_queue";
+try { _syncQueue = JSON.parse(localStorage.getItem(_SYNC_QUEUE_KEY)) || []; } catch { _syncQueue = []; }
+
+function _persistSyncQueue() {
+  try { localStorage.setItem(_SYNC_QUEUE_KEY, JSON.stringify(_syncQueue.slice(-100))); } catch {}
+  _updateSyncBadge();
+}
+function _updateSyncBadge() {
+  const el = document.getElementById("sync-badge");
+  if (!el) return;
+  if (_syncQueue.length) {
+    el.style.display = "inline-flex";
+    el.textContent = "⟳ " + _syncQueue.length + " unsynced";
+  } else {
+    el.style.display = "none";
+  }
+}
+function _queueWrite(endpoint, body) {
+  _syncQueue = _syncQueue.filter(q => q.endpoint !== endpoint);
+  _syncQueue.push({ endpoint, body, ts: Date.now() });
+  _persistSyncQueue();
+}
+function _dropQueued(endpoint) {
+  const before = _syncQueue.length;
+  _syncQueue = _syncQueue.filter(q => q.endpoint !== endpoint);
+  if (_syncQueue.length !== before) _persistSyncQueue();
+}
+async function _putJSON(endpoint, body) {
+  const token = localStorage.getItem("forge_token");
+  if (!token) return true; // logged out — nothing to sync
+  const r = await fetch(endpoint, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify(body),
+  });
+  // 4xx = the request itself is bad — retrying won't help, don't queue
+  if (!r.ok && r.status >= 500) throw new Error("HTTP " + r.status);
+  return r.ok;
+}
+async function flushSyncQueue() {
+  if (!_syncQueue.length || !navigator.onLine) return;
+  const pending = [..._syncQueue];
+  _syncQueue = [];
+  for (const item of pending) {
+    try {
+      // Full-state body is rebuilt at flush time so we never replay a stale snapshot
+      const body = item.endpoint === "/api/state" ? { state: STATE } : item.body;
+      await _putJSON(item.endpoint, body);
+    } catch {
+      _syncQueue.push(item);
+    }
+  }
+  _persistSyncQueue();
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => { flushSyncQueue(); });
+  setInterval(() => { flushSyncQueue(); }, 30000);
+}
+
 async function saveStateNow() {
   console.warn("[Forge] Full state PUT — prefer field-scoped saves");
   localStorage.setItem("forge_state_cache", JSON.stringify(STATE));
-  const token = localStorage.getItem("forge_token");
-  if (!token) return;
+  if (!localStorage.getItem("forge_token")) return;
   try {
-    await fetch("/api/state", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-      body: JSON.stringify({ state: STATE }),
-    });
-  } catch {}
+    await _putJSON("/api/state", { state: STATE });
+    _dropQueued("/api/state");
+  } catch {
+    _queueWrite("/api/state", null); // body rebuilt from STATE at flush time
+  }
 }
 
 async function saveFieldToServer(endpoint, body) {
-  const token = localStorage.getItem("forge_token");
-  if (!token) return;
+  if (!localStorage.getItem("forge_token")) return;
   try {
-    await fetch(endpoint, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-      body: JSON.stringify(body),
-    });
-  } catch {}
+    await _putJSON(endpoint, body);
+    _dropQueued(endpoint); // fresher write landed — stale queued one is obsolete
+  } catch {
+    _queueWrite(endpoint, body);
+  }
 }
 
 function updateLocalCache() {

@@ -2601,6 +2601,7 @@ function renderMore(){
     <div class="card" style="margin-bottom:10px;">
       <div id="admin-stats-body" style="font-size:12px;color:var(--text2);">Loading…</div>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px;" onclick="loadAdminStats()">↻ Refresh</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="adminResetPassword()">🔑 Reset a user's password</button>
     </div>`:''}
   `;
 

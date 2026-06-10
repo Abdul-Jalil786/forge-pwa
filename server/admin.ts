@@ -2,11 +2,11 @@
 // Returns counts + per-user breakdown for the founder. Never includes
 // individual app state (foods, weights, etc.) — only metadata + flags.
 import { Router, Request, Response } from "express";
+import bcrypt from "bcryptjs";
 import prisma from "./db";
-import { requireAuth } from "./auth";
+import { requireAuth, OWNER_EMAIL } from "./auth";
 
 const router = Router();
-const OWNER_EMAIL = "jay@afjltd.co.uk";
 
 router.get("/stats", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -84,6 +84,43 @@ router.get("/stats", requireAuth, async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error("Admin stats error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Phase 42f: owner-run password reset — for locked-out family members.
+// No email infrastructure: the owner sets a temporary password and tells
+// the family member, who should change it after logging in.
+router.post("/reset-password", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const requester = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { email: true },
+    });
+    if (!requester || requester.email.toLowerCase() !== OWNER_EMAIL) {
+      res.status(403).json({ error: "Owner only" });
+      return;
+    }
+    const { email, newPassword } = req.body || {};
+    if (typeof email !== "string" || !email.includes("@")) {
+      res.status(400).json({ error: "Valid email required" });
+      return;
+    }
+    if (typeof newPassword !== "string" || newPassword.length < 8 || newPassword.length > 100) {
+      res.status(400).json({ error: "Password must be 8-100 characters" });
+      return;
+    }
+    const target = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+    if (!target) {
+      res.status(404).json({ error: "No user with that email" });
+      return;
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({ where: { id: target.id }, data: { passwordHash } });
+    console.log(`[admin] password reset for ${target.email} by owner`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Admin password reset error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

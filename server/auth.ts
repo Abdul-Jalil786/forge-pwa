@@ -5,7 +5,14 @@ import prisma from "./db";
 
 const router = Router();
 
-const JWT_SECRET = process.env.JWT_SECRET!;
+// Phase 42f: fail fast on a missing secret instead of signing tokens with "undefined"
+const JWT_SECRET = process.env.JWT_SECRET || "";
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET is not set — refusing to start");
+}
+if (JWT_SECRET.length < 32) {
+  console.error("[auth] WARNING: JWT_SECRET is shorter than 32 chars — use a longer random secret");
+}
 const JWT_EXPIRY = "30d";
 
 function signToken(userId: string): string {

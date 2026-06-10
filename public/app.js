@@ -170,7 +170,7 @@ function addProfile(){
 function renderProfilePills(){
   const p = STATE.profile;
   if (!p) return;
-  document.getElementById('profilePills').innerHTML = `<button class="ppill active">${p.name.split(' ')[0]}</button>`;
+  document.getElementById('profilePills').innerHTML = `<button class="ppill active">${_esc((p.name||'').split(' ')[0])}</button>`;
 }
 
 function switchProfile(id){setActive(id);renderProfilePills();renderAll();nav('today');}
@@ -454,7 +454,7 @@ function _populateSuppMealDropdown(){
   const sel=document.getElementById('msupp-meal');
   if(!sel)return;
   const meals=(STATE.mealPlan&&STATE.mealPlan.meals)||[];
-  sel.innerHTML='<option value="">No linked meal</option>'+meals.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+  sel.innerHTML='<option value="">No linked meal</option>'+meals.map(m=>`<option value="${_esc(String(m.id))}">${_esc(m.name||'')}</option>`).join('');
 }
 
 function openAddSupplement(){
@@ -1953,6 +1953,26 @@ function delBPReading(id){
 // ============================================================
 // PHASE 41j — ADMIN STATS (owner-only)
 // ============================================================
+// Phase 42f: owner-run password reset for locked-out family members
+async function adminResetPassword(){
+  const email=(prompt('Email of the account to reset:')||'').trim().toLowerCase();
+  if(!email)return;
+  const pw=(prompt('Temporary password for '+email+' (min 8 chars — tell them to change it after login):')||'').trim();
+  if(!pw)return;
+  if(pw.length<8){showToast('Password must be at least 8 characters');return;}
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/admin/reset-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},
+      body:JSON.stringify({email,newPassword:pw}),
+    });
+    const data=await res.json().catch(()=>({}));
+    if(res.ok)showToast('Password reset for '+email+' ✓');
+    else showToast('Reset failed: '+(data.error||res.status));
+  }catch{showToast('Reset failed — network error');}
+}
+
 async function loadAdminStats(){
   const el=document.getElementById('admin-stats-body');
   if(!el)return;

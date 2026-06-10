@@ -461,6 +461,7 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
 <div id="app">
   <div class="top-bar">
     <div class="app-wordmark">FORGE</div>
+    <span id="sync-badge" onclick="flushSyncQueue()" style="display:none;align-items:center;font-size:10px;color:#ffc107;background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:10px;padding:2px 8px;cursor:pointer;" title="Saves waiting for connection — tap to retry"></span>
     <div class="profile-pills" id="profilePills"></div>
     <button class="add-pill" onclick="addProfile()" title="Add profile" style="display:none;">+</button>
   </div>
