@@ -2,38 +2,152 @@
 // APP CONTROLLER
 // ============================================================
 
-// ---- ONBOARDING ----
+// ---- ONBOARDING (Phase 42c: stats → recommendation → goal → training → food → confirm) ----
 let obData={};
+
+const OB_GOAL_OPTIONS={
+  'cut':{title:'Lose fat',desc:'Steady calorie deficit, high protein — keep your muscle, drop the fat.'},
+  'recomp':{title:'Tone up',desc:'Small deficit + training — build muscle while fat comes off. Slower, sustainable.'},
+  'lean-bulk':{title:'Build muscle',desc:'Small calorie surplus + progressive training.'},
+  'maintenance':{title:'Stay fit',desc:'Eat at maintenance, train for strength and health.'},
+};
+
+function obStats(){
+  return {age:obData.age,sex:obData.sex,heightCm:obData.heightCm,weight:obData.weight,bf:obData.bf};
+}
+
+function renderObGoal(){
+  const rec=recommendGoal(obStats());
+  obData.rec=rec;
+  if(obData.phase==null||(rec&&!rec.allowed.includes(obData.phase)))obData.phase=rec?rec.phase:'maintenance';
+  const area=document.getElementById('ob-goal-area');
+  if(!area)return;
+  let html='';
+  if(rec){
+    html+=`<div style="background:rgba(200,255,0,.07);border:1px solid rgba(200,255,0,.35);border-radius:12px;padding:12px;margin-bottom:12px;text-align:left;">
+      <div style="font-size:10px;color:var(--lime);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:5px;">Recommended for you</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${OB_GOAL_OPTIONS[rec.phase].title}</div>
+      ${rec.reasons.map(r=>`<div style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:4px;">${r}</div>`).join('')}
+    </div>`;
+  }
+  const allowed=rec?rec.allowed:['cut','recomp','lean-bulk','maintenance'];
+  html+=allowed.map(ph=>{
+    const o=OB_GOAL_OPTIONS[ph];
+    const sel=obData.phase===ph;
+    return `<button onclick="obSelectGoal('${ph}')" data-goal="${ph}" style="display:block;width:100%;text-align:left;padding:11px 12px;margin-bottom:7px;background:${sel?'rgba(200,255,0,.1)':'transparent'};border:1px solid ${sel?'var(--lime)':'var(--border)'};border-radius:10px;cursor:pointer;">
+      <div style="font-size:13px;font-weight:700;color:${sel?'var(--lime)':'var(--text)'};">${o.title}${rec&&rec.phase===ph?' ★':''}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4;">${o.desc}</div>
+    </button>`;
+  }).join('');
+  if(rec&&rec.guard==='minor'){
+    html+='<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-top:4px;">Because you\'re under 18, plans never cut calories — every option here keeps you eating enough while you grow.</div>';
+  }
+  area.innerHTML=html;
+}
+
+function obSelectGoal(phase){
+  obData.phase=phase;
+  renderObGoal();
+}
+
+function obSetTrain(key,val){
+  obData[key]=val;
+  const grp=document.getElementById('ob-grp-'+key);
+  if(grp)Array.from(grp.children).forEach(b=>{
+    const on=b.dataset.val==String(val);
+    b.style.borderColor=on?'var(--lime)':'var(--border)';
+    b.style.color=on?'var(--lime)':'var(--text2)';
+    b.style.background=on?'rgba(200,255,0,.08)':'transparent';
+  });
+  if(obData.experience&&obData.daysPerWeek&&obData.equipment){
+    obData.programId=pickProgramId(obData.experience,obData.daysPerWeek,obData.equipment);
+    const prev=document.getElementById('ob-prog-preview');
+    if(prev)prev.innerHTML=`Your program: <strong style="color:var(--lime);">${PROGRAM_LABELS[obData.programId]}</strong>`;
+  }
+}
+
+function obToggleWindow(){
+  obData.eatingWindowEnabled=!obData.eatingWindowEnabled;
+  const b=document.getElementById('ob-window-btn');
+  if(!b)return;
+  b.textContent=obData.eatingWindowEnabled?'Eating window ON — 12:00 to 20:00':'No eating window — eat when it suits me';
+  b.style.borderColor=obData.eatingWindowEnabled?'var(--lime)':'var(--border)';
+  b.style.color=obData.eatingWindowEnabled?'var(--lime)':'var(--text2)';
+}
+
+function renderObConfirm(){
+  const area=document.getElementById('ob-confirm-area');
+  if(!area)return;
+  const base={age:obData.age,heightCm:obData.heightCm,sex:obData.sex,phase:obData.phase,activityLevel:obData.activityLevel,
+    weight:obData.weight,leanMass:obData.bf!=null?obData.weight*(1-obData.bf/100):null};
+  const rest=computeTargets({...base,sessionType:'rest'});
+  const train=computeTargets({...base,sessionType:'upper'});
+  const water=computeWaterTarget({weight:obData.weight,isGymDay:false});
+  if(!rest){area.innerHTML='<div style="color:var(--red);font-size:13px;">Something is missing — go back and check your details.</div>';return;}
+  const row=(l,v)=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);"><div style="font-size:12px;color:var(--text2);">${l}</div><div style="font-size:13px;font-weight:700;">${v}</div></div>`;
+  area.innerHTML=`<div style="text-align:left;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:6px 14px;">
+    ${row('Goal',OB_GOAL_OPTIONS[obData.phase].title)}
+    ${row('Program',PROGRAM_LABELS[obData.programId]||'—')}
+    ${row('Maintenance (TDEE)',rest.tdee+' kcal')}
+    ${row('Rest-day target',rest.calories+' kcal')}
+    ${row('Training-day target',train.calories+' kcal')}
+    ${row('Protein',rest.protein+'g / day')}
+    ${row('Water',(water/1000).toFixed(2).replace(/\.?0+$/,'')+'L / day')}
+    ${obData.eatingWindowEnabled?row('Eating window','12:00 – 20:00'):''}
+  </div>
+  ${obData.rec&&obData.rec.guard==='minor'?'<div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:10px;text-align:left;">Your calories sit at maintenance — under 18 the plan never uses a deficit. Strength and habits now, body composition follows.</div>':''}
+  <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-top:10px;text-align:left;">First sessions calibrate your starting weights — the app then progresses them automatically and recalculates calories as your weight changes.</div>`;
+}
+
 async function obStep(step){
   if(step===1){
     const name=document.getElementById('ob-name').value.trim();
+    const age=parseInt(document.getElementById('ob-age').value);
+    const sex=document.getElementById('ob-sex').value;
+    const heightCm=parseFloat(document.getElementById('ob-height').value);
+    const weight=parseFloat(document.getElementById('ob-weight').value);
+    const bfRaw=parseFloat(document.getElementById('ob-bf').value);
+    const activityLevel=document.getElementById('ob-activity').value;
     if(!name){showToast('Enter your name');return;}
-    obData.name=name;
+    if(!age||age<10||age>100){showToast('Enter a valid age');return;}
+    if(!sex){showToast('Select your sex — it sets your calorie baseline');return;}
+    if(!heightCm||heightCm<100||heightCm>250){showToast('Enter a valid height in cm');return;}
+    if(!weight||weight<25||weight>400){showToast('Enter a valid weight in kg');return;}
+    if(!isNaN(bfRaw)&&(bfRaw<3||bfRaw>75)){showToast('Body fat % looks wrong — leave it blank if unsure');return;}
+    if(!activityLevel){showToast('Pick your activity level');return;}
+    Object.assign(obData,{name,age,sex,heightCm,weight,bf:isNaN(bfRaw)?null:bfRaw,activityLevel});
+    renderObGoal();
   } else if(step===2){
-    const w=parseFloat(document.getElementById('ob-sw').value);
-    if(!w||w<40||w>400){showToast('Enter valid weight');return;}
-    obData.startWeight=w;
-  } else if(step===3){
+    if(!obData.phase){showToast('Pick a goal');return;}
     const tw=parseFloat(document.getElementById('ob-tw').value);
-    if(!tw){showToast('Enter target weight');return;}
-    obData.targetWeight=tw;
-    obData.targetBF=parseFloat(document.getElementById('ob-bf').value)||15;
+    obData.targetWeight=isNaN(tw)?null:tw;
+  } else if(step===3){
+    if(!obData.experience||!obData.daysPerWeek||!obData.equipment){showToast('Answer all three');return;}
   } else if(step===4){
-    const cg=parseInt(document.getElementById('ob-cg').value);
-    const cr=parseInt(document.getElementById('ob-cr').value);
-    const pr=parseInt(document.getElementById('ob-pr').value);
-    if(!cg||!cr||!pr){showToast('Fill all fields');return;}
-    obData.calsGym=cg; obData.calsRest=cr; obData.proteinTarget=pr;
-    STATE.profile = {
-      name: obData.name, startWeight: obData.startWeight,
-      targetWeight: obData.targetWeight, targetBF: obData.targetBF,
-      calsGym: obData.calsGym, calsRest: obData.calsRest,
-      proteinTarget: obData.proteinTarget,
+    obData.excluded=(document.getElementById('ob-excl').value||'').split(',').map(s=>s.trim()).filter(Boolean).slice(0,30);
+    renderObConfirm();
+  } else if(step===5){
+    const t=todayStr();
+    STATE.profile={
+      name:obData.name,
+      email:(localStorage.getItem('forge_email')||'').toLowerCase()||undefined,
+      startWeight:obData.weight,startDate:t,
+      startBF:obData.bf!=null?obData.bf:undefined,
+      startLBM:obData.bf!=null?Math.round(obData.weight*(1-obData.bf/100)*100)/100:undefined,
+      targetWeight:obData.targetWeight||undefined,
+      personal:{age:obData.age,heightCm:obData.heightCm,sex:obData.sex,activityLevel:obData.activityLevel,phase:obData.phase},
+      programId:obData.programId,
+      eatingWindow:{enabled:!!obData.eatingWindowEnabled,start:12,end:20},
+      foodPrefs:{excluded:obData.excluded||[],notes:'',refreshCadence:'manual'},
+      onboarded:true,
     };
-    STATE.weightLog = [{date: todayStr(), weight: obData.startWeight, source: 'manual'}];
-    STATE.planStartDate = todayStr();
-    STATE.trainingStartDate = todayStr();
+    STATE.weightLog=[{date:t,weight:obData.weight,source:'manual'}];
+    if(obData.bf!=null)STATE.bfLog=[{date:t,bf:obData.bf,source:'manual'}];
+    STATE.planStartDate=t;
+    STATE.trainingStartDate=t;
+    STATE.supplements=STATE.supplements||[]; // never inherit another user's list
     await saveStateNow();
+    if(typeof applyDynamicTargets==='function')applyDynamicTargets();
     document.getElementById('onboarding').style.display='none';
     document.getElementById('app').style.display='flex';
     renderProfilePills(); renderAll();
@@ -45,7 +159,8 @@ async function obStep(step){
 
 function addProfile(){
   obData={};
-  ['ob-name','ob-sw','ob-tw','ob-bf','ob-cg','ob-cr','ob-pr'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  ['ob-name','ob-age','ob-height','ob-weight','ob-bf','ob-tw','ob-excl'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  ['ob-sex','ob-activity'].forEach(id=>{const e=document.getElementById(id);if(e)e.selectedIndex=0;});
   document.querySelectorAll('.ob-step').forEach(s=>s.classList.remove('active'));
   document.getElementById('obs1').classList.add('active');
   document.getElementById('onboarding').style.display='flex';

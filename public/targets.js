@@ -263,9 +263,25 @@ function recommendGoal(stats) {
   return out('maintenance', null, ['cut', 'recomp', 'maintenance', 'lean-bulk']);
 }
 
+// ---- Phase 42c: program template picker ----
+const PROGRAM_LABELS = {
+  'upper-lower-4d': 'Upper / Lower split · 4 days a week',
+  'full-body-3d': 'Full Body · 3 days a week',
+  'home-3d': 'Home Full Body · 3 days a week · minimal equipment',
+};
+
+// experience: 'new'|'some'|'regular' · daysPerWeek: 2..5 · equipment: 'gym'|'home'
+// Beginners get full-body regardless of available days — they progress faster on it.
+function pickProgramId(experience, daysPerWeek, equipment) {
+  if (equipment === 'home') return 'home-3d';
+  if ((daysPerWeek || 3) >= 4 && experience !== 'new') return 'upper-lower-4d';
+  return 'full-body-3d';
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     computeBMR, computeTargets, computeWaterTarget, PHASE_DEFAULTS, ACTIVITY_FACTORS,
     BF_BANDS, BMI_BANDS, LBMI_BANDS, bandFor, recommendGoal, PHASE_LABELS,
+    PROGRAM_LABELS, pickProgramId,
   };
 }
