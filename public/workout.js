@@ -118,7 +118,7 @@ function renderWeekStrip(){
     else if(isPast&&session&&!completed){bg='rgba(255,59,59,.08)';color='var(--red)';}
     else if(!isPast&&!isToday){color='var(--text3)';}
 
-    const badge=session?session==='upper'?'U':'L':'·';
+    const badge=session?({upper:'U',lower:'L',full:'F',home:'H'}[session]||'•'):'·';
     html+=`<button onclick="setViewDate('${key}')" style="background:${bg};border:${border};border-radius:10px;padding:6px 0;color:${color};cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:'Archivo',sans-serif;">
       <div style="font-size:10px;font-weight:700;letter-spacing:.5px;">${initials[i]}</div>
       <div style="font-family:'Archivo Black',sans-serif;font-size:13px;line-height:1;">${badge}</div>
@@ -236,7 +236,7 @@ function toggleExDone(exId){
 function saveSets(exId){
   if(isViewingFuture())return;
   const date=getViewDate();
-  const allEx=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises];
+  const allEx=getAllExercises();
   const exObj=allEx.find(e=>e.id===exId);
   const timed=exObj&&isTimeBased(exObj);
   const dayLog=getExLogForDate(date);
@@ -264,7 +264,7 @@ function saveSets(exId){
 function addSet(exId){
   const cont=document.getElementById('sets-'+exId);
   const count=cont.querySelectorAll('.set-grid').length;
-  const allEx=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises];
+  const allEx=getAllExercises();
   const exObj=allEx.find(e=>e.id===exId);
   if(exObj&&isTimeBased(exObj)){
     cont.insertAdjacentHTML('beforeend',buildSetRowTimed(exId,count,''));
@@ -277,7 +277,7 @@ function delSet(exId,idx){
   const row=document.getElementById(`srow-${exId}-${idx}`);
   if(row)row.remove();
   const cont=document.getElementById('sets-'+exId);
-  const allEx=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises];
+  const allEx=getAllExercises();
   const exObj=allEx.find(e=>e.id===exId);
   const timed=exObj&&isTimeBased(exObj);
   cont.querySelectorAll('.set-grid').forEach((r,i)=>{
@@ -555,7 +555,7 @@ function suggestWeight(exId, prevSession, setIdx, opts){
 }
 
 function _suggestWeightCore(exId, prevSession, setIdx, opts){
-  const exObj=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises].find(e=>e.id===exId);
+  const exObj=getAllExercises().find(e=>e.id===exId);
   if(!exObj)return null;
   const timed=isTimeBased(exObj);
 
@@ -695,6 +695,12 @@ function renderWmOutline(){
     };
   });
 
+  // Phase 42d: calibration banner — first sessions have no history to prescribe from
+  const calCount = prescriptions.filter(p => p.kg == null && p.seconds == null).length;
+  const calibrationBanner = calCount >= 3
+    ? `<div style="background:rgba(61,155,255,.08);border:1px solid rgba(61,155,255,.3);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:var(--blue);line-height:1.5;">🎯 <strong>Calibration session</strong> — no history yet on ${calCount} lift${calCount>1?'s':''}. For each one, find a weight you could lift for the target reps with about 2 reps left in the tank. Log what you do — the app progresses it automatically from your next session.</div>`
+    : '';
+
   // Cache key for this session brief
   const briefKey = `${date}_${wm.session}`;
   const cached = (STATE.sessionBriefs || {})[briefKey];
@@ -708,6 +714,7 @@ function renderWmOutline(){
     <div class="wm-sub">${w.muscles} · ${w.exercises.length} exercises · ~${w.duration} mins</div>
     ${banner}
     ${injuryBanner}
+    ${calibrationBanner}
     ${briefSlot}
     <div class="wm-h">Today's Plan</div>
     <div style="margin-bottom:24px;" id="wm-exercise-list">
@@ -715,7 +722,7 @@ function renderWmOutline(){
         const sug=suggestWeight(ex.id,prev,undefined,opts);
         const timed=isTimeBased(ex);
         const arrow=sug?.dir==='up'?'<span class="wm-arrow-up">↑</span>':sug?.dir==='down'?'<span class="wm-arrow-down">↓</span>':'';
-        const wt=sug?(timed?`@ ${fmtSec(sug.seconds)} ${arrow}`:`@ ${sug.kg}kg ${arrow}`):'';
+        const wt=sug?(timed?`@ ${fmtSec(sug.seconds)} ${arrow}`:`@ ${sug.kg}kg ${arrow}`):(timed?'':'<span style="font-size:9px;color:var(--blue);font-weight:700;letter-spacing:1px;">FIND WEIGHT</span>');
         const badge=sug?.injured==='severe'?'<span style="font-size:9px;color:#ff6b6b;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">⚠ DO NOT LOAD</span>':sug?.injured?'<span style="font-size:9px;color:#ff6b6b;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">INJURY −</span>':sug?.deload?'<span style="font-size:9px;color:var(--orange);font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">DELOAD</span>':sug?.recovery==='low'?'<span style="font-size:9px;color:#ffc107;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">HOLD</span>':'';
         const cueId = `cue-${ex.id}`;
         const cueText = cached?.perExercise?.find(c => c.exId === ex.id)?.cue || '';
@@ -843,7 +850,7 @@ function renderWmSet(){
       <input id="wm-kg" type="number" step="0.5" inputmode="decimal" value="${startKg}">
       <button class="wm-step-btn" onclick="wmStepKg(2.5)">+</button>
     </div>
-    ${sug?`<div class="wm-progress-hint">${sug.reason}</div>`:''}
+    ${sug?`<div class="wm-progress-hint">${sug.reason}</div>`:`<div class="wm-progress-hint" style="color:var(--blue);">First time on this lift — find a weight you could manage for ${ex.reps} reps with ~2 left in the tank. Logged today, auto-progressed next session.</div>`}
     <div class="wm-h" style="margin-top:24px;">Reps</div>
     <div class="wm-stepper">
       <button class="wm-step-btn" onclick="wmStepReps(-1)">−</button>

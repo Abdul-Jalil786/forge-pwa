@@ -278,7 +278,7 @@ function saveFood(){
 let _setEdit = null; // { date, exId, exObj, sets: [{kg, reps, seconds, effort}], done }
 
 function openSetEdit(date, exId){
-  const allEx = [...WORKOUTS.upper.exercises, ...WORKOUTS.lower.exercises];
+  const allEx = getAllExercises();
   const exObj = allEx.find(e => e.id === exId);
   if(!exObj){ showToast('Exercise not found'); return; }
   const exLog = STATE.exLog || {};
@@ -1023,10 +1023,13 @@ function saveSessionTimesFromUI(){
 // ---- INJURY MANAGEMENT (Phase 38) ----
 let _injuryEdit=null; // { id: string | null }
 function _allWorkoutExercises(){
-  return [
-    ...WORKOUTS.upper.exercises.map(e=>({id:e.id,name:e.name,session:'Upper'})),
-    ...WORKOUTS.lower.exercises.map(e=>({id:e.id,name:e.name,session:'Lower'})),
-  ];
+  // Phase 42d: all programs, deduped by id; label = first session the exercise appears in
+  const sessionLabel={upper:'Upper',lower:'Lower',full:'Full Body',home:'Home'};
+  const seen=new Set(),out=[];
+  Object.entries(WORKOUTS).forEach(([key,w])=>(w.exercises||[]).forEach(e=>{
+    if(!seen.has(e.id)){seen.add(e.id);out.push({id:e.id,name:e.name,session:sessionLabel[key]||key});}
+  }));
+  return out;
 }
 function renderInjuryList(){
   const el=document.getElementById('injury-list');

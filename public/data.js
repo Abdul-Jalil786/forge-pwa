@@ -35,6 +35,41 @@ const WORKOUTS = {
       {id:'l8',name:'Ab Crunch',sets:3,reps:'15',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=ab+crunch+form+technique'},
       {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
     ]
+  },
+  // Phase 42d: Full Body 3-day (gym) — beginner-friendly, shares exercise IDs with
+  // upper/lower where the movement is identical so history transfers across programs.
+  full: {
+    name:'FULL BODY', type:'full',
+    muscles:'Legs · Chest · Back · Shoulders · Arms · Core',
+    duration:'45–55',
+    exercises:[
+      {id:'l1',name:'Leg Press',sets:3,reps:'8–10',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
+      {id:'u1',name:'Chest Press',sets:3,reps:'8–10',rest:90,muscle:'Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=chest+press+form'},
+      {id:'u3',name:'Seated Row',sets:3,reps:'8–10',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
+      {id:'u4',name:'Shoulder Press',sets:2,reps:'8–10',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'l4',name:'Leg Curl',sets:2,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
+      {id:'u5',name:'Lat Pulldown',sets:2,reps:'8–10',rest:90,muscle:'Lats',size:'medium',yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
+      {id:'u6',name:'Bicep Curl',sets:2,reps:'10–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
+      {id:'u7',name:'Tricep Pushdown',sets:2,reps:'10–12',rest:60,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+pushdown+form'},
+      {id:'u9',name:'Plank',sets:2,reps:'30–45s',rest:45,muscle:'Core',metric:'time',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
+    ]
+  },
+  // Phase 42d: Home Full Body 3-day — dumbbells + bodyweight, no machines.
+  home: {
+    name:'HOME FULL BODY', type:'home',
+    muscles:'Legs · Chest · Back · Shoulders · Arms · Core',
+    duration:'40–50',
+    exercises:[
+      {id:'h1',name:'Goblet Squat',sets:3,reps:'10–12',rest:90,muscle:'Quads',size:'medium',yt:'https://www.youtube.com/results?search_query=goblet+squat+form'},
+      {id:'h2',name:'Push-Up',sets:3,reps:'8–15',rest:60,muscle:'Chest',size:'small',yt:'https://www.youtube.com/results?search_query=push+up+form'},
+      {id:'h3',name:'One-Arm Dumbbell Row',sets:3,reps:'8–10',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=one+arm+dumbbell+row+form'},
+      {id:'h4',name:'Dumbbell Romanian Deadlift',sets:3,reps:'10–12',rest:90,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+romanian+deadlift+form'},
+      {id:'u4',name:'Shoulder Press',sets:2,reps:'8–10',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'h5',name:'Lateral Raise',sets:2,reps:'12–15',rest:60,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
+      {id:'u6',name:'Bicep Curl',sets:2,reps:'10–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
+      {id:'u9',name:'Plank',sets:2,reps:'30–45s',rest:45,muscle:'Core',metric:'time',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
+      {id:'core_dead_bug',name:'Dead Bug',sets:2,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
+    ]
   }
 };
 
@@ -60,6 +95,48 @@ function _trainingDayInCycle(dateStr){
   const diffDays = Math.floor((target - start) / 86400000);
   if (diffDays < 0) return -1;
   return ((diffDays % 4) + 4) % 4;
+}
+
+// ---- Phase 42d: program templates ----
+// profile.programId selects the schedule + sessions. Default = the original
+// Upper/Lower 4-day cycle, so existing users see zero change.
+const PROGRAMS = {
+  'upper-lower-4d': {
+    id:'upper-lower-4d', name:'Upper / Lower 4-Day',
+    desc:'Alternating Upper / Rest / Lower / Rest cycle',
+    getSessionType(dateStr){
+      const cycle=_trainingDayInCycle(dateStr);
+      if(cycle===0)return 'upper';
+      if(cycle===2)return 'lower';
+      return null;
+    },
+  },
+  'full-body-3d': {
+    id:'full-body-3d', name:'Full Body 3-Day',
+    desc:'Mon · Wed · Fri full-body sessions',
+    getSessionType(dateStr){
+      const dow=new Date(dateStr+'T12:00:00').getDay();
+      return (dow===1||dow===3||dow===5)?'full':null;
+    },
+  },
+  'home-3d': {
+    id:'home-3d', name:'Home Full Body 3-Day',
+    desc:'Mon · Wed · Fri at home — dumbbells + bodyweight',
+    getSessionType(dateStr){
+      const dow=new Date(dateStr+'T12:00:00').getDay();
+      return (dow===1||dow===3||dow===5)?'home':null;
+    },
+  },
+};
+function getProgramId(){return (STATE.profile&&STATE.profile.programId)||'upper-lower-4d';}
+function getProgram(){return PROGRAMS[getProgramId()]||PROGRAMS['upper-lower-4d'];}
+// Union of every exercise across all program templates, deduped by id.
+function getAllExercises(){
+  const seen=new Set(),out=[];
+  Object.values(WORKOUTS).forEach(w=>(w.exercises||[]).forEach(e=>{
+    if(!seen.has(e.id)){seen.add(e.id);out.push(e);}
+  }));
+  return out;
 }
 
 // ============================================================
@@ -597,7 +674,7 @@ function saveExLogForDate(date,data){
 
 function getBestLift(exId){
   const log=getExLog();
-  const allEx=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises];
+  const allEx=getAllExercises();
   const exObj=allEx.find(e=>e.id===exId);
   const timed=exObj&&isTimeBased(exObj);
   let best=null;
@@ -617,12 +694,9 @@ function getBestLift(exId){
   return best;
 }
 
-// Session type for any past or future date based on SCHEDULE
+// Session type for any past or future date — delegates to the user's program (Phase 42d)
 function getSessionTypeForDate(dateStr){
-  const cycle = _trainingDayInCycle(dateStr);
-  if (cycle === 0) return 'upper';
-  if (cycle === 2) return 'lower';
-  return null;
+  return getProgram().getSessionType(dateStr);
 }
 
 // Most recent session of the same type with logged sets, before a given date
@@ -1133,7 +1207,7 @@ function getWeeklyReport(){
 // Phase 20 migration: convert time-based exercise sets from {kg,reps} to {seconds}
 function runPhase20Migration(){
   if(STATE.migrations?.phase20)return;
-  const allEx=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises];
+  const allEx=getAllExercises();
   const timeExIds=new Set(allEx.filter(e=>isTimeBased(e)).map(e=>e.id));
   const log=getExLog();
   let changed=false;
@@ -1242,6 +1316,8 @@ function getDynamicTargetForDate(date){
   const key=st||'rest';
   const dt=STATE.profile&&STATE.profile.dynamicTargets;
   if(dt&&dt[key])return dt[key];
+  // Phase 42d: full/home session types map to the training-day target
+  if(st&&dt&&dt.upper)return dt.upper;
   const p=STATE.profile||{};
   return {calories:st?(p.calsGym||2500):(p.calsRest||2400),protein:p.proteinTarget||180,carbs:p.carbsTarget||0,fat:p.fatTarget||0,sessionType:key};
 }

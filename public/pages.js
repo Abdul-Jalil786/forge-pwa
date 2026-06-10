@@ -240,7 +240,7 @@ function renderToday(){
 
     <div class="sec-label" style="display:flex;justify-content:space-between;align-items:center;">
       <span>Today's Targets</span>
-      ${_dynT?`<span style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;">↻ ${(STATE.profile.dynamicTargets&&STATE.profile.dynamicTargets.calculatedFrom)||cw}kg · ${session?(session==='lower'?'Lower':'Upper')+' day':'Rest day'}</span>`:''}
+      ${_dynT?`<span style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;">↻ ${(STATE.profile.dynamicTargets&&STATE.profile.dynamicTargets.calculatedFrom)||cw}kg · ${session?({upper:'Upper',lower:'Lower',full:'Full body',home:'Home'}[session]||'Training')+' day':'Rest day'}</span>`:''}
     </div>
     <div class="sg sg2" style="margin-bottom:6px;">
       <div class="sb${totals.cals>=calTarget?' green':' lime'}">
@@ -1227,20 +1227,22 @@ function promptSteps(){
 // All values are approximate — machines vary, 1RM is estimated.
 const STRENGTH_STD = {
   // [novice, intermediate, advanced, elite] × bodyweight
-  u1: { name:'Chest Press',          male:[0.50, 0.85, 1.20, 1.50] },
-  u2: { name:'Incline DB Press',     male:[0.30, 0.55, 0.80, 1.05] },
-  u3: { name:'Seated Row',           male:[0.50, 0.85, 1.20, 1.50] },
-  u4: { name:'Shoulder Press',       male:[0.35, 0.55, 0.80, 1.05] },
-  u5: { name:'Lat Pulldown',         male:[0.60, 0.95, 1.30, 1.60] },
-  u6: { name:'Bicep Curl',           male:[0.25, 0.40, 0.60, 0.80] },
-  u7: { name:'Tricep Pushdown',      male:[0.30, 0.50, 0.70, 0.90] },
-  u8: { name:'Face Pull',            male:[0.30, 0.50, 0.70, 0.90] },
-  l1: { name:'Leg Press',            male:[1.20, 1.75, 2.50, 3.50] },
-  l2: { name:'Romanian Deadlift',    male:[0.85, 1.50, 2.00, 2.50] },
-  l3: { name:'Leg Extension',        male:[0.50, 0.80, 1.10, 1.40] },
-  l4: { name:'Leg Curl',             male:[0.40, 0.70, 0.95, 1.20] },
-  l5: { name:'Hip Thrust',           male:[1.00, 1.50, 2.25, 3.00] },
-  l6: { name:'Calf Raise',           male:[1.00, 1.50, 2.00, 2.75] },
+  // Phase 42d: female multipliers from StrengthLevel female/male ratios
+  // (~55-65% upper body, ~70-80% lower body)
+  u1: { name:'Chest Press',          male:[0.50, 0.85, 1.20, 1.50], female:[0.30, 0.50, 0.70, 0.90] },
+  u2: { name:'Incline DB Press',     male:[0.30, 0.55, 0.80, 1.05], female:[0.20, 0.35, 0.50, 0.65] },
+  u3: { name:'Seated Row',           male:[0.50, 0.85, 1.20, 1.50], female:[0.30, 0.55, 0.75, 0.95] },
+  u4: { name:'Shoulder Press',       male:[0.35, 0.55, 0.80, 1.05], female:[0.20, 0.35, 0.50, 0.65] },
+  u5: { name:'Lat Pulldown',         male:[0.60, 0.95, 1.30, 1.60], female:[0.40, 0.60, 0.80, 1.00] },
+  u6: { name:'Bicep Curl',           male:[0.25, 0.40, 0.60, 0.80], female:[0.15, 0.25, 0.35, 0.50] },
+  u7: { name:'Tricep Pushdown',      male:[0.30, 0.50, 0.70, 0.90], female:[0.20, 0.30, 0.45, 0.60] },
+  u8: { name:'Face Pull',            male:[0.30, 0.50, 0.70, 0.90], female:[0.20, 0.30, 0.45, 0.60] },
+  l1: { name:'Leg Press',            male:[1.20, 1.75, 2.50, 3.50], female:[0.85, 1.25, 1.80, 2.50] },
+  l2: { name:'Romanian Deadlift',    male:[0.85, 1.50, 2.00, 2.50], female:[0.60, 1.05, 1.45, 1.80] },
+  l3: { name:'Leg Extension',        male:[0.50, 0.80, 1.10, 1.40], female:[0.35, 0.60, 0.80, 1.00] },
+  l4: { name:'Leg Curl',             male:[0.40, 0.70, 0.95, 1.20], female:[0.30, 0.50, 0.70, 0.90] },
+  l5: { name:'Hip Thrust',           male:[1.00, 1.50, 2.25, 3.00], female:[0.80, 1.20, 1.80, 2.40] },
+  l6: { name:'Calf Raise',           male:[1.00, 1.50, 2.00, 2.75], female:[0.75, 1.10, 1.50, 2.05] },
 };
 
 const STRENGTH_TIERS = [
@@ -1300,9 +1302,8 @@ function renderStrengthStandards(){
   const personal = profile.personal || {};
   const age = personal.age;
   const sex = personal.sex || 'male';
-  if(sex !== 'male') {
-    return `<div class="card" style="margin-bottom:10px;padding:14px;text-align:center;color:var(--text3);font-size:12px;">Female strength standards coming soon — bodyweight standards differ meaningfully by sex.</div>`;
-  }
+  // Phase 42d: female multipliers shipped; 'other' uses male tables (noted in footer)
+  const sexKey = sex === 'female' ? 'female' : 'male';
   const wl = STATE.weightLog || [];
   const bl = STATE.bfLog || [];
   const cw = wl.length ? wl[wl.length-1].weight : null;
@@ -1319,7 +1320,7 @@ function renderStrengthStandards(){
     const exDef = STRENGTH_STD[exId];
     const est1RM = _bestEstimated1RM(exId);
     if(est1RM === 0) return null;
-    const cls = _classifyLift(est1RM, cw, lbm, ageFactor, exDef.male);
+    const cls = _classifyLift(est1RM, cw, lbm, ageFactor, exDef[sexKey] || exDef.male);
     if(!cls) return null;
     return { exId, name: exDef.name, est1RM, ...cls };
   }).filter(Boolean);
@@ -1354,7 +1355,7 @@ function renderStrengthStandards(){
 }
 
 function renderLiftingRecords(){
-  const allEx=[...WORKOUTS.upper.exercises,...WORKOUTS.lower.exercises];
+  const allEx=getAllExercises();
   const records=allEx.map(ex=>{const b=getBestLift(ex.id);return{ex,best:b};}).filter(r=>r.best);
   if(records.length===0)return'<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Log sets in workouts to see personal bests</div>';
   return records.map(r=>{
