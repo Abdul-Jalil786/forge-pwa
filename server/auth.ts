@@ -66,17 +66,15 @@ export async function requireOwnerCheck(req: Request, res: Response, next: NextF
 
 
 // POST /api/auth/signup
-// Phase 43: invite-only — INVITE_CODE env gates signups (family app, not a
-// public service). Unset env = open signup, so local dev keeps working.
+// Phase 43 + 43.5: invite-only signup. The door is locked when EITHER the
+// INVITE_CODE env var is set OR any one-time invite has ever been created
+// (rows persist after use, so the lock never silently reopens). A signup
+// passes with the shared env code or a valid unused one-time code. Neither
+// gate configured = open signup, so local dev keeps working.
 router.post("/signup", async (req: Request, res: Response) => {
   try {
     const { email, password, inviteCode } = req.body;
 
-    const requiredCode = process.env.INVITE_CODE;
-    if (requiredCode && inviteCode !== requiredCode) {
-      res.status(403).json({ error: "Invalid invite code — ask the person who invited you" });
-      return;
-    }
     if (!email || !isValidEmail(email)) {
       res.status(400).json({ error: "Valid email is required" });
       return;
@@ -86,10 +84,40 @@ router.post("/signup", async (req: Request, res: Response) => {
       return;
     }
 
+    const supplied = typeof inviteCode === "string" ? inviteCode.trim() : "";
+    const sharedCode = process.env.INVITE_CODE;
+    const inviteRowsExist = (await prisma.inviteCode.count()) > 0;
+    const gated = !!sharedCode || inviteRowsExist;
+    let oneTimeCodeValid = false;
+    if (gated) {
+      const sharedOk = !!sharedCode && supplied === sharedCode;
+      if (!sharedOk && supplied) {
+        const row = await prisma.inviteCode.findUnique({ where: { code: supplied } });
+        oneTimeCodeValid = !!row && !row.usedAt;
+      }
+      if (!sharedOk && !oneTimeCodeValid) {
+        res.status(403).json({ error: "Invalid invite code — ask the person who invited you" });
+        return;
+      }
+    }
+
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       res.status(409).json({ error: "Email already in use" });
       return;
+    }
+
+    // Consume the one-time code atomically — a concurrent signup with the
+    // same code loses the updateMany race and gets rejected.
+    if (oneTimeCodeValid) {
+      const consumed = await prisma.inviteCode.updateMany({
+        where: { code: supplied, usedAt: null },
+        data: { usedAt: new Date(), usedBy: email },
+      });
+      if (consumed.count === 0) {
+        res.status(403).json({ error: "Invite code already used — ask for a new one" });
+        return;
+      }
     }
 
     const passwordHash = await bcrypt.hash(password, 12);

@@ -63,3 +63,11 @@ async function handleSubmit(e) {
 if (localStorage.getItem('forge_token')) {
   window.location.href = '/index.html';
 }
+
+// Phase 43.5: invite links land here as /login.html?invite=CODE —
+// jump straight to the signup tab with the code pre-filled.
+const _inviteParam = new URLSearchParams(window.location.search).get('invite');
+if (_inviteParam) {
+  switchTab('signup');
+  document.getElementById('invite').value = _inviteParam;
+}

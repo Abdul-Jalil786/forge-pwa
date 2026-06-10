@@ -1965,6 +1965,70 @@ function delBPReading(id){
 // ============================================================
 // PHASE 41j — ADMIN STATS (owner-only)
 // ============================================================
+// Phase 43.5: one-time invite links (owner only)
+async function generateInviteLink(){
+  const note=(prompt('Who is this invite for? (optional label, e.g. "daughter")')||'').trim();
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/admin/invites',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},
+      body:JSON.stringify({note}),
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok){showToast(data.error||'Failed to create invite');return;}
+    _copyInviteUrl(data.url);
+    loadInviteList();
+  }catch{showToast('Network error');}
+}
+
+function _copyInviteUrl(url){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url)
+      .then(()=>showToast('Invite link copied — paste it into WhatsApp ✓'))
+      .catch(()=>prompt('Copy this invite link:',url));
+  }else{
+    prompt('Copy this invite link:',url);
+  }
+}
+
+async function loadInviteList(){
+  const el=document.getElementById('invite-list');
+  if(!el)return;
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/admin/invites',{headers:{Authorization:'Bearer '+jwt}});
+    if(!res.ok)return;
+    const data=await res.json();
+    const invites=data.invites||[];
+    if(!invites.length){el.innerHTML='';return;}
+    el.innerHTML='<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Invites</div>'+invites.map(i=>{
+      const label=i.note?_esc(i.note):'<span style="color:var(--text3);">unlabelled</span>';
+      const status=i.usedAt
+        ?`<span style="color:var(--green);font-size:10px;">✓ used${i.usedBy?' · '+_esc(i.usedBy):''}</span>`
+        :`<span onclick="_copyInviteUrl('${_esc(i.url)}')" style="color:var(--lime);font-size:10px;cursor:pointer;text-decoration:underline;">copy link</span> <span onclick="revokeInvite('${_esc(i.id)}')" style="color:var(--red);font-size:11px;cursor:pointer;margin-left:8px;">✕</span>`;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
+        <div>${label} <span style="color:var(--text3);font-size:10px;">· ${_esc(i.code)}</span></div>
+        <div>${status}</div>
+      </div>`;
+    }).join('');
+  }catch{}
+}
+
+async function revokeInvite(id){
+  if(!confirm('Revoke this invite? The link will stop working.'))return;
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/admin/invites/'+encodeURIComponent(id),{
+      method:'DELETE',
+      headers:{Authorization:'Bearer '+jwt},
+    });
+    if(res.ok)showToast('Invite revoked ✓');
+    else showToast('Revoke failed');
+  }catch{showToast('Network error');}
+  loadInviteList();
+}
+
 // Phase 42f: owner-run password reset for locked-out family members
 async function adminResetPassword(){
   const email=(prompt('Email of the account to reset:')||'').trim().toLowerCase();

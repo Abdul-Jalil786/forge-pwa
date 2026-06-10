@@ -3,10 +3,29 @@
 // individual app state (foods, weights, etc.) — only metadata + flags.
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import prisma from "./db";
 import { requireAuth, OWNER_EMAIL } from "./auth";
 
 const router = Router();
+const APP_URL = process.env.APP_URL || "http://localhost:3000";
+
+async function isOwnerRequest(req: Request): Promise<boolean> {
+  const requester = await prisma.user.findUnique({
+    where: { id: req.userId },
+    select: { email: true },
+  });
+  return !!requester && requester.email.toLowerCase() === OWNER_EMAIL;
+}
+
+// Readable one-time codes: no ambiguous chars (i/l/o/0/1)
+function genInviteCode(): string {
+  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = crypto.randomBytes(10);
+  let s = "";
+  for (let i = 0; i < 10; i++) s += chars[bytes[i] % chars.length];
+  return s;
+}
 
 router.get("/stats", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -84,6 +103,62 @@ router.get("/stats", requireAuth, async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error("Admin stats error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Phase 43.5: one-time invite links. Creating the FIRST invite locks signup to
+// invite-only (see auth.ts) — used rows are kept as the audit trail and door lock.
+router.post("/invites", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!(await isOwnerRequest(req))) { res.status(403).json({ error: "Owner only" }); return; }
+    const note = typeof req.body?.note === "string" ? req.body.note.slice(0, 60) : null;
+    const code = genInviteCode();
+    const invite = await prisma.inviteCode.create({ data: { code, note } });
+    res.status(201).json({
+      id: invite.id,
+      code,
+      url: `${APP_URL}/login.html?invite=${code}`,
+    });
+  } catch (err) {
+    console.error("Create invite error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/invites", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!(await isOwnerRequest(req))) { res.status(403).json({ error: "Owner only" }); return; }
+    const invites = await prisma.inviteCode.findMany({ orderBy: { createdAt: "desc" } });
+    res.json({
+      invites: invites.map(i => ({
+        id: i.id,
+        code: i.code,
+        note: i.note,
+        createdAt: i.createdAt.toISOString(),
+        usedAt: i.usedAt ? i.usedAt.toISOString() : null,
+        usedBy: i.usedBy,
+        url: `${APP_URL}/login.html?invite=${i.code}`,
+      })),
+    });
+  } catch (err) {
+    console.error("List invites error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Revoke an UNUSED invite. Used invites are kept — they're the audit trail,
+// and deleting the last row would silently reopen signup if INVITE_CODE is unset.
+router.delete("/invites/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!(await isOwnerRequest(req))) { res.status(403).json({ error: "Owner only" }); return; }
+    const result = await prisma.inviteCode.deleteMany({
+      where: { id: req.params.id as string, usedAt: null },
+    });
+    if (result.count === 0) { res.status(404).json({ error: "Invite not found or already used" }); return; }
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Revoke invite error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

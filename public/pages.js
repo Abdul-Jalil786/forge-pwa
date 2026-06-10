@@ -2602,6 +2602,8 @@ function renderMore(){
       <div id="admin-stats-body" style="font-size:12px;color:var(--text2);">Loading…</div>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px;" onclick="loadAdminStats()">↻ Refresh</button>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="adminResetPassword()">🔑 Reset a user's password</button>
+      <button class="btn btn-lime btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="generateInviteLink()">✉️ Generate invite link</button>
+      <div id="invite-list" style="margin-top:10px;"></div>
     </div>`:''}
   `;
 
@@ -2615,6 +2617,7 @@ function renderMore(){
   loadSessionTimesUI();
   renderInjuryList();
   if(typeof isOwner==='function'&&isOwner()&&typeof loadAdminStats==='function')loadAdminStats();
+  if(typeof isOwner==='function'&&isOwner()&&typeof loadInviteList==='function')loadInviteList();
 }
 
 // Phase 42e: Calorie Stage Guide computed from the user's own profile + the
