@@ -1,9 +1,10 @@
 import { Router, Request, Response, NextFunction } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
-import { requireAuth } from "./auth";
+import { requireAuth, requireOwnerCheck } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
-import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection } from "./ai-coach";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection, buildContext } from "./ai-coach";
+import { answerQuestion } from "./ask";
 
 const router = Router();
 
@@ -249,6 +250,32 @@ router.post("/regenerate-plan", requireAuth, aiBudget(), async (req: Request, re
   } catch (err: any) {
     console.error("Regenerate plan error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to regenerate plan" });
+  }
+});
+
+// Phase 45: Ask Forge — owner-only structured Q&A about own data
+router.post("/ask", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+  try {
+    const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
+    if (!question) { res.status(400).json({ error: "Question required" }); return; }
+    if (question.length > 500) { res.status(400).json({ error: "Keep questions under 500 characters" }); return; }
+    const answer = await answerQuestion(req.userId as string, question);
+    res.json({ success: true, answer });
+  } catch (err: any) {
+    console.error("Ask Forge error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to answer" });
+  }
+});
+
+// Phase 45: debug view — exactly what the weekly coach sees. No AI call.
+router.get("/context-preview", requireAuth, requireOwnerCheck, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    res.type("text/plain").send(buildContext((user.state as any) || {}));
+  } catch (err) {
+    console.error("Context preview error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

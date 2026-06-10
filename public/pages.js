@@ -2188,6 +2188,20 @@ function renderCoach(){
 
     ${renderCoachTransformationCard()}
 
+    ${(typeof isOwner==='function'&&isOwner())?`
+    <div class="sec-label">Ask Forge</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px;">Ask anything about your own data — answers come only from what Forge has logged.</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <input id="ask-input" type="text" maxlength="500" placeholder="e.g. Is my lean mass holding?" style="flex:1;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;" onkeydown="if(event.key==='Enter')askForge()">
+        <button class="btn btn-lime btn-sm" style="padding:10px 16px;" onclick="askForge()">Ask</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
+        ${["How much of my loss was fat vs muscle?","Is my waist moving even when the scale isn't?","Am I getting stronger for my size?"].map(q=>`<button onclick="askForge('${q.replace(/'/g,"\\'")}')" style="font-size:10px;padding:6px 10px;background:transparent;border:1px solid var(--border);border-radius:12px;color:var(--text2);cursor:pointer;">${q}</button>`).join('')}
+      </div>
+      <div id="ask-answers"></div>
+    </div>`:''}
+
     <div class="sec-label">Weekly Report Card</div>
     ${report?(report.isBaseline?`
     <div class="card" style="margin-bottom:10px;border-color:var(--blue);background:linear-gradient(135deg,rgba(61,155,255,.04),transparent);">
@@ -2603,6 +2617,7 @@ function renderMore(){
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px;" onclick="loadAdminStats()">↻ Refresh</button>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="adminResetPassword()">🔑 Reset a user's password</button>
       <button class="btn btn-lime btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="generateInviteLink()">✉️ Generate invite link</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="openContextPreview()">🔍 What my coach sees</button>
       <div id="invite-list" style="margin-top:10px;"></div>
     </div>`:''}
   `;

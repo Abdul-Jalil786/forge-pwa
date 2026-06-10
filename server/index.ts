@@ -966,6 +966,32 @@ async function seedJayTargetOverridesV1() {
   }
 }
 
+// Phase 45: weekly tape-measurement reminder for the owner — Saturday 11:00 UK
+// (he wakes late). Tape trends are the most hydration-immune signal the coach has.
+async function seedJayTapeReminderV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.tapeReminderSeededV1) return;
+    if (!Array.isArray(state.reminders)) state.reminders = [];
+    if (!state.reminders.some((r: any) => r?.id === "rem_tape_weekly")) {
+      state.reminders.push({
+        id: "rem_tape_weekly",
+        title: "📏 Tape measurements",
+        body: "Waist, chest, arms, thighs, neck — 2 minutes, same conditions each week.",
+        time: "11:00",
+        daysOfWeek: [6], // Saturday
+      });
+    }
+    state.tapeReminderSeededV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay weekly tape reminder seeded (Sat 11:00)");
+  } catch (err) {
+    console.error("[migration] seedJayTapeReminderV1 failed:", err);
+  }
+}
+
 const server = app.listen(PORT, async () => {
   console.log(`Forge server running on port ${PORT}`);
   startCron();
@@ -993,6 +1019,7 @@ const server = app.listen(PORT, async () => {
   await purgeJayProteinSupplementV2();
   await setJaySkinPhase3();
   await seedJayTargetOverridesV1();
+  await seedJayTapeReminderV1();
 });
 
 const shutdown = async (signal: string) => {

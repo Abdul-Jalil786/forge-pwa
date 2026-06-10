@@ -1965,6 +1965,92 @@ function delBPReading(id){
 // ============================================================
 // PHASE 41j — ADMIN STATS (owner-only)
 // ============================================================
+// ---- Phase 45: Ask Forge (owner only) ----
+let _askHistory=[]; // session memory only, newest first, max 5
+let _askBusy=false;
+
+async function askForge(presetQuestion){
+  if(_askBusy)return;
+  const inp=document.getElementById('ask-input');
+  const question=(presetQuestion||(inp?inp.value:'')||'').trim();
+  if(!question){showToast('Type a question first');return;}
+  if(presetQuestion&&inp)inp.value=presetQuestion;
+  _askBusy=true;
+  const box=document.getElementById('ask-answers');
+  if(box)box.innerHTML='<div style="padding:14px 0;font-size:12px;color:var(--text3);text-align:center;">⏳ Checking your data…</div>'+_renderAskHistory();
+  try{
+    const jwt=localStorage.getItem('forge_token');
+    const res=await fetch('/api/coach/ask',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},
+      body:JSON.stringify({question:question.slice(0,500)}),
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok){
+      if(box)box.innerHTML=`<div style="padding:10px 0;font-size:12px;color:var(--red);">${_esc(data.error||('Error '+res.status))}</div>`+_renderAskHistory();
+      return;
+    }
+    _askHistory.unshift({question,answer:data.answer});
+    _askHistory=_askHistory.slice(0,5);
+    if(inp&&!presetQuestion)inp.value='';
+    if(box)box.innerHTML=_renderAskHistory();
+  }catch{
+    if(box)box.innerHTML='<div style="padding:10px 0;font-size:12px;color:var(--red);">Network error — try again</div>'+_renderAskHistory();
+  }finally{
+    _askBusy=false;
+  }
+}
+
+function askSimpler(idx){
+  const item=_askHistory[idx];
+  if(!item)return;
+  const base=item.question.replace(/\s*— explain this like I'm not technical, shorter\.?$/,'');
+  askForge((base.slice(0,420)+" — explain this like I'm not technical, shorter").slice(0,500));
+}
+
+function _renderAskHistory(){
+  const dotColor={green:'var(--green)',amber:'#ffc107',red:'var(--red)'};
+  return _askHistory.map((item,idx)=>{
+    const a=item.answer||{};
+    const dot=dotColor[a.status]||'#ffc107';
+    return `<div style="border-top:1px solid var(--border);padding:12px 0;">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:6px;">Q: ${_esc(item.question)}</div>
+      <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;">
+        <span style="width:10px;height:10px;border-radius:50%;background:${dot};flex-shrink:0;margin-top:4px;"></span>
+        <div style="font-size:14px;font-weight:700;line-height:1.4;">${_esc(a.verdict||'')}</div>
+      </div>
+      ${(a.numbers||[]).length?`<div style="margin:0 0 8px 18px;">${a.numbers.map(n=>`<div style="font-size:11px;color:var(--text2);padding:2px 0;">· ${_esc(n)}</div>`).join('')}</div>`:''}
+      ${a.meaning?`<div style="font-size:12px;color:var(--text2);line-height:1.5;margin:0 0 8px 18px;">${_esc(a.meaning)}</div>`:''}
+      ${a.action?`<div style="margin:0 0 8px 18px;padding:8px 10px;background:rgba(200,255,0,.07);border:1px solid rgba(200,255,0,.3);border-radius:8px;font-size:12px;color:var(--lime);">→ ${_esc(a.action)}</div>`:''}
+      <button onclick="askSimpler(${idx})" style="margin-left:18px;font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--text3);cursor:pointer;">Explain simpler</button>
+    </div>`;
+  }).join('');
+}
+
+// Phase 45: "What my coach sees" — raw weekly-report context, no AI call
+async function openContextPreview(){
+  let el=document.getElementById('ctx-preview');
+  if(!el){
+    el=document.createElement('div');
+    el.id='ctx-preview';
+    el.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg,#080808);display:flex;flex-direction:column;padding:16px;';
+    el.innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;max-width:480px;width:100%;margin-left:auto;margin-right:auto;">
+        <div style="font-family:'Archivo Black',sans-serif;font-size:16px;">What my coach sees</div>
+        <button onclick="document.getElementById('ctx-preview').remove()" style="background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text2);padding:6px 12px;cursor:pointer;">✕ Close</button>
+      </div>
+      <pre id="ctx-preview-body" style="flex:1;overflow:auto;background:var(--bg2,#111);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:10px;line-height:1.5;color:var(--text2);white-space:pre-wrap;word-break:break-word;max-width:480px;width:100%;margin:0 auto;">Loading…</pre>`;
+    document.body.appendChild(el);
+  }
+  const body=document.getElementById('ctx-preview-body');
+  try{
+    const jwt=localStorage.getItem('forge_token');
+    const res=await fetch('/api/coach/context-preview',{headers:{Authorization:'Bearer '+jwt}});
+    const text=await res.text();
+    body.textContent=res.ok?text:('Error: '+text);
+  }catch{body.textContent='Network error';}
+}
+
 // Phase 43.5: one-time invite links (owner only)
 async function generateInviteLink(){
   const note=(prompt('Who is this invite for? (optional label, e.g. "daughter")')||'').trim();

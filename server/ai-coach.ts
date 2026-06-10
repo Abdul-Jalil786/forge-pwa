@@ -536,6 +536,102 @@ function buildNutritionContext(state: any): string {
   return lines.join("\n");
 }
 
+// Phase 45: DEXA scans — ground truth for body composition. Where a Withings
+// reading exists near the scan date, state the BIA offset so the coach can
+// calibrate the daily noise against the gold standard.
+function buildDexaContext(state: any): string {
+  const scans = Array.isArray(state.dexaScans)
+    ? [...state.dexaScans].filter((s: any) => s && s.date).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)))
+    : [];
+  if (!scans.length) return "";
+  const nearWithings = (log: any[], date: string) => {
+    if (!Array.isArray(log)) return null;
+    const t = new Date(date + "T12:00:00").getTime();
+    let best: any = null, bestDiff = Infinity;
+    for (const e of log) {
+      if (!e || e.source !== "withings" || !e.date) continue;
+      const diff = Math.abs(new Date(e.date + "T12:00:00").getTime() - t);
+      if (diff <= 3 * 86400000 && diff < bestDiff) { best = e; bestDiff = diff; }
+    }
+    return best;
+  };
+  const sign = (n: number) => (n >= 0 ? "+" : "") + (Math.round(n * 10) / 10);
+  const lines = ["DEXA SCANS (gold standard — use to calibrate Withings BIA bias):"];
+  for (const s of scans) {
+    const parts: string[] = [];
+    if (s.weight != null) parts.push(`weight ${s.weight}kg`);
+    if (s.bodyFatPct != null) parts.push(`BF ${s.bodyFatPct}%`);
+    if (s.fatMass != null) parts.push(`fat ${s.fatMass}kg`);
+    if (s.leanMass != null) parts.push(`lean ${s.leanMass}kg`);
+    if (s.vatCm2 != null) parts.push(`visceral (VAT) ${s.vatCm2}cm²`);
+    if (s.tScore != null) parts.push(`bone T-score ${s.tScore}`);
+    if (s.almi != null) parts.push(`ALMI ${s.almi}`);
+    lines.push(`  ${s.date}${s.provider ? ` (${s.provider})` : ""}: ${parts.join(" · ")}`);
+    const w = nearWithings(state.weightLog, s.date);
+    const b = nearWithings(state.bfLog, s.date);
+    const offs: string[] = [];
+    if (w && s.weight != null && w.weight != null) offs.push(`Withings weight ${w.weight}kg (${w.date}) = ${sign(w.weight - s.weight)}kg vs DEXA`);
+    if (b && s.bodyFatPct != null && b.bf != null) offs.push(`Withings BF ${b.bf}% (${b.date}) = ${sign(b.bf - s.bodyFatPct)}pp vs DEXA`);
+    if (offs.length) lines.push(`    → BIA offset near this scan: ${offs.join(" · ")}`);
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+// Phase 45: tape measurements — hydration-immune trend data. Always emits
+// (even when empty/stale) so the coach knows to nudge the user.
+function buildTapeContext(state: any): string {
+  const heightCm = state.profile?.personal?.heightCm;
+  const sex = state.profile?.personal?.sex;
+  const log = Array.isArray(state.measLog)
+    ? state.measLog.filter((m: any) => m && m.date).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)))
+    : [];
+  const lines = ["TAPE MEASUREMENTS (immune to hydration noise — waist is the best visceral fat proxy):"];
+  if (!log.length) {
+    lines.push("  None logged yet — nudge the user: waist/chest/arms/thighs/neck takes 2 minutes (Saturday reminder is set).");
+    lines.push("");
+    return lines.join("\n");
+  }
+  const fmt = (m: any) => {
+    const p: string[] = [];
+    if (m.waist != null) p.push(`waist ${m.waist}cm`);
+    if (m.chest != null) p.push(`chest ${m.chest}cm`);
+    if (m.larm != null || m.rarm != null) p.push(`arms ${m.larm ?? "?"}/${m.rarm ?? "?"}cm`);
+    if (m.lthigh != null || m.rthigh != null) p.push(`thighs ${m.lthigh ?? "?"}/${m.rthigh ?? "?"}cm`);
+    if (m.neck != null) p.push(`neck ${m.neck}cm`);
+    return p.join(" · ");
+  };
+  for (const m of log.slice(-10)) lines.push(`  ${m.date}: ${fmt(m)}`);
+  const first = log[0];
+  const latest = log[log.length - 1];
+  const sign = (n: number) => (n >= 0 ? "+" : "") + (Math.round(n * 10) / 10);
+  const delta = (a: any, b: any, field: string) => (a?.[field] != null && b?.[field] != null) ? `${field} ${sign(b[field] - a[field])}cm` : null;
+  if (log.length >= 2) {
+    const sinceFirst = ["waist", "chest", "larm", "rarm", "lthigh", "rthigh", "neck"].map((f) => delta(first, latest, f)).filter(Boolean);
+    if (sinceFirst.length) lines.push(`  → Since first entry (${first.date}): ${sinceFirst.join(" · ")}`);
+    const cutoff = new Date(latest.date + "T12:00:00");
+    cutoff.setDate(cutoff.getDate() - 28);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const fourWkRef = [...log].reverse().find((m: any) => m.date <= cutoffStr);
+    if (fourWkRef) {
+      const last4w = ["waist", "chest", "larm", "rarm", "lthigh", "rthigh", "neck"].map((f) => delta(fourWkRef, latest, f)).filter(Boolean);
+      if (last4w.length) lines.push(`  → Last ~4 weeks (since ${fourWkRef.date}): ${last4w.join(" · ")}`);
+    }
+  }
+  if (latest.waist != null && heightCm) {
+    const ratio = Math.round((latest.waist / heightCm) * 100) / 100;
+    lines.push(`  → Waist-to-height ratio: ${ratio}${ratio >= 0.5 ? " — ABOVE the 0.5 health threshold, central fat is the priority" : " (below 0.5 ✓)"}`);
+  }
+  if (sex === "male" && latest.waist != null && latest.neck != null && heightCm && latest.waist > latest.neck) {
+    const navyBF = 495 / (1.0324 - 0.19077 * Math.log10(latest.waist - latest.neck) + 0.15456 * Math.log10(heightCm)) - 450;
+    lines.push(`  → US Navy BF estimate (neck+waist+height): ~${Math.round(navyBF * 10) / 10}% — rough cross-check only, compare direction against Withings and DEXA, not absolutes`);
+  }
+  const daysSince = Math.floor((Date.now() - new Date(latest.date + "T12:00:00").getTime()) / 86400000);
+  if (daysSince > 21) lines.push(`  → STALE: last measurement ${daysSince} days ago — nudge the user to re-measure (it's the most reliable trend signal they have).`);
+  lines.push("");
+  return lines.join("\n");
+}
+
 // Phase 44: recovery-gate calibration — what actually happened each time the
 // gate fired, so the coach can test whether readiness predicts performance for
 // THIS user (shifted sleep schedules depress Oura readiness scores).
@@ -577,7 +673,7 @@ function buildCalibrationContext(state: any): string {
   return lines.join("\n");
 }
 
-function buildContext(state: any): string {
+export function buildContext(state: any): string {
   const today = ukToday();
   const cutoff14 = daysAgoUK(14);
   const cutoff7 = daysAgoUK(7);
@@ -899,6 +995,12 @@ function buildContext(state: any): string {
   // Phase 44: recovery-gate calibration — gate firings vs choices vs outcomes
   const calibrationBlock = buildCalibrationContext(state);
   if (calibrationBlock) lines.push(calibrationBlock);
+
+  // Phase 45: DEXA ground truth + tape measurements (tape always emits — it
+  // carries the empty/stale nudge)
+  const dexaBlock = buildDexaContext(state);
+  if (dexaBlock) lines.push(dexaBlock);
+  lines.push(buildTapeContext(state));
 
   // Phase 29 + 30: Oura activity. NOTE: total_calories ≈ TDEE (BMR + active);
   // active_calories alone is just movement burn above BMR. Use total for TDEE.
@@ -1560,7 +1662,7 @@ export async function generateMealPlan(userId: string): Promise<GeneratedMealPla
 
 // --- Phase 33: per-session AI brief + post-session reflection (Haiku 4.5) ---
 
-const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+export const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
 const SESSION_BRIEF_SYSTEM = `You write a pre-workout brief for someone about to start training.
 
