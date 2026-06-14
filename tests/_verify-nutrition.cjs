@@ -7,19 +7,20 @@ const ASOF = "2026-06-14";
 function dayBefore(n) { return new Date(new Date(ASOF + "T12:00:00").getTime() - n * 86400000).toISOString().slice(0, 10); }
 
 // build N days of food at `kcal` (within the 14-day window) + a weight series
-function buildLogs({ kcal, wStart, wEnd, foodDays = 14, oura = null }) {
-  const foods = {}, weightLog = [], calorieLog = {};
+function buildLogs({ kcal, wStart, wEnd, foodDays = 14, oura = null, complete = false }) {
+  const foods = {}, weightLog = [], calorieLog = {}, foodComplete = {};
   for (let i = 1; i <= foodDays; i++) {
     const d = dayBefore(i);
     foods[d] = [{ cals: kcal, protein: 200, carbs: 200, fat: 75 }];
     if (oura != null) calorieLog[d] = { total: oura };
+    if (complete) foodComplete[d] = true;
   }
   for (let i = 0; i <= 13; i++) {
     const d = dayBefore(13 - i);
     const w = wStart + (wEnd - wStart) * (i / 13);
     weightLog.push({ date: d, weight: Math.round(w * 100) / 100, source: "withings" });
   }
-  return { foods, weightLog, calorieLog };
+  return { foods, weightLog, calorieLog, foodComplete };
 }
 function strengthLifts(dir) {
   // dir 'up' = strength holding/rising; 'down' = falling
@@ -90,6 +91,17 @@ check("Oura disagreement → low confidence", () => {
   const a = analyzeNutrition(s, ASOF);
   assert.equal(a.confidence, "low");
   assert.equal(a.recommendation, null);
+});
+
+// 4b. Phase 48a: Mounjaro — genuinely low intake + Oura disagrees, BUT the user
+// confirmed every day complete → trust them → HIGH confidence, gives a rec
+check("confirmed low-intake days override the Oura veto (Mounjaro)", () => {
+  const s = { profile: profileLowFloor, ...buildLogs({ kcal: 1600, wStart: 110, wEnd: 109.5, oura: 2800, complete: true }),
+    exLog: strengthLifts("up"), measLog: [{ date: dayBefore(28), waist: 116 }, { date: dayBefore(2), waist: 114.5 }] };
+  const a = analyzeNutrition(s, ASOF);
+  assert.ok(a.completeDays >= 10, "enough confirmed days");
+  assert.equal(a.confidence, "high", "user-confirmed days are trusted despite Oura");
+  assert.ok(a.recommendation, "gives a recommendation");
 });
 
 // 5. Floors respected — never recommend below the calorie floor

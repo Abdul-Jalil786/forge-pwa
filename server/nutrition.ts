@@ -18,6 +18,7 @@ export interface NutritionAnalysis {
   ouraTDEE: number | null;
   avgIntake: number | null;
   loggedDays: number;
+  completeDays: number;           // days the user confirmed "that's everything I ate"
   rateKgPerWk: number | null;     // positive = losing
   confidence: "high" | "low";
   confidenceReason: string;
@@ -118,7 +119,7 @@ export function analyzeNutrition(state: any, asOf?: string): NutritionAnalysis {
   ].filter(Boolean).sort();
   const today = asOf || allDates[allDates.length - 1];
   const empty: NutritionAnalysis = {
-    ready: false, observedTDEE: null, ouraTDEE: null, avgIntake: null, loggedDays: 0,
+    ready: false, observedTDEE: null, ouraTDEE: null, avgIntake: null, loggedDays: 0, completeDays: 0,
     rateKgPerWk: null, confidence: "low", confidenceReason: "Not enough data yet.",
     muscle: { strength: "unknown", tape: "unknown", verdict: "unknown" }, recommendation: null,
   };
@@ -157,18 +158,33 @@ export function analyzeNutrition(state: any, asOf?: string): NutritionAnalysis {
     ? Math.round(avgIntake - perDay * KCAL_PER_KG)
     : null;
 
+  // --- Phase 48a: days the user confirmed "that's everything I ate today".
+  // On a GLP-1 (Mounjaro) genuinely low-intake days are normal — when the user
+  // confirms a day is complete we trust the low number instead of treating it as
+  // under-logging, and we do NOT let Oura's higher burn estimate veto it (the
+  // whole point is to measure from real intake + real weight change). ---
+  const foodComplete = state.foodComplete || {};
+  let completeDays = 0;
+  for (const d of Object.keys(foodComplete)) {
+    if (d <= cutoff || d > today) continue;
+    if (foodComplete[d] === true) completeDays++;
+  }
+  const userConfirmed = completeDays >= 10;
+
   // --- confidence ---
   let confidence: "high" | "low" = "low";
   let confidenceReason = "";
-  if (loggedDays < 10) {
-    confidenceReason = `Only ${loggedDays}/14 days of food logged — log more and I'll adjust next week.`;
+  if (loggedDays < 10 && !userConfirmed) {
+    confidenceReason = `Only ${loggedDays}/14 days of food logged — log more (and tap "that's everything I ate") and I'll adjust next week.`;
   } else if (observedTDEE == null) {
     confidenceReason = "Not enough weight readings to read a trend yet.";
-  } else if (ouraTDEE != null && Math.abs(observedTDEE - ouraTDEE) / ouraTDEE > 0.12) {
-    confidenceReason = `Your food maths and Oura disagree by a lot this week — holding off rather than guessing.`;
+  } else if (!userConfirmed && ouraTDEE != null && Math.abs(observedTDEE - ouraTDEE) / ouraTDEE > 0.12) {
+    confidenceReason = `Your logged food and Oura's burn estimate disagree a lot — if that's because you genuinely ate less, tap "that's everything I ate" on your food days and I'll trust your numbers.`;
   } else {
     confidence = "high";
-    confidenceReason = "Clean week — confident in these numbers.";
+    confidenceReason = userConfirmed
+      ? `You confirmed ${completeDays} full days — trusting your logged intake (on Mounjaro, low days are real, not missing).`
+      : "Clean week — confident in these numbers.";
   }
 
   const strength = assessStrength(exLog, today);
@@ -181,7 +197,7 @@ export function analyzeNutrition(state: any, asOf?: string): NutritionAnalysis {
 
   const analysis: NutritionAnalysis = {
     ready: observedTDEE != null,
-    observedTDEE, ouraTDEE, avgIntake, loggedDays, rateKgPerWk,
+    observedTDEE, ouraTDEE, avgIntake, loggedDays, completeDays, rateKgPerWk,
     confidence, confidenceReason,
     muscle: { strength, tape, verdict },
     recommendation: null,

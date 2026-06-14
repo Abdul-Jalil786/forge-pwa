@@ -146,6 +146,7 @@ let STATE = {
   profile: null,
   sessionFeel: {},        // Phase 44: {date: 'strong'|'ok'|'tired'} — asked before prescriptions
   recoveryOverrides: {},  // Phase 44: {date: {readiness, hrvDown3d, feel, choice, deloadHolds}}
+  foodComplete: {},       // Phase 48a: {date: true} — user confirmed "that's everything I ate"
   weightLog: [],
   foods: {},
   stepsLog: {},
@@ -1438,6 +1439,24 @@ function getDynamicTargetForDate(date){
 }
 
 // ---- Phase 44: pre-session feel + recovery gate overrides + session score ----
+// Phase 48a: "that's everything I ate today" — lets the adaptive engine trust a
+// genuinely low-intake day (normal on Mounjaro) instead of treating it as a
+// forgotten log. Toggled from the Food page.
+function getFoodComplete(date){return !!pGet('foodComplete',{})[date||todayStr()];}
+function setFoodComplete(date,val){
+  date=date||todayStr();
+  const m=pGet('foodComplete',{});
+  if(val)m[date]=true; else delete m[date];
+  STATE.foodComplete=m;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/food-complete/${date}`,{value:val?true:false});
+}
+function toggleFoodComplete(date){
+  date=date||todayStr();
+  setFoodComplete(date,!getFoodComplete(date));
+  if(typeof renderFood==='function')renderFood();
+}
+
 function getSessionFeel(date){return pGet('sessionFeel',{})[date||todayStr()]||null;}
 function setSessionFeel(feel,date){
   date=date||todayStr();
