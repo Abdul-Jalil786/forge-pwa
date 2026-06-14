@@ -1427,8 +1427,8 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
     const r = nutrition.recommendation;
     const lines = [
       "ADAPTIVE NUTRITION (measured from what they ate vs how their weight moved — use these EXACT numbers, do not recompute):",
-      `  Real TDEE: ${nutrition.observedTDEE} kcal/day${nutrition.ouraTDEE != null ? ` (Oura estimate: ${nutrition.ouraTDEE})` : ""} · avg intake ${nutrition.avgIntake} · logged ${nutrition.loggedDays}/14 days · ${nutrition.completeDays}/14 days the user CONFIRMED complete.`,
-      `  IMPORTANT: a day the user marked "that's everything I ate" is ACCURATE even if the calories are low — on Mounjaro genuinely low-intake days are normal. Do NOT call confirmed days "under-logged". Only flag a day as under-logged if it has food but was NOT confirmed and the total looks implausibly low.`,
+      `  Real TDEE: ${nutrition.observedTDEE} kcal/day${nutrition.ouraTDEE != null ? ` (Oura's estimate: ${nutrition.ouraTDEE} — informational only, NOT authoritative)` : ""} · avg intake ${nutrition.avgIntake} · logged ${nutrition.loggedDays}/14 days.`,
+      `  IMPORTANT: the user logs every meal he eats — treat logged intake as ACCURATE. A day below his meal plan means he ATE less (Mounjaro suppresses appetite), not that he forgot to log. Use the MEAL-PLAN ADHERENCE block to comment on logged-vs-planned; do NOT call days "under-logged".`,
       `  Loss rate: ${nutrition.rateKgPerWk ?? "?"} kg/week. Confidence: ${nutrition.confidence} — ${nutrition.confidenceReason}`,
       `  Muscle signals: strength ${nutrition.muscle.strength}, tape ${nutrition.muscle.tape} → verdict ${nutrition.muscle.verdict}.`,
       nutrition.confidence !== "high"

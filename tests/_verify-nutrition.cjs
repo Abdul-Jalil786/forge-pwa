@@ -85,22 +85,13 @@ check("strength falling → ease, add carbs (muscle first)", () => {
   assert.ok(a.recommendation.carbDelta > 0, "adds carbs to protect muscle");
 });
 
-// 4. Oura disagrees badly → low confidence, no change
-check("Oura disagreement → low confidence", () => {
-  const s = { profile, ...buildLogs({ kcal: 2400, wStart: 110, wEnd: 109.6, oura: 3300 }), exLog: strengthLifts("up") };
-  const a = analyzeNutrition(s, ASOF);
-  assert.equal(a.confidence, "low");
-  assert.equal(a.recommendation, null);
-});
-
-// 4b. Phase 48a: Mounjaro — genuinely low intake + Oura disagrees, BUT the user
-// confirmed every day complete → trust them → HIGH confidence, gives a rec
-check("confirmed low-intake days override the Oura veto (Mounjaro)", () => {
-  const s = { profile: profileLowFloor, ...buildLogs({ kcal: 1600, wStart: 110, wEnd: 109.5, oura: 2800, complete: true }),
+// 4. Phase 48b: Oura's burn estimate must NOT veto the user's logged data —
+// genuinely low intake (Mounjaro) with weight moving is trusted → HIGH confidence
+check("logged intake is trusted even when Oura disagrees", () => {
+  const s = { profile: profileLowFloor, ...buildLogs({ kcal: 1600, wStart: 110, wEnd: 109.5, oura: 2800 }),
     exLog: strengthLifts("up"), measLog: [{ date: dayBefore(28), waist: 116 }, { date: dayBefore(2), waist: 114.5 }] };
   const a = analyzeNutrition(s, ASOF);
-  assert.ok(a.completeDays >= 10, "enough confirmed days");
-  assert.equal(a.confidence, "high", "user-confirmed days are trusted despite Oura");
+  assert.equal(a.confidence, "high", "Oura is informational, not a veto");
   assert.ok(a.recommendation, "gives a recommendation");
 });
 

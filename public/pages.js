@@ -537,7 +537,6 @@ function renderFood(){
     </div>
 
     <div class="sec-label">${isToday?"Today's Log":"Food Log"}</div>
-    ${isToday?(()=>{const done=(typeof getFoodComplete==='function')&&getFoodComplete(viewDate);return `<button onclick="toggleFoodComplete('${viewDate}')" style="width:100%;margin-bottom:8px;padding:11px;border-radius:10px;cursor:pointer;font-size:12px;border:1px solid ${done?'var(--lime)':'var(--border)'};background:${done?'rgba(200,255,0,.1)':'transparent'};color:${done?'var(--lime)':'var(--text2)'};">${done?'✓ Everything logged today — coach trusts your numbers':'Tap when you have logged all your food today'}</button>`;})():''}
     <div class="card">
       ${foods.length===0?`<div style="text-align:center;color:var(--text3);padding:20px 0;font-size:13px;">Nothing logged ${isToday?'yet':'on this day'}</div>`:
         foodGroups.map(item=>{

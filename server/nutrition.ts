@@ -169,22 +169,21 @@ export function analyzeNutrition(state: any, asOf?: string): NutritionAnalysis {
     if (d <= cutoff || d > today) continue;
     if (foodComplete[d] === true) completeDays++;
   }
-  const userConfirmed = completeDays >= 10;
-
-  // --- confidence ---
+  // --- confidence (Phase 48b) ---
+  // Trust the user's logged food: he logs every meal, every day, so his intake
+  // IS the truth. Oura's "burn" is only an estimate and must NOT override it
+  // (that was the old false-negative on appetite-suppressed low-intake days).
+  // Confidence rides on enough logged days + a readable weight trend; the report
+  // separately compares what was logged against the meal plan.
   let confidence: "high" | "low" = "low";
   let confidenceReason = "";
-  if (loggedDays < 10 && !userConfirmed) {
-    confidenceReason = `Only ${loggedDays}/14 days of food logged — log more (and tap "that's everything I ate") and I'll adjust next week.`;
+  if (loggedDays < 10) {
+    confidenceReason = `Only ${loggedDays}/14 days of food logged — log a few more and I'll adjust next week.`;
   } else if (observedTDEE == null) {
     confidenceReason = "Not enough weight readings to read a trend yet.";
-  } else if (!userConfirmed && ouraTDEE != null && Math.abs(observedTDEE - ouraTDEE) / ouraTDEE > 0.12) {
-    confidenceReason = `Your logged food and Oura's burn estimate disagree a lot — if that's because you genuinely ate less, tap "that's everything I ate" on your food days and I'll trust your numbers.`;
   } else {
     confidence = "high";
-    confidenceReason = userConfirmed
-      ? `You confirmed ${completeDays} full days — trusting your logged intake (on Mounjaro, low days are real, not missing).`
-      : "Clean week — confident in these numbers.";
+    confidenceReason = "Confident — measured from your own logged food and how your weight actually moved.";
   }
 
   const strength = assessStrength(exLog, today);
