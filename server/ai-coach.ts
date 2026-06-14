@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { decrypt } from "./crypto-util";
+import { analyzeNutrition } from "./nutrition";
 
 // Phase 46: upgraded 4.7 → 4.8 (drop-in; better at knowledge-work analysis and
 // clearer writing — exactly what a coaching report needs). Forced tool_choice is
@@ -1392,7 +1393,7 @@ Be direct. Cite the actual numbers. The user wants a coach, not a chatbot.`;
 
 interface Suggestion {
   id: string;
-  type: "macros" | "reminders" | "note" | "skincare" | "skincare-phase" | "training-swap" | "injury-flag" | "fasting-note" | "supplement-reminder";
+  type: "macros" | "reminders" | "note" | "skincare" | "skincare-phase" | "training-swap" | "injury-flag" | "fasting-note" | "supplement-reminder" | "nutrition-adjust";
   label: string;
   rationale: string;
   payload: any;
@@ -1418,7 +1419,27 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
   try { apiKey = decrypt(encKey); }
   catch { throw new Error("Failed to decrypt stored API key — re-enter it in settings."); }
 
-  const context = buildContext(state);
+  // Phase 48: adaptive nutrition — measured TDEE + carb-only recommendation.
+  // Numbers are computed in code (nutrition.ts); the AI only narrates them.
+  const nutrition = analyzeNutrition(state, ukToday());
+  let nutritionBlock = "";
+  if (nutrition.observedTDEE != null) {
+    const r = nutrition.recommendation;
+    const lines = [
+      "ADAPTIVE NUTRITION (measured from what they ate vs how their weight moved — use these EXACT numbers, do not recompute):",
+      `  Real TDEE: ${nutrition.observedTDEE} kcal/day${nutrition.ouraTDEE != null ? ` (Oura agrees: ${nutrition.ouraTDEE})` : ""} · avg intake ${nutrition.avgIntake} · logged ${nutrition.loggedDays}/14 days.`,
+      `  Loss rate: ${nutrition.rateKgPerWk ?? "?"} kg/week. Confidence: ${nutrition.confidence} — ${nutrition.confidenceReason}`,
+      `  Muscle signals: strength ${nutrition.muscle.strength}, tape ${nutrition.muscle.tape} → verdict ${nutrition.muscle.verdict}.`,
+      nutrition.confidence !== "high"
+        ? "  → LOW CONFIDENCE: do NOT change calories this week. Explain plainly why (e.g. not enough food logged) and that you'll adjust once a clean week is logged."
+        : (r && r.direction !== "hold")
+          ? `  → RECOMMENDATION (a one-tap Apply card is attached automatically — refer to it): ${r.direction === "up" ? "increase" : "decrease"} calories by ${Math.abs(r.calorieDelta)}, entirely as carbs (${r.carbDelta > 0 ? "+" : ""}${r.carbDelta}g → ${r.newCarbs}g; new rest-day target ${r.newRestCalories} kcal). Protein and fat unchanged. ${r.reasons.join(" ")}`
+          : `  → ON TARGET: no calorie change this week. ${r ? r.reasons.join(" ") : ""}`,
+      "",
+    ];
+    nutritionBlock = "\n" + lines.join("\n");
+  }
+  const context = buildContext(state) + nutritionBlock;
   const client = new Anthropic({ apiKey });
 
   const response = await client.messages.create({
@@ -1471,6 +1492,21 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
     applied: false,
     dismissed: false,
   }));
+
+  // Phase 48: append the deterministic carb-adjust suggestion so the Apply card
+  // always appears when confident — never depends on the AI emitting it.
+  if (nutrition.confidence === "high" && nutrition.recommendation && nutrition.recommendation.direction !== "hold") {
+    const r = nutrition.recommendation;
+    suggestions.push({
+      id: `sug_${now}_nutri`,
+      type: "nutrition-adjust",
+      label: `${r.direction === "up" ? "Add" : "Trim"} ${Math.abs(r.carbDelta)}g carbs → ${r.newRestCalories} kcal target`,
+      rationale: r.reasons.join(" "),
+      payload: { calorieDelta: r.calorieDelta, carbDelta: r.carbDelta, newRestCalories: r.newRestCalories, newCarbs: r.newCarbs, direction: r.direction },
+      applied: false,
+      dismissed: false,
+    });
+  }
 
   const dateRange = `${daysAgoUK(6)} to ${ukToday()}`;
   return {

@@ -64,6 +64,80 @@ function pushNotification(state: any, notif: any) {
   if (state.notifications.length > 10) state.notifications = state.notifications.slice(0, 10);
 }
 
+// Phase 48: apply the adaptive carb change. Shifts the calorie + carb TARGETS
+// (protein/fat untouched), then bumps the QUANTITY of the meal plan's
+// carb-dominant ingredients to match — never swaps or removes a food.
+function applyNutritionAdjust(state: any, payload: any) {
+  const calorieDelta = Math.round(+payload?.calorieDelta || 0);
+  const carbDelta = Math.round(+payload?.carbDelta || 0);
+  if (!calorieDelta && !carbDelta) return;
+  if (!state.profile) state.profile = {};
+  const p = state.profile;
+  if (p.dynamicTargets && typeof p.dynamicTargets === "object") {
+    for (const key of ["rest", "upper", "lower"]) {
+      const t = p.dynamicTargets[key];
+      if (t && typeof t === "object") {
+        if (t.calories != null) t.calories = Math.max(0, t.calories + calorieDelta);
+        if (t.carbs != null) t.carbs = Math.max(0, t.carbs + carbDelta);
+      }
+    }
+    p.dynamicTargets.adaptiveAdjustedAt = new Date().toISOString();
+    if (p.dynamicTargets.rest) {
+      p.calsRest = p.dynamicTargets.rest.calories;
+      p.carbsTarget = p.dynamicTargets.rest.carbs;
+      if (!p.macros) p.macros = {};
+      p.macros.carbs = p.dynamicTargets.rest.carbs;
+    }
+    if (p.dynamicTargets.upper && p.dynamicTargets.lower) {
+      p.calsGym = Math.round((p.dynamicTargets.upper.calories + p.dynamicTargets.lower.calories) / 2);
+    }
+  } else {
+    p.calsRest = Math.max(0, (p.calsRest || 0) + calorieDelta);
+    p.calsGym = Math.max(0, (p.calsGym || 0) + calorieDelta);
+    p.carbsTarget = Math.max(0, (p.carbsTarget || 0) + carbDelta);
+    if (!p.macros) p.macros = {};
+    p.macros.carbs = Math.max(0, (p.macros.carbs || 0) + carbDelta);
+  }
+  redistributeMealPlanCarbs(state, carbDelta);
+}
+
+function redistributeMealPlanCarbs(state: any, carbDelta: number) {
+  const plan = state.mealPlan;
+  if (!plan || !Array.isArray(plan.meals) || !carbDelta) return;
+  // carb-dominant ingredients = carbs are the biggest macro by calories
+  const targets: any[] = [];
+  for (const m of plan.meals) {
+    for (const ing of (m.ingredients || [])) {
+      const c = +ing.carbs || 0, pr = +ing.protein || 0, f = +ing.fat || 0;
+      if (c >= 10 && c * 4 > pr * 4 && c * 4 > f * 9) targets.push(ing);
+    }
+  }
+  if (!targets.length) return;
+  const totalCarbs = targets.reduce((s, i) => s + (+i.carbs || 0), 0) || 1;
+  let applied = 0;
+  for (let i = 0; i < targets.length; i++) {
+    const ing = targets[i];
+    const share = i === targets.length - 1 ? carbDelta - applied : Math.round(carbDelta * ((+ing.carbs || 0) / totalCarbs));
+    applied += share;
+    const oldCarbs = +ing.carbs || 0;
+    if (oldCarbs <= 0) continue;
+    const factor = Math.max(0, (oldCarbs + share) / oldCarbs); // scale the portion
+    ing.carbs = Math.round((oldCarbs + share) * 10) / 10;
+    ing.cals = Math.round((+ing.cals || 0) * factor);
+    if (ing.protein != null) ing.protein = Math.round((+ing.protein) * factor * 10) / 10;
+    if (ing.fat != null) ing.fat = Math.round((+ing.fat) * factor * 10) / 10;
+    if (ing.quantity != null) ing.quantity = Math.round((+ing.quantity || 1) * factor * 100) / 100;
+    ing.edited = true;
+  }
+  // recompute meal totals from ingredient sums
+  for (const m of plan.meals) {
+    if (!Array.isArray(m.ingredients)) continue;
+    const sum = (k: string) => m.ingredients.reduce((s: number, i: any) => s + (+i[k] || 0), 0);
+    m.cals = Math.round(sum("cals")); m.protein = Math.round(sum("protein"));
+    m.carbs = Math.round(sum("carbs")); m.fat = Math.round(sum("fat"));
+  }
+}
+
 function applyTrainingSwap(state: any, payload: any) {
   if (!payload?.exerciseId) throw new Error("training-swap payload needs exerciseId");
   if (!state.exerciseNotes || typeof state.exerciseNotes !== "object" || Array.isArray(state.exerciseNotes)) {
@@ -163,6 +237,7 @@ router.post("/:rid/apply/:sid", requireAuth, async (req: Request, res: Response)
         case "injury-flag": applyInjuryFlag(state, sug.payload || {}); break;
         case "fasting-note": applyFastingNote(state, sug.payload || {}); break;
         case "supplement-reminder": applySupplementReminder(state, sug.payload || {}); break;
+        case "nutrition-adjust": applyNutritionAdjust(state, sug.payload || {}); break;
         case "note": break;
         default: res.status(400).json({ error: "Unknown suggestion type" }); return;
       }

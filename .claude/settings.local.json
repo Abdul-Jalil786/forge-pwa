@@ -66,7 +66,8 @@
       "mcp__visualize__read_me",
       "mcp__visualize__show_widget",
       "Bash(sed -n '/function _incForLift/,/^}/p' public/workout.js)",
-      "Bash(sed -n '/function _roundToPlate/,/^}/p' public/workout.js)"
+      "Bash(sed -n '/function _roundToPlate/,/^}/p' public/workout.js)",
+      "Bash(node tests/_verify-nutrition.cjs)"
     ]
   }
 }

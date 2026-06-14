@@ -2325,6 +2325,7 @@ const SUGGESTION_TYPE_META={
   'injury-flag':{label:'INJURY',color:'var(--orange)'},
   'fasting-note':{label:'FASTING',color:'#ffc107'},
   'supplement-reminder':{label:'SUPPLEMENT',color:'var(--red)'},
+  'nutrition-adjust':{label:'CALORIES · CARBS',color:'var(--lime)'},
 };
 function _suggestionDetail(s){
   const p=s.payload||{};
