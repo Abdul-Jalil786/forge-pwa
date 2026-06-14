@@ -37,7 +37,32 @@
       "Bash(node --check public/data.js)",
       "Bash(node --check public/app.js)",
       "Bash(node --check public/pages.js)",
-      "PowerShell(npm test 2>&1)"
+      "PowerShell(npm test 2>&1)",
+      "Bash(git -C \"C:/Users/abdul/Projects/forge-pwa\" branch --show-current)",
+      "Bash(git -C \"C:/Users/abdul/Projects/forge-pwa\" status -s)",
+      "Bash(git -C \"C:/Users/abdul/Projects/forge-pwa\" log --oneline -3)",
+      "Bash(git -C \"C:/Users/abdul/Projects/forge-pwa\" fetch origin)",
+      "Bash(git -C \"C:/Users/abdul/Projects/forge-pwa\" rev-list --left-right --count main...origin/main)",
+      "Bash(git -C \"C:/Users/abdul/Projects/forge-pwa\" log --oneline -1 origin/main)",
+      "WebFetch(domain:forge-pwa-production.up.railway.app)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\abdul\\\\Projects\\\\forge-pwa\\\\.claude\\\\worktrees\\\\zen-buck-5fef86\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\abdul\\\\Projects\\\\forge-pwa\\\\.claude\\\\worktrees\\\\zen-buck-5fef86\" -Force)",
+      "Bash(Select-Object Name, Mode)",
+      "Bash(awk '{print $9, $5}')",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\abdul\\\\Projects\\\\forge-pwa\\\\.claude\\\\worktrees\\\\zen-buck-5fef86\\\\.github\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object Name)",
+      "Bash(grep -n \"\\\\.innerHTML\\\\s*=.*\\\\${\" /c/Users/abdul/Projects/forge-pwa/.claude/worktrees/zen-buck-5fef86/public/app.js /c/Users/abdul/Projects/forge-pwa/.claude/worktrees/zen-buck-5fef86/public/workout.js /c/Users/abdul/Projects/forge-pwa/.claude/worktrees/zen-buck-5fef86/public/pages.js)",
+      "Bash(Get-ChildItem -Path \"prisma/migrations\" -Directory)",
+      "Bash(Measure-Object)",
+      "Bash(Select-Object Count)",
+      "PowerShell(\\(Get-ChildItem -Path \"C:\\\\Users\\\\abdul\\\\Projects\\\\forge-pwa\\\\.claude\\\\worktrees\\\\zen-buck-5fef86\\\\prisma\\\\migrations\" -Directory\\).Count)",
+      "Bash(awk 'NR>=2380 && NR<=2420' public/app.js)",
+      "Bash(node -e \"console.log\\(require\\('@anthropic-ai/sdk/package.json'\\).version\\)\")",
+      "Bash(node --check public/workout.js)",
+      "Bash(npm test *)",
+      "Bash(node tests/_verify-context.cjs)"
     ]
   }
 }

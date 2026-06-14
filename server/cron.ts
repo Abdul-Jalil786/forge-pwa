@@ -95,6 +95,86 @@ async function sendPushToUser(userId: string, payload: { title: string; body: st
 
 const fired = new Map<string, Set<string>>();
 
+// Phase 46: weekly coaching reports, reliability-hardened. node-cron is
+// IN-PROCESS — if the dyno restarts, deploys, or sleeps across the Sunday 09:00
+// tick, that tick is lost forever with no retry (this is why a Sunday report
+// can silently go missing). So the same loop runs from four triggers, each
+// guarded by hoursSinceLastReport so it can never double-generate:
+//   - Sunday 09:00 (primary) and hourly Sunday 10:00–23:00 — threshold 24h
+//     (the hourly run heals a 09:00 missed earlier the same Sunday)
+//   - daily 12:00 + on server startup — threshold ~6.25 days
+//     (heals a Sunday that was missed entirely, e.g. process down all day)
+export async function runWeeklyCoaching(minHoursSinceReport: number, reason: string): Promise<void> {
+  console.log(`Running coaching reports (${reason})...`);
+  try {
+    const users = await prisma.user.findMany();
+    for (const user of users) {
+      const state: any = user.state || {};
+      if (!state.coachingKey) continue;
+      if (hoursSinceLastReport(state) < minHoursSinceReport) continue;
+      try {
+        const report = await generateWeeklyReport(user.id);
+        await saveReport(user.id, report);
+        await sendPushToUser(user.id, {
+          title: "🧠 Weekly coaching report",
+          body: report.suggestions.length
+            ? `${report.title} — ${report.suggestions.length} suggestion${report.suggestions.length === 1 ? "" : "s"}`
+            : report.title,
+        });
+        console.log(`[coach] Report generated for ${user.email} (${reason})`);
+      } catch (e: any) {
+        console.error(`[coach] Failed for ${user.email}:`, e?.message || e);
+        // Phase 40/43: record a non-fatal error entry (atomic jsonb prepend)
+        try {
+          const errEntry = JSON.stringify([{
+            id: "rpt_err_" + Date.now(),
+            createdAt: new Date().toISOString(),
+            type: "error",
+            title: "Report generation failed",
+            content: "This week's coaching report could not be generated. Forge will retry automatically. If this keeps happening, check your Anthropic API key in More settings.",
+            suggestions: [],
+          }]);
+          await prisma.$executeRaw`
+            UPDATE "User"
+            SET state = jsonb_set(
+              COALESCE(state, '{}')::jsonb,
+              '{coachingReports}',
+              ${errEntry}::jsonb || COALESCE(state->'coachingReports', '[]'::jsonb),
+              true
+            )
+            WHERE id = ${user.id}
+          `;
+        } catch { /* swallow — never crash the cron */ }
+      }
+
+      // Phase 26a: refresh meal-plan macros (items locked) based on cadence.
+      if (state.mealPlan?.meals?.length) {
+        const cadence = state.profile?.foodPrefs?.refreshCadence || "weekly-sunday";
+        const planHrs = hoursSinceLastPlanRegen(state);
+        const shouldRefresh =
+          (cadence === "weekly-sunday" && planHrs >= 24 * 6) ||
+          (cadence === "biweekly" && planHrs >= 24 * 13);
+        if (shouldRefresh) {
+          try {
+            const result = await recomputeMealPlanMacros(user.id);
+            if (result.updated > 0) {
+              await sendPushToUser(user.id, {
+                title: "🍽️ Plan macros refreshed",
+                body: `${result.updated} ingredient${result.updated === 1 ? "" : "s"} updated · ${result.skipped} kept (your edits)`,
+              });
+            }
+          } catch (e: any) {
+            console.error(`[coach] Macro refresh failed for ${user.email}:`, e?.message || e);
+          }
+        }
+      }
+    }
+    console.log(`Coaching reports complete (${reason})`);
+  } catch (err) {
+    console.error(`Coaching reports error (${reason}):`, err);
+  }
+}
+
 export function startCron() {
   console.log("Push notification cron started");
   cron.schedule("* * * * *", async () => {
@@ -513,84 +593,9 @@ export function startCron() {
     }
   }, { timezone: "Europe/London" });
 
-  // Phase 23: BYOK coaching report — Sunday 09:00 UK
-  cron.schedule("0 9 * * 0", async () => {
-    console.log("Running Sunday BYOK coaching reports...");
-    try {
-      const users = await prisma.user.findMany();
-      for (const user of users) {
-        const state: any = user.state || {};
-        if (!state.coachingKey) continue;
-        if (hoursSinceLastReport(state) < 24) {
-          console.log(`[coach] Skipping ${user.email} — report generated ${Math.round(hoursSinceLastReport(state))}h ago`);
-          continue;
-        }
-        try {
-          const report = await generateWeeklyReport(user.id);
-          await saveReport(user.id, report);
-          await sendPushToUser(user.id, {
-            title: "🧠 Weekly coaching report",
-            body: report.suggestions.length
-              ? `${report.title} — ${report.suggestions.length} suggestion${report.suggestions.length === 1 ? "" : "s"}`
-              : report.title,
-          });
-          console.log(`[coach] Report generated for ${user.email}`);
-        } catch (e: any) {
-          console.error(`[coach] Failed for ${user.email}:`, e?.message || e);
-          // Phase 40: record a non-fatal error entry so the user sees what happened
-          // Phase 43: atomic jsonb prepend — the old read-modify-write of the whole
-          // state row could clobber concurrent writes (e.g. the user logging food
-          // while the cron ran). The 50-report cap is enforced by saveReport on the
-          // success path; error entries are at most one per week.
-          try {
-            const errEntry = JSON.stringify([{
-              id: "rpt_err_" + Date.now(),
-              createdAt: new Date().toISOString(),
-              type: "error",
-              title: "Report generation failed",
-              content: "This week's coaching report could not be generated. Forge will retry next Sunday. If this keeps happening, check your Anthropic API key in More settings.",
-              suggestions: [],
-            }]);
-            await prisma.$executeRaw`
-              UPDATE "User"
-              SET state = jsonb_set(
-                COALESCE(state, '{}')::jsonb,
-                '{coachingReports}',
-                ${errEntry}::jsonb || COALESCE(state->'coachingReports', '[]'::jsonb),
-                true
-              )
-              WHERE id = ${user.id}
-            `;
-          } catch { /* swallow — never crash the cron */ }
-        }
-
-        // Phase 26a: refresh meal-plan macros (items locked) based on cadence.
-        // Items never change automatically — only macros are recomputed against canonical references.
-        if (state.mealPlan?.meals?.length) {
-          const cadence = state.profile?.foodPrefs?.refreshCadence || "weekly-sunday";
-          const planHrs = hoursSinceLastPlanRegen(state);
-          const shouldRefresh =
-            (cadence === "weekly-sunday" && planHrs >= 24 * 6) ||
-            (cadence === "biweekly" && planHrs >= 24 * 13);
-          if (shouldRefresh) {
-            try {
-              const result = await recomputeMealPlanMacros(user.id);
-              if (result.updated > 0) {
-                await sendPushToUser(user.id, {
-                  title: "🍽️ Plan macros refreshed",
-                  body: `${result.updated} ingredient${result.updated === 1 ? "" : "s"} updated · ${result.skipped} kept (your edits)`,
-                });
-              }
-              console.log(`[coach] Macros refreshed for ${user.email}: ${result.updated}/${result.total} updated, ${result.skipped} skipped`);
-            } catch (e: any) {
-              console.error(`[coach] Macro refresh failed for ${user.email}:`, e?.message || e);
-            }
-          }
-        }
-      }
-      console.log("Sunday coaching reports complete");
-    } catch (err) {
-      console.error("Sunday coaching reports error:", err);
-    }
-  }, { timezone: "Europe/London" });
+  // Phase 23 + 46: BYOK coaching report — Sunday 09:00 UK, with catch-up so a
+  // missed tick (deploy/restart/sleep) self-heals instead of skipping the week.
+  cron.schedule("0 9 * * 0",     () => runWeeklyCoaching(24, "sunday-9am"),       { timezone: "Europe/London" });
+  cron.schedule("0 10-23 * * 0", () => runWeeklyCoaching(24, "sunday-catchup"),   { timezone: "Europe/London" });
+  cron.schedule("0 12 * * *",    () => runWeeklyCoaching(150, "daily-safety-net"), { timezone: "Europe/London" });
 }

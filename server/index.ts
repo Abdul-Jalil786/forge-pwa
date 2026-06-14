@@ -87,7 +87,7 @@ app.get("*", (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
 
-import { startCron } from "./cron";
+import { startCron, runWeeklyCoaching } from "./cron";
 
 // Phase 22a: one-shot progress baseline migration for Jay
 async function migrateJayProgress() {
@@ -1020,6 +1020,10 @@ const server = app.listen(PORT, async () => {
   await setJaySkinPhase3();
   await seedJayTargetOverridesV1();
   await seedJayTapeReminderV1();
+  // Phase 46: heal a fully-missed Sunday report (process was down across the
+  // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
+  // ~a week has elapsed with no report, never a spurious mid-week one.
+  runWeeklyCoaching(150, "startup").catch((e) => console.error("startup coaching catch-up failed:", e));
 });
 
 const shutdown = async (signal: string) => {

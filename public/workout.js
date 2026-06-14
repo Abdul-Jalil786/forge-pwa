@@ -875,6 +875,9 @@ function _wmMarkSessionStart(){
   const dayLog=getExLogForDate(date);
   if(!dayLog._session||typeof dayLog._session!=='object')dayLog._session={};
   if(!dayLog._session.startedAt)dayLog._session.startedAt=Date.now();
+  // Phase 46: record what was actually trained so progression matches reality,
+  // not the calendar (handles training off the rigid 4-day cycle).
+  if(!dayLog._session.sessionType&&wm&&wm.session)dayLog._session.sessionType=wm.session;
   saveExLogForDate(date,dayLog);
 }
 function _wmMarkExerciseStart(){

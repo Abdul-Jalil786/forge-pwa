@@ -773,13 +773,35 @@ function getSessionTypeForDate(dateStr){
 }
 
 // Most recent session of the same type with logged sets, before a given date
+// Phase 46: classify a logged day by what was ACTUALLY trained, not by the
+// calendar. The rigid 4-day cycle assumes you train exactly every other day
+// forever; the moment you take an extra rest day or shift your week, a real
+// upper/lower session lands on a date the calendar calls something else — and
+// the old lookup (which filtered by getSessionTypeForDate) silently LOST that
+// session, so progression "missed" your last upper/lower. Now we match on the
+// session type stored at workout time, falling back to classifying by the
+// logged exercise IDs against the program templates.
+function _classifyLoggedSession(dayLog){
+  if(!dayLog||typeof dayLog!=='object')return null;
+  if(dayLog._session&&dayLog._session.sessionType)return dayLog._session.sessionType;
+  const logged=Object.keys(dayLog).filter(k=>!k.startsWith('_')&&dayLog[k]&&Array.isArray(dayLog[k].sets)&&dayLog[k].sets.some(s=>s.kg||s.reps||s.seconds));
+  if(!logged.length)return null;
+  let best=null,bestCount=0;
+  for(const [type,w] of Object.entries(WORKOUTS)){
+    const ids=new Set((w.exercises||[]).map(e=>e.id));
+    const c=logged.filter(id=>ids.has(id)).length;
+    if(c>bestCount){bestCount=c;best=type;}
+  }
+  return best;
+}
+
 function getPreviousSessionData(beforeDate,sessionType){
   if(!sessionType)return null;
   const exLog=getExLog();
   const dates=Object.keys(exLog).filter(d=>d<beforeDate).sort().reverse();
   for(const date of dates){
-    if(getSessionTypeForDate(date)!==sessionType)continue;
     const dayLog=exLog[date];
+    if(_classifyLoggedSession(dayLog)!==sessionType)continue;
     const hasData=Object.values(dayLog).some(e=>e.sets?.some(s=>s.kg||s.reps||s.seconds));
     if(hasData)return{date,log:dayLog};
   }
@@ -793,9 +815,9 @@ function getPreviousSessions(beforeDate, sessionType, limit){
   const dates=Object.keys(exLog).filter(d=>d<beforeDate).sort().reverse();
   const out=[];
   for(const date of dates){
-    if(getSessionTypeForDate(date)!==sessionType)continue;
     const dayLog=exLog[date];
     if(!dayLog)continue;
+    if(_classifyLoggedSession(dayLog)!==sessionType)continue;
     const hasData=Object.values(dayLog).some(e=>e.sets?.some(s=>s.kg||s.reps||s.seconds));
     if(!hasData)continue;
     out.push({date,log:dayLog});

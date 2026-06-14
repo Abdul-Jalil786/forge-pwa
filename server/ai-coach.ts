@@ -2,8 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { decrypt } from "./crypto-util";
 
-const MODEL = "claude-opus-4-7";
-const MAX_TOKENS = 4000;
+// Phase 46: upgraded 4.7 → 4.8 (drop-in; better at knowledge-work analysis and
+// clearer writing — exactly what a coaching report needs). Forced tool_choice is
+// kept for reliable structured output, so adaptive thinking is not enabled here
+// (the two are incompatible on this SDK version).
+const MODEL = "claude-opus-4-8";
+const MAX_TOKENS = 5000;
 
 function ukToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -1213,6 +1217,8 @@ THE USER'S GOAL (read every report through this lens):
 - If the user has a STRETCH LBM GOAL set, the long-arc objective is "maximum lean mass at target BF%", not just hitting weight + BF numbers. Frame multi-month strategy through this lens — current phase is one step toward the LBM ceiling.
 - The single most important metric every week is the LBM delta. If LBM drops > 0.3kg/week for 2+ weeks running, flag it URGENTLY. Likely cause: deficit too aggressive, protein too low, or training stimulus too low.
 - Never credit "weight loss" without checking LBM. "Down 1.1kg this week" is meaningless until you know fat-mass-delta vs LBM-delta. Report both.
+- BODY-COMP RECONCILIATION (Phase 46): the user may have THREE body-composition sources, in descending trust: DEXA (gold standard / ground truth) > TAPE MEASUREMENTS (immune to hydration noise; waist is the best visceral-fat proxy) > Withings (BIA — noisy day-to-day, trust only 7-day averages). When they disagree, DEXA and tape OUTRANK the scale. Do NOT report a single-week BIA lean-mass drop as fact: cross-check it against the tape waist trend and the DEXA-calibrated offset, then state explicitly which source you trust and why. A BIA "LBM down 1kg" week with the waist still falling is almost always water/noise, not muscle loss — say so plainly so the user doesn't panic. If tape is missing or stale, note that the scale is currently the only signal and is therefore low-confidence, and nudge a tape measurement.
+- PIN THE NUMBERS (Phase 46): every figure you cite must come VERBATIM from the CONTEXT — do not recompute, round differently, or estimate. If a number the user would want isn't in the context, write "not logged" rather than inventing one.
 
 DATA YOU NOW HAVE (Phase 29):
 1. BODY COMPOSITION (current + 7d/14d deltas) — your primary lens
@@ -1328,7 +1334,10 @@ INTERPRETATION RULES:
   - For retinol phase advancement use a "skincare-phase" suggestion. For routine-structure fixes or loose-skin advice use a "note".
 
 OUTPUT FORMAT:
-1. Markdown REPORT under 550 words. Use these ## sections in order:
+1. Markdown REPORT under 600 words. Open with these TWO mandatory lines BEFORE the first ## heading (Phase 46):
+   - **Lean mass:** one line — lead with 🟢 (holding/gaining), 🟡 (small drop, watch), or 🔴 (losing muscle) + the actual LBM delta and the reconciled verdict (which source you trust). This is the user's prime directive on a cut; it leads EVERY report so they know in one glance whether the cut is costing muscle.
+   - **Last week:** grade the previous report's 3 Priority Actions using COACH MEMORY — for each: ✓ done / ~ partial / ✗ not done, with a half-line result. If there is no prior report in context, write "Last week: first report — establishing baseline."
+   Then these ## sections in order:
    ## This week — 2-3 sentence summary; weight delta, FAT MASS delta, LBM delta.
    ## Body & training — composition trend, training adherence, per-lift progression highlights.
    ## Nutrition & recovery — calorie/protein/fasting/supplement compliance, sleep + HRV + readiness trend.
