@@ -532,6 +532,83 @@ function _roundToPlate(kg){
   return Math.round(kg * 4) / 4;
 }
 
+// Phase 47: set-to-set autoregulation. Pure arithmetic — NO AI (you can't wait
+// for a network call mid-rest, and it's an exact rule, not a judgement). Reads
+// the set you JUST did (reps + effort) vs the rep range and tells you what to
+// load on the NEXT set, shown under the rest countdown. Double-progression:
+// keep every working set inside the productive range and quality high.
+function _autoregNextSet(ex, lastSet, setIdx){
+  if(!ex||isTimeBased(ex)||!lastSet)return null;
+  const kg=parseFloat(lastSet.kg), reps=parseInt(lastSet.reps);
+  if(!kg||!reps)return null;
+  const rm=String(ex.reps).match(/(\d+)[–-](\d+)/);
+  if(!rm)return null;
+  const lower=parseInt(rm[1]), upper=parseInt(rm[2]);
+  const inc=_incForLift(ex);
+  const effort=lastSet.effort;
+  let dir, kgNext, msg;
+  const variants=(arr)=>arr[(setIdx||0)%arr.length];
+  if(reps>=upper && effort==='easy'){
+    dir='up'; kgNext=_roundToPlate(kg+inc.easy);
+    msg=variants([
+      `Too light — you topped the range and it flew. ${kgNext}kg next set. Earn it.`,
+      `That was easy money. Add ${inc.easy}kg → ${kgNext}kg. Make it count.`,
+    ]);
+  } else if(reps>=upper){
+    dir='up'; kgNext=_roundToPlate(kg+inc.solid);
+    msg=variants([
+      `Topped the range clean. Nudge to ${kgNext}kg and own it.`,
+      `Full range, controlled. ${kgNext}kg next — small step, no ego.`,
+    ]);
+  } else if(reps<lower){
+    dir='down'; kgNext=Math.max(0,_roundToPlate(kg-inc.fail));
+    msg=variants([
+      `Reps fell short. Back off to ${kgNext}kg — quality over ego, every rep clean.`,
+      `That got away from you. Drop to ${kgNext}kg and nail the reps.`,
+    ]);
+  } else if(effort==='tough'){
+    dir='hold'; kgNext=kg;
+    msg=variants([
+      `A grind, but the reps were there. Hold ${kg}kg — match it, don't chase.`,
+      `Hard-earned. Stay at ${kg}kg, same reps. Don't let form slip.`,
+    ]);
+  } else {
+    dir='hold'; kgNext=kg;
+    msg=variants([
+      `Dialled in. Stay at ${kg}kg — aim ${upper} reps, make this set look like the last.`,
+      `Right in the pocket. ${kg}kg again, push for ${upper}.`,
+    ]);
+  }
+  return { dir, kg:kgNext, reps:(dir==='down'?upper:undefined), msg };
+}
+
+// Phase 47: static one-line form cues per lift. Written once (form doesn't
+// change week to week) — NOT AI-generated. Keyed by exercise id; silent if none.
+const FORM_CUES = {
+  u1:'Drive through your mid-chest, elbows ~45°, don\'t flare.',
+  u2:'Control the stretch, press up and slightly in.',
+  u3:'Chest up, pull to the belly, squeeze the shoulder blades.',
+  u4:'Brace the core, press overhead without leaning back.',
+  u5:'Lead with the elbows, pull to the collarbone, no swinging.',
+  u6:'Elbows pinned, no swing — slow on the way down.',
+  u7:'Lock the elbows in, full extension, squeeze at the bottom.',
+  u8:'Pull to the forehead, rotate the knuckles back.',
+  u9:'Squeeze glutes + abs, straight line head to heels.',
+  l1:'Full depth, knees tracking over toes, drive through the heels.',
+  l2:'Hinge at the hips, soft knees, feel the hamstrings, flat back.',
+  l3:'Pause and squeeze the quad at the top, control the descent.',
+  l4:'No swing — squeeze the hamstring, control all the way back.',
+  l5:'Drive hips up, ribs down, squeeze hard at the top.',
+  l6:'Full stretch at the bottom, pause at the top, no bouncing.',
+  l8:'Curl the spine, exhale and squeeze — don\'t yank the neck.',
+  h1:'Heels down, chest tall, elbows inside the knees at the bottom.',
+  h2:'Body in a straight line, lower with control, full lockout.',
+  h3:'Pull to the hip, flat back, no rotation through the torso.',
+  h4:'Hinge, dumbbells close to the legs, stretch then squeeze.',
+  h5:'Lead with the elbows, raise to shoulder height, no swing.',
+  core_dead_bug:'Press the lower back flat, move slow, opposite arm + leg.',
+};
+
 // Phase 28: recovery gate — checks today's Oura readiness + HRV trend
 // Returns { lowRecovery: bool, reason: string }
 function checkRecoveryGate(){
@@ -645,6 +722,14 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
 
   if(timed){
     return suggestTime(exId,exObj,prevSession,setIdx,opts);
+  }
+
+  // Phase 47: skip ≠ reset. If the most recent same-type session omitted or
+  // skipped this lift, fall back to the last session that actually has data for
+  // it — so a skip never makes the engine forget your real last working weight.
+  const _hasEx=(s)=>s&&s.log&&s.log[exId]&&(s.log[exId].sets||[]).some(x=>x.kg&&x.reps);
+  if(!_hasEx(prevSession)&&opts&&Array.isArray(opts.prevSessions)){
+    prevSession=opts.prevSessions.find(_hasEx)||prevSession;
   }
 
   if(!prevSession||!prevSession.log[exId])return null;
@@ -914,9 +999,9 @@ function renderWmSet(){
   const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
   const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
-  const startKg=existingSet?.kg||sug?.kg||'';
+  const startKg=existingSet?.kg||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx)?wm.autoReg.kg:null)||sug?.kg||'';
   const repMatch=String(ex.reps).match(/(\d+)[–-](\d+)/);
-  const targetReps=existingSet?.reps||sug?.reps||(repMatch?parseInt(repMatch[2]):8);
+  const targetReps=existingSet?.reps||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx&&wm.autoReg.reps)?wm.autoReg.reps:null)||sug?.reps||(repMatch?parseInt(repMatch[2]):8);
   // Phase 38: warm-up prompt on the very first working set of the session
   const isSessionOpener=wm.exIdx===0&&wm.setIdx===0;
   const workKg=parseFloat(startKg)||0;
@@ -924,6 +1009,15 @@ function renderWmSet(){
   const warmupBlock=warmKg>0
     ? `<div style="background:rgba(61,155,255,.08);border:1px solid rgba(61,155,255,.3);border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:var(--blue);line-height:1.5;">🔥 <strong>Warm up first.</strong> Before this working set do 1–2 light sets at ~${warmKg}kg (50% of today's load), 8–10 easy reps. Don't log warm-ups.</div>`
     : '';
+  // Phase 47: per-exercise panel on the first set — what you did last time + a
+  // static form cue. Deterministic, no AI. Later sets get the rest-screen autoreg.
+  const lastForEx=(prev&&prev.log[ex.id]&&Array.isArray(prev.log[ex.id].sets))
+    ? prev.log[ex.id].sets.filter(s=>s.kg&&s.reps).map(s=>`${s.kg}×${s.reps}`).join(', ')
+    : null;
+  const formCue=(typeof FORM_CUES!=='undefined')?FORM_CUES[ex.id]:null;
+  const panelBlock=(wm.setIdx===0)?`
+    ${lastForEx?`<div style="font-size:12px;color:var(--text2);background:rgba(61,155,255,.06);border-radius:8px;padding:8px 11px;margin-bottom:8px;"><span style="color:var(--text3);">Last time:</span> ${lastForEx}${prev.date?` · ${prev.date}`:''}</div>`:''}
+    ${formCue?`<div style="font-size:12px;color:var(--text2);background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 11px;margin-bottom:8px;line-height:1.5;"><span style="color:var(--lime);font-weight:700;">Form:</span> ${formCue}</div>`:''}`:'';
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
@@ -934,6 +1028,7 @@ function renderWmSet(){
       ${_wmStrategyBtnHTML()}
     </div>
     ${_wmCueHTML(ex.id)}
+    ${panelBlock}
     ${warmupBlock}
     <div class="wm-h">Weight</div>
     <div class="wm-stepper">
@@ -953,6 +1048,10 @@ function renderWmSet(){
       <button class="wm-step-btn" onclick="wmStepReps(1)">+</button>
     </div>
     <button class="wm-cta" onclick="wmMarkSetDone(${ex.rest})">SET DONE</button>
+    <div style="display:flex;gap:14px;justify-content:center;margin-top:12px;">
+      <span onclick="wmAddExerciseNote('${ex.id}')" style="font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;">+ note</span>
+      <span onclick="wmSkipExercise()" style="font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;">Skip this exercise</span>
+    </div>
   `;
   document.getElementById('wmContent').innerHTML=html;
 }
@@ -1203,14 +1302,26 @@ function renderWmRest(){
   const lastSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const effortEmoji={easy:'😌',solid:'💪',tough:'🔥',hard:'🔥',maybe:'🤔'};
   const setDesc=timed?fmtSec(lastSet?.seconds||0):`${lastSet?.kg||'-'}kg × ${lastSet?.reps||'-'}`;
+  // Phase 47: compute the next-set call from the set just done; store it so the
+  // next set pre-fills, and show it UNDER the countdown so you load up in time.
+  const ar=_autoregNextSet(ex,lastSet,wm.setIdx+1);
+  if(ar)wm.autoReg={forSetIdx:wm.setIdx+1,kg:ar.kg,reps:ar.reps};
+  const arColor=ar?(ar.dir==='up'?'var(--lime)':ar.dir==='down'?'#ffc107':'var(--blue)'):'';
+  const arBg=ar?(ar.dir==='up'?'rgba(200,255,0,.08)':ar.dir==='down'?'rgba(255,193,7,.1)':'rgba(61,155,255,.08)'):'';
+  const arArrow=ar?(ar.dir==='up'?'↑':ar.dir==='down'?'↓':'→'):'';
+  const arPanel=ar?`<div style="background:${arBg};border:1px solid ${arColor};border-radius:12px;padding:13px 14px;margin:0 0 14px;">
+      <div style="font-size:10px;color:${arColor};text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:4px;">Next set ${arArrow} ${ar.kg}kg</div>
+      <div style="font-size:13px;color:var(--text);line-height:1.5;">${ar.msg}</div>
+    </div>`:'';
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Resting</div>
     <div class="wm-sub" style="margin-top:8px;">✓ Set ${wm.setIdx+1}: ${setDesc}${lastSet?.effort?' '+effortEmoji[lastSet.effort]:''}</div>
-    <div style="text-align:center;padding:60px 0;">
-      <div id="wm-timer" style="font-family:'Archivo Black',sans-serif;font-size:96px;letter-spacing:-4px;color:var(--lime);line-height:1;">${wm.restTarget}s</div>
+    <div style="text-align:center;padding:40px 0 24px;">
+      <div id="wm-timer" style="font-family:'Archivo Black',sans-serif;font-size:88px;letter-spacing:-4px;color:var(--lime);line-height:1;">${wm.restTarget}s</div>
       <div id="wm-timer-status" style="font-size:14px;color:var(--text2);margin-top:8px;">counting down</div>
     </div>
+    ${arPanel}
     <div class="wm-meta">Next: Set ${wm.setIdx+2} of ${ex.sets} · ${ex.name}</div>
     <button id="wm-next-btn" class="wm-cta ghost" onclick="wmStartNextSet()">SKIP REST · START NEXT SET</button>
   `;
@@ -1289,9 +1400,9 @@ function renderWmTransition(){
   const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
   const timed=isTimeBased(ex);
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
-  const startKg=existingSet?.kg||sug?.kg||'';
+  const startKg=existingSet?.kg||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx)?wm.autoReg.kg:null)||sug?.kg||'';
   const repMatch=String(ex.reps).match(/(\d+)[–-](\d+)/);
-  const targetReps=existingSet?.reps||sug?.reps||(repMatch?parseInt(repMatch[2]):8);
+  const targetReps=existingSet?.reps||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx&&wm.autoReg.reps)?wm.autoReg.reps:null)||sug?.reps||(repMatch?parseInt(repMatch[2]):8);
   const upcoming=timed
     ? `${fmtSec(sug?.seconds||0)} hold`
     : `${startKg||'?'}kg × ${targetReps} reps`;
@@ -1367,6 +1478,7 @@ function renderWmExerciseDone(){
 
 function wmNextExercise(){
   const w=WORKOUTS[wm.session];
+  wm.autoReg=null; // Phase 47: don't carry a set-to-set call across exercises
   if(wm.exIdx>=w.exercises.length-1){wmFinish();return;}
   wm.exIdx++;
   wm.setIdx=0;
@@ -1374,6 +1486,51 @@ function wmNextExercise(){
   wm.setStartedAt=Date.now();
   _wmMarkExerciseStart();
   renderWmSet();
+}
+
+// Phase 47: skip an exercise — a deliberate "not today", NOT a failure. No sets
+// are logged, so the progression engine carries your last real session forward
+// (no deload), and the score/recap exclude it. The coach is told you chose to skip.
+function wmSkipExercise(){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  if(!confirm(`Skip ${ex.name}? It won't count against you — your next session won't deload from a skip.`))return;
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  dayLog[ex.id]={done:false,skipped:true,skippedAt:Date.now(),sets:[]};
+  saveExLogForDate(date,dayLog);
+  wm.autoReg=null;
+  showToast(`${ex.name} skipped — no harm done`);
+  if(wm.exIdx>=w.exercises.length-1){wmFinish();return;}
+  wm.exIdx++;
+  wm.setIdx=0;
+  wm.mode='set';
+  wm.setStartedAt=Date.now();
+  _wmMarkExerciseStart();
+  renderWmSet();
+}
+
+// Phase 47: per-exercise running note — sticks to the lift until changed,
+// resurfaces every session, and feeds the AI session brief + weekly report.
+function wmAddExerciseNote(exId){
+  const cur=(typeof getExerciseNote==='function')?getExerciseNote(exId):'';
+  const note=prompt('Note for this exercise (carries to your next session — e.g. "narrower grip", "left shoulder twinge"):',cur||'');
+  if(note===null)return;
+  if(typeof setExerciseNote==='function')setExerciseNote(exId,note.trim());
+  showToast(note.trim()?'Note saved — your coach will see it':'Note cleared');
+}
+
+// Phase 47: one-off note for today's session (e.g. "rushed, poor sleep").
+function wmAddSessionNote(){
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const cur=(dayLog._session&&dayLog._session.note)||'';
+  const note=prompt('Note for today\'s session (one-off, fed into the weekly report):',cur);
+  if(note===null)return;
+  if(!dayLog._session||typeof dayLog._session!=='object')dayLog._session={};
+  dayLog._session.note=note.trim().slice(0,300);
+  saveExLogForDate(date,dayLog);
+  showToast('Session note saved');
 }
 
 function wmFinish(){
@@ -1396,12 +1553,38 @@ function wmFinish(){
   const sessDur=(dayLog._session&&dayLog._session.totalDuration)?dayLog._session.totalDuration:0;
   const durStr=sessDur>0?` · ${Math.round(sessDur/60)} min`:'';
   const volStr=totalVolume>0?` · ${totalVolume.toFixed(0)}kg total volume`:'';
+  // Phase 47: deterministic end-of-session recap — how you're getting on.
+  // Free, always works. The AI reflection (on FINISH) adds a warm line on top.
+  const score=dayLog._session&&dayLog._session.score;
+  const feel=(typeof getSessionFeel==='function')?getSessionFeel(date):null;
+  const skipped=w.exercises.filter(ex=>dayLog[ex.id]&&dayLog[ex.id].skipped).map(ex=>ex.name);
+  const sessNote=dayLog._session&&dayLog._session.note;
+  let verdict='',vColor='var(--text2)';
+  if(score&&score.pct!=null){
+    if(score.pct>=105){verdict=`${score.pct}% of your 4-week average — a strong session.`;vColor='var(--lime)';}
+    else if(score.pct>=95){verdict=`${score.pct}% of your 4-week average — right on form.`;vColor='var(--lime)';}
+    else if(score.pct>=85){verdict=`${score.pct}% of your average — a touch down, nothing alarming.`;vColor='#ffc107';}
+    else {verdict=`${score.pct}% of your average — a light one. Worth noting why (sleep? time? how you felt?).`;vColor='#ffc107';}
+  }
+  const em=score&&score.effortMix;
+  const effStr=(em&&em.rated>0)?`${em.easy} easy · ${em.solid} solid · ${em.tough} tough`:'';
+  const recap=`
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;margin:8px 0 16px;text-align:left;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;">How you got on</div>
+      <div style="font-size:13px;color:var(--text);line-height:1.6;">${totalSets} sets${volStr}${durStr}</div>
+      ${verdict?`<div style="font-size:12px;color:${vColor};margin-top:6px;line-height:1.5;">${verdict}</div>`:''}
+      ${effStr?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">Effort: ${effStr}</div>`:''}
+      ${skipped.length?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">Skipped: ${skipped.join(', ')} — carried forward, no deload.</div>`:''}
+      ${feel?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">You came in feeling: ${feel}.</div>`:''}
+      ${sessNote?`<div style="font-size:11px;color:var(--text2);margin-top:6px;font-style:italic;">"${(typeof _esc==='function'?_esc(sessNote):sessNote)}"</div>`:''}
+    </div>`;
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
-    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:60px;text-align:center;">Workout complete</div>
-    <div class="wm-title" style="text-align:center;font-size:36px;color:var(--green);margin-top:8px;">✓ ${w.name} DONE</div>
-    <div style="text-align:center;font-size:48px;margin:24px 0;">🔥</div>
-    <div style="text-align:center;color:var(--text2);font-size:14px;margin-bottom:16px;">${w.exercises.length}/${w.exercises.length} exercises · ${totalSets} sets${volStr}${durStr}</div>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:40px;text-align:center;">Workout complete</div>
+    <div class="wm-title" style="text-align:center;font-size:32px;color:var(--green);margin-top:8px;">✓ ${w.name} DONE</div>
+    <div style="text-align:center;font-size:40px;margin:16px 0;">🔥</div>
+    ${recap}
+    <div style="text-align:center;margin-bottom:14px;"><span onclick="wmAddSessionNote()" style="font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;">+ add a note about today</span></div>
     <button class="wm-cta" onclick="finishGuidedWorkout()">FINISH</button>
   `;
   document.getElementById('wmContent').innerHTML=html;

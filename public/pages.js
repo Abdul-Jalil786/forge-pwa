@@ -280,6 +280,8 @@ function renderToday(){
 
     ${renderSkinSection()}
 
+    ${renderTapeToday()}
+
     <div class="sec-label">Streaks</div>
     <div class="sg sg3">
       <div class="sb lime"><div class="l">Gym</div><div class="v">${gymStreak}<span class="u">days</span></div></div>
@@ -290,6 +292,31 @@ function renderToday(){
 
   if(window._todayTimer)clearTimeout(window._todayTimer);
   window._todayTimer=setTimeout(()=>{ if(document.getElementById('page-today').classList.contains('active'))renderToday(); },60000);
+}
+
+// Phase 47: tape-measurement card on Today (owner) — like supplements/skin care,
+// so the weekly tape habit doesn't get forgotten. Feeds the adaptive report.
+function renderTapeToday(){
+  if(typeof isOwner!=='function'||!isOwner())return '';
+  const log=(typeof getMeasLog==='function')?getMeasLog():[];
+  const last=log.length?log[log.length-1]:null;
+  const daysSince=last?Math.floor((Date.now()-new Date(last.date+'T12:00:00').getTime())/86400000):null;
+  const due=daysSince==null||daysSince>=7;
+  const waist=(last&&last.waist)?last.waist+'cm waist':'';
+  const color=due?'#ffc107':'var(--green)';
+  const status=last
+    ?(due?`Last logged ${daysSince}d ago${waist?' · '+waist:''} — due again`:`Logged ${daysSince===0?'today':daysSince+'d ago'} ✓${waist?' · '+waist:''}`)
+    :'Never logged — your most hydration-proof trend signal';
+  return `<div class="sec-label">Tape · Measurements</div>
+  <div class="card" style="margin-bottom:10px;border-left:3px solid ${color};border-radius:0 12px 12px 0;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:600;">📏 Body measurements</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4;">${status}</div>
+      </div>
+      <button class="btn ${due?'btn-lime':'btn-ghost'} btn-sm" style="white-space:nowrap;" onclick="openModal('modal-meas')">${due?'Log now':'Update'}</button>
+    </div>
+  </div>`;
 }
 
 function renderSupplementsToday(){

@@ -630,6 +630,26 @@ dateKeyedRoute("/cardio-log/:date", "cardioLog"); // Phase 41i (zone-2 cardio se
 dateKeyedRoute("/session-feel/:date", "sessionFeel"); // Phase 44 (pre-session feel tap)
 dateKeyedRoute("/recovery-overrides/:date", "recoveryOverrides"); // Phase 44 (advisory gate choices)
 
+// Phase 47: per-exercise running notes — whole-object atomic write (jsonb_set)
+router.put("/exercise-notes", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const v = req.body?.value;
+    if (typeof v !== "object" || v === null || Array.isArray(v)) { res.status(400).json({ error: "object required" }); return; }
+    const json = JSON.stringify(v);
+    if (json.length > 40000) { res.status(413).json({ error: "too large" }); return; }
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{exerciseNotes}', ${json}::jsonb, true),
+          "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put exercise-notes error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 41o: DEXA body-composition scans (full-array PUT pattern, like bp-log)
 router.put("/dexa-scans", requireAuth, async (req: Request, res: Response) => {
   try {

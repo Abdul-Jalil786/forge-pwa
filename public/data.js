@@ -934,6 +934,20 @@ function saveSessionTimes(times){
   saveFieldToServer('/api/state/profile/session-times',{sessionTimes:times});
 }
 
+// Phase 47: per-exercise running notes (user-written; coach training-swap also
+// writes here). Shape: state.exerciseNotes[exId] = {note, addedAt, source}.
+function getExerciseNote(exId){
+  const n=(STATE.exerciseNotes||{})[exId];
+  return (n&&n.note)?n.note:'';
+}
+function setExerciseNote(exId,text){
+  if(!STATE.exerciseNotes||typeof STATE.exerciseNotes!=='object')STATE.exerciseNotes={};
+  if(text)STATE.exerciseNotes[exId]={note:String(text).slice(0,300),addedAt:new Date().toISOString(),source:'user'};
+  else delete STATE.exerciseNotes[exId];
+  updateLocalCache();
+  saveFieldToServer('/api/state/exercise-notes',{value:STATE.exerciseNotes});
+}
+
 // ============================================================
 // MEASUREMENTS
 // ============================================================

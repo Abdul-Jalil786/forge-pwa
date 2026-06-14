@@ -62,7 +62,11 @@
       "Bash(node -e \"console.log\\(require\\('@anthropic-ai/sdk/package.json'\\).version\\)\")",
       "Bash(node --check public/workout.js)",
       "Bash(npm test *)",
-      "Bash(node tests/_verify-context.cjs)"
+      "Bash(node tests/_verify-context.cjs)",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget",
+      "Bash(sed -n '/function _incForLift/,/^}/p' public/workout.js)",
+      "Bash(sed -n '/function _roundToPlate/,/^}/p' public/workout.js)"
     ]
   }
 }

@@ -277,6 +277,26 @@ const EX_NAMES: Record<string, string> = {
 };
 
 // Phase 38: per-lift detailed history — last 4 sessions per exercise
+// Phase 47: user-written training notes — per-exercise running notes (stick to
+// the lift) + recent per-session notes. The coach factors these into advice.
+function buildTrainingNotes(state: any): string {
+  const exNotes = state.exerciseNotes || {};
+  const exIds = Object.keys(exNotes).filter((k) => exNotes[k] && exNotes[k].note);
+  const exLog = state.exLog || {};
+  const sessNotes: Array<{ date: string; note: string }> = [];
+  for (const d of Object.keys(exLog).sort().reverse()) {
+    const n = exLog[d] && exLog[d]._session && exLog[d]._session.note;
+    if (n) sessNotes.push({ date: d, note: n });
+    if (sessNotes.length >= 5) break;
+  }
+  if (!exIds.length && !sessNotes.length) return "";
+  const lines = ["TRAINING NOTES (user-written — factor into advice + per-exercise cues):"];
+  for (const id of exIds) lines.push(`  ${id}: ${exNotes[id].note}${exNotes[id].source === "user" ? "" : " (coach-added)"}`);
+  for (const s of sessNotes) lines.push(`  ${s.date} session: ${s.note}`);
+  lines.push("");
+  return lines.join("\n");
+}
+
 function buildTrainingDetail(state: any): string {
   const exLog = state.exLog || {};
   const dates = Object.keys(exLog).sort().reverse();
@@ -1161,6 +1181,9 @@ export function buildContext(state: any): string {
   if (trainingDetail) lines.push(trainingDetail);
   const sleepPerf = buildSleepPerformance(state);
   if (sleepPerf) lines.push(sleepPerf);
+  // Phase 47: user-written training notes (per-exercise running + per-session)
+  const trainingNotes = buildTrainingNotes(state);
+  if (trainingNotes) lines.push(trainingNotes);
 
   // Phase 37: skin care routine — enhanced context block
   const skinBlock = buildSkinContext(state);
@@ -1815,12 +1838,15 @@ export async function generateSessionBrief(
   }
 
   lines.push("TODAY'S PRESCRIPTIONS (formula-computed — DO NOT change):");
+  const exNotes = state.exerciseNotes || {};
   for (const p of prescriptions) {
     const target = p.seconds ? `${p.seconds}s` : (p.kg != null ? `${p.kg}kg × ${p.reps} reps` : '—');
     const flags: string[] = [];
     if (p.deload) flags.push('DELOAD');
     if (p.recovery === 'low') flags.push('HOLD (low recovery)');
-    lines.push(`  ${p.exId} ${p.name}: ${target}${flags.length ? ' [' + flags.join(', ') + ']' : ''}`);
+    // Phase 47: surface the user's running note for this lift so the cue respects it
+    const note = exNotes[p.exId] && exNotes[p.exId].note ? ` — NOTE: ${exNotes[p.exId].note}` : '';
+    lines.push(`  ${p.exId} ${p.name}: ${target}${flags.length ? ' [' + flags.join(', ') + ']' : ''}${note}`);
   }
   lines.push("");
 
