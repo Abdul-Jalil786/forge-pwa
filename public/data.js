@@ -1158,6 +1158,116 @@ function get14DayAvgRate(metric){
   return Math.round(((last-first)/weeks)*100)/100;
 }
 
+// Phase 51: smoothed body-comp status — current 14-day average vs prior 14-day
+// average. Single bad-sleep water swings no longer flip the status colour.
+// Raw daily numbers are unchanged; only colour/status decisions use this.
+function smoothedBodyCompTrend(metric, phase = 'cut') {
+  // metric: 'lbm' or 'fat'
+  // phase: 'cut' | 'recomp' | 'lean-bulk' | 'maintenance'
+  // Calendar windows (non-overlapping):
+  //   current = today back 14 days (inclusive)
+  //   prior   = days 15-28 ago
+
+  const today = todayStr();
+  const toDate = s => new Date(s + 'T12:00:00');
+  const todayDate = toDate(today);
+  const subDays = (n) => {
+    const d = new Date(todayDate); d.setDate(d.getDate() - n);
+    return d.toISOString().slice(0, 10);
+  };
+  const curStart = subDays(13);
+  const curEnd = today;
+  const prevStart = subDays(27);
+  const prevEnd = subDays(14);
+
+  // Build entries: array of {date, value} for the metric
+  let entries;
+  if (metric === 'lbm') {
+    // weight × (1 - bf/100), aligned per-date using the same logic as getJourneyEntries('lbm')
+    const wl = getWeightLog();
+    const bl = getBfLog();
+    entries = wl.map(we => {
+      const bfe = bl.filter(b => b.date <= we.date).pop();
+      if (!bfe) return null;
+      return { date: we.date, value: Math.round(we.weight * (1 - bfe.bf / 100) * 100) / 100 };
+    }).filter(Boolean);
+  } else if (metric === 'fat') {
+    // fat mass = weight × (bf/100)
+    const wl = getWeightLog();
+    const bl = getBfLog();
+    entries = wl.map(we => {
+      const bfe = bl.filter(b => b.date <= we.date).pop();
+      if (!bfe) return null;
+      return { date: we.date, value: Math.round(we.weight * (bfe.bf / 100) * 100) / 100 };
+    }).filter(Boolean);
+  } else {
+    return { status: 'insufficient', delta: null, currentAvg: null, prevAvg: null, provisional: true, entriesCurrent: 0, entriesPrior: 0, windowDays: 14 };
+  }
+
+  const inWindow = (date, start, end) => date >= start && date <= end;
+  const curWin = entries.filter(e => inWindow(e.date, curStart, curEnd));
+  const prevWin = entries.filter(e => inWindow(e.date, prevStart, prevEnd));
+
+  const avg = arr => arr.length ? arr.reduce((s, e) => s + e.value, 0) / arr.length : null;
+  const currentAvg = avg(curWin);
+  const prevAvg = avg(prevWin);
+
+  if (currentAvg == null || prevAvg == null) {
+    return { status: 'insufficient', delta: null, currentAvg, prevAvg, provisional: true, entriesCurrent: curWin.length, entriesPrior: prevWin.length, windowDays: 14 };
+  }
+
+  const delta = Math.round((currentAvg - prevAvg) * 100) / 100;
+  const provisional = curWin.length < 4 || prevWin.length < 4;
+
+  // Status mapping
+  let status;
+  if (metric === 'lbm') {
+    // Lean: any rise or holding within noise = green; small drop = amber; big drop = red
+    // Provisional uses half-thresholds (more lenient because less confidence)
+    const greenAbove = provisional ? -0.075 : -0.15;
+    const redAtOrBelow = provisional ? -0.225 : -0.45;
+    if (delta >= greenAbove) status = 'green';
+    else if (delta > redAtOrBelow) status = 'amber';
+    else status = 'red';
+  } else {
+    // Fat: depends on phase
+    if (phase === 'cut') {
+      if (delta <= -0.15) status = 'green';
+      else if (delta >= 0.15) status = 'red';
+      else status = 'amber';  // holding fat on a cut = stall
+    } else if (phase === 'lean-bulk') {
+      if (delta <= 0.4) status = 'green';
+      else if (delta <= 0.8) status = 'amber';
+      else status = 'red';
+    } else {
+      // recomp or maintenance
+      if (delta <= -0.15) status = 'green';
+      else if (delta <= 0.15) status = 'grey';
+      else if (delta <= 0.45) status = 'amber';
+      else status = 'red';
+    }
+  }
+
+  return {
+    status,
+    delta,
+    currentAvg: Math.round(currentAvg * 100) / 100,
+    prevAvg: Math.round(prevAvg * 100) / 100,
+    provisional,
+    entriesCurrent: curWin.length,
+    entriesPrior: prevWin.length,
+    windowDays: 14
+  };
+}
+
+function _statusColor(status) {
+  return status === 'green' ? 'var(--green)'
+       : status === 'amber' ? '#ffc107'
+       : status === 'red'   ? 'var(--red)'
+       : status === 'grey'  ? 'var(--text2)'
+       :                      'var(--text3)';  // insufficient
+}
+
 function getProjectedGoalDate(){
   const proj=getProjections();
   if(!proj||!proj.goalDate)return null;
@@ -1217,8 +1327,9 @@ function getProjections(){
 }
 
 function getLBMDropAlert(){
-  const rate=get14DayAvgRate('lbm');
-  return rate<-0.05;
+  const phase = (STATE.profile?.personal?.phase) || 'cut';
+  const t = smoothedBodyCompTrend('lbm', phase);
+  return t.status === 'red';
 }
 
 function getCurrentVisceralFat(){

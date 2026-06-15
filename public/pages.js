@@ -203,7 +203,17 @@ function renderToday(){
           <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
             <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--blue);">${lbmPctNow!=null?lbmPctNow+'%':'—'}</div>
             ${lbmNow!=null?`<div style="font-size:11px;color:var(--text2);">${lbmNow}kg lean</div>`:''}
-            ${lbmTrend?`<div style="font-size:11px;color:${lbmTrend.dir==='flat'?'var(--green)':lbmTrend.dir==='up'?'var(--green)':Math.abs(parseFloat(lbmTrend.delta))<0.3?'#ffc107':'var(--red)'};">${lbmTrend.arrow} ${lbmTrend.delta}kg/wk</div>`:''}
+            ${(() => {
+              const phase = (STATE.profile?.personal?.phase) || 'cut';
+              const t = smoothedBodyCompTrend('lbm', phase);
+              const color = _statusColor(t.status);
+              if (t.status === 'insufficient') {
+                return `<div style="font-size:11px;color:${color};">• not enough data yet</div>`;
+              }
+              const arrow = t.delta > 0.05 ? '▲' : t.delta < -0.05 ? '▼' : '•';
+              const tag = t.provisional ? ' <span style="opacity:.6;">(provisional)</span>' : '';
+              return `<div style="font-size:11px;color:${color};">${arrow} ${Math.abs(t.delta).toFixed(2)}kg vs prior 14d${tag}</div>`;
+            })()}
             ${p.targetLBM?`<div style="font-size:10px;color:var(--text3);">target hold ${p.targetLBM}kg</div>`:''}
           </div>
         </div>
@@ -970,8 +980,13 @@ function renderTrack(){
     return e || null;
   };
   const _fmt = (v, unit, dp) => v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(dp ?? 1)}${unit || ''}` : '—';
-  const _colorForLBMDelta = d => d == null ? 'var(--text3)' : d >= -0.1 ? 'var(--green)' : d >= -0.3 ? '#ffc107' : 'var(--red)';
-  const _colorForFatDelta = d => d == null ? 'var(--text3)' : d < 0 ? 'var(--green)' : d > 0 ? 'var(--red)' : 'var(--text2)';
+  const phase = (STATE.profile?.personal?.phase) || 'cut';
+  const _lbmTrend = smoothedBodyCompTrend('lbm', phase);
+  const _fatTrend = smoothedBodyCompTrend('fat', phase);
+  const _lbmColor = _statusColor(_lbmTrend.status);
+  const _fatColor = _statusColor(_fatTrend.status);
+  const _colorForLBMDelta = () => _lbmColor;
+  const _colorForFatDelta = () => _fatColor;
   const _trendRow = (label, cur, deltas, color) => {
     const d7 = deltas[0], d14 = deltas[1];
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">
@@ -1008,7 +1023,7 @@ function renderTrack(){
     ${_trendRow('Weight',    cwNow != null ? cwNow + ' kg' : '—',    [wDelta7,   wDelta14],   _colorForFatDelta)}
     ${_trendRow('Fat mass',  cFatNow != null ? cFatNow + ' kg' : '—',[fatDelta7, fatDelta14], _colorForFatDelta)}
     ${_trendRow('Lean mass', clbmNow != null ? clbmNow + ' kg' : '—',[lbmDelta7, lbmDelta14], _colorForLBMDelta)}
-    <div style="font-size:10px;color:var(--text3);line-height:1.5;padding-top:10px;">Goal is fat loss with lean preserved. Green LBM = holding · amber = small drop · red = losing muscle (review protein / deficit / training).</div>
+    <div style="font-size:10px;color:var(--text3);line-height:1.5;padding-top:10px;">Status reflects current 14-day average vs prior 14-day average — single-day swings don't flip the colour. Daily numbers shown as-is.</div>
   </div>`;
 
   // Phase 30: Compare two dates card
