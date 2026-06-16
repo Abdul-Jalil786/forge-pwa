@@ -582,6 +582,98 @@ async function seedJayMealPlanV8() {
   }
 }
 
+// Phase 49: Jay meal plan V9 — drops the 13:30 mid-meal he never eats (too close
+// to his 12:00 breakfast for a GLP-1 appetite), shifts ~33g carbs into healthy
+// fat (avocado, more almonds, olive oil) for his low T + high HbA1c, adds fibre
+// (chia + broccoli + a proper big salad) so Mounjaro doesn't constipate him, and
+// renumbers the 4 remaining meals 1-4. Carbs kept around training (meals 2 & 3),
+// pulled from the non-training meals. Also widens the eating window to 12:00-20:00
+// so the 19:30 evening meal stops being flagged as outside the window.
+async function seedJayMealPlanV9() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.mealPlanV9Seeded) return;
+    const plan = {
+      name: "V9 — higher-fat, more fibre · 8h window",
+      meals: [
+        {
+          id: "breakfast",
+          name: "Meal 1 · Breakfast: Eggs, Avocado, Yoghurt & Oats",
+          time: "12:00",
+          cals: 682, protein: 61, carbs: 40, fat: 31,
+          ingredients: [
+            { name: "3 whole eggs boiled + 4 egg whites", cals: 282, protein: 33, carbs: 2, fat: 15 },
+            { name: "200g Greek yoghurt 0%", cals: 118, protein: 20, carbs: 8, fat: 0 },
+            { name: "25g rolled oats", cals: 72, protein: 3, carbs: 13, fat: 1 },
+            { name: "80g mixed berries", cals: 30, protein: 1, carbs: 6, fat: 0 },
+            { name: "½ avocado", cals: 120, protein: 2, carbs: 6, fat: 11 },
+            { name: "1 tbsp chia seeds (stir into yoghurt)", cals: 60, protein: 2, carbs: 5, fat: 4 },
+          ],
+          supplements: [
+            { id: "metformin-am", name: "Metformin", dose: "1000mg" },
+            { id: "vit-d", name: "Vitamin D3", dose: "4,000 IU" },
+            { id: "omega-3", name: "Omega 3", dose: "2 caps (1,700mg)" },
+            { id: "supp-zinc", name: "Zinc", dose: "25mg" },
+          ],
+        },
+        {
+          id: "pre-workout",
+          name: "Meal 2 · Pre-workout: Chicken, Basmati & Broccoli",
+          time: "15:00",
+          cals: 569, protein: 69, carbs: 42, fat: 15,
+          ingredients: [
+            { name: "200g chicken breast grilled", cals: 330, protein: 62, carbs: 0, fat: 8 },
+            { name: "150g cooked basmati rice", cals: 149, protein: 3, carbs: 32, fat: 1 },
+            { name: "150g broccoli", cals: 50, protein: 4, carbs: 10, fat: 1 },
+            { name: "1 tsp olive oil", cals: 40, protein: 0, carbs: 0, fat: 5 },
+          ],
+          supplements: [
+            { id: "supp-coq10", name: "CoQ10", dose: "2 caps (200mg)" },
+          ],
+        },
+        {
+          id: "dinner",
+          name: "Meal 3 · Post-workout: Shake, Chicken & Big Salad",
+          time: "17:30",
+          cals: 695, protein: 105, carbs: 55, fat: 11,
+          ingredients: [
+            { name: "Protein shake: 2 scoops whey + 200ml semi-skim milk + 100g blueberries + 5g creatine (drink immediately on entering kitchen)", cals: 318, protein: 53, carbs: 27, fat: 4 },
+            { name: "150g chicken breast grilled", cals: 248, protein: 47, carbs: 0, fat: 6 },
+            { name: "50g cooked basmati rice", cals: 49, protein: 1, carbs: 11, fat: 0 },
+            { name: "Big salad: 60g mixed leaves + 100g cucumber + 100g cherry tomatoes + 50g grated carrot + 50g pepper, balsamic + lemon (no oil)", cals: 80, protein: 4, carbs: 17, fat: 1 },
+          ],
+          supplements: [],
+        },
+        {
+          id: "evening",
+          name: "Meal 4 · Evening: Greek Yoghurt, Whey & Almonds",
+          time: "19:30",
+          cals: 488, protein: 55, carbs: 21, fat: 20,
+          ingredients: [
+            { name: "300g Greek yoghurt 0%", cals: 177, protein: 30, carbs: 12, fat: 0 },
+            { name: "20g whey isolate mixed into yoghurt (slow + fast casein/whey blend for overnight LBM)", cals: 79, protein: 17, carbs: 1, fat: 0 },
+            { name: "40g almonds", cals: 232, protein: 8, carbs: 8, fat: 20 },
+          ],
+          supplements: [],
+        },
+      ],
+    };
+    state.mealPlan = plan;
+    state.mealPlanV9Seeded = true;
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    state.eatingWindow = "12:00 to 20:00 UK";
+    // Widen the fasting window to match when he actually eats (Meal 4 at 19:30).
+    if (!state.profile || typeof state.profile !== "object") state.profile = {};
+    state.profile.eatingWindow = { enabled: true, start: 12, end: 20 };
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay meal plan V9 seeded (4 meals, higher-fat/more-fibre, window 12-20)");
+  } catch (err) {
+    console.error("[migration] Jay meal plan V9 seed failed:", err);
+  }
+}
+
 // Phase 41g: advance Jay to retinol Phase 3 (every-2-days = every other day).
 // Mirrors data.js setSkinPhase(3). Re-frequencies retinol + cicaplast products
 // and stamps a fresh phaseStartDate so the 3-week tolerance clock starts today.
@@ -1020,6 +1112,7 @@ const server = app.listen(PORT, async () => {
   await setJaySkinPhase3();
   await seedJayTargetOverridesV1();
   await seedJayTapeReminderV1();
+  await seedJayMealPlanV9();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
   // ~a week has elapsed with no report, never a spurious mid-week one.

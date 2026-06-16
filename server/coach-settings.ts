@@ -4,7 +4,7 @@ import prisma from "./db";
 import { requireAuth, requireOwnerCheck } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection, buildContext } from "./ai-coach";
-import { answerQuestion } from "./ask";
+import { answerQuestion, estimateFood } from "./ask";
 
 const router = Router();
 
@@ -264,6 +264,24 @@ router.post("/ask", requireAuth, requireOwnerCheck, aiBudget(), async (req: Requ
   } catch (err: any) {
     console.error("Ask Forge error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to answer" });
+  }
+});
+
+// Phase 49: estimate macros for an ad-hoc food the user types (auto-fill the
+// Add Food form). Any user with their own key — no owner gate. aiBudget applies.
+router.post("/estimate-food", requireAuth, aiBudget(), async (req: Request, res: Response) => {
+  try {
+    const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
+    if (!description) { res.status(400).json({ error: "Food description required" }); return; }
+    if (description.length > 200) { res.status(400).json({ error: "Keep it under 200 characters" }); return; }
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
+    const estimate = await estimateFood(req.userId as string, description);
+    res.json({ success: true, estimate });
+  } catch (err: any) {
+    console.error("Estimate food error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to estimate" });
   }
 });
 

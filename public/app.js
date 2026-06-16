@@ -264,6 +264,7 @@ function saveFood(){
   if(shouldSave)saveTemplate({name,cals,protein,carbs,fat});
 
   ['mf-name','mf-cals','mf-protein','mf-carbs','mf-fat'].forEach(id=>document.getElementById(id).value='');
+  if(typeof estimateFoodMacros==='function'){estimateFoodMacros._last='';const h=document.getElementById('mf-ai-hint');if(h){h.textContent='✨ Type a food and the macros fill in automatically';h.style.color='var(--text3)';}}
   closeModal('modal-food');
   const dateLabel=targetDate===todayStr()?'':' ('+targetDate+')';
   window._foodTargetDate=null;
@@ -272,6 +273,55 @@ function saveFood(){
   if(typeof renderFood==='function')renderFood();
   if(typeof renderToday==='function')renderToday();
   if(typeof renderDayDetail==='function'&&targetDate!==todayStr())renderDayDetail(targetDate);
+}
+
+// Phase 49: auto-fill calories + macros for an ad-hoc food. Fires when the name
+// box changes (onchange = on blur after a change). Uses your own AI key via Haiku
+// (~a fraction of a penny). Fills the four macro fields; you can tweak before
+// logging. Skips silently if you've no key / are offline — manual entry still works.
+let _foodEstimateBusy = false;
+async function estimateFoodMacros(){
+  const nameEl = document.getElementById('mf-name');
+  const hint = document.getElementById('mf-ai-hint');
+  const setHint = (t,c)=>{ if(hint){ hint.textContent=t; hint.style.color=c||'var(--text3)'; } };
+  const name = (nameEl?.value||'').trim();
+  if(name.length < 2){ estimateFoodMacros._last=''; setHint('✨ Type a food and the macros fill in automatically'); return; }
+  if(estimateFoodMacros._last === name) return;        // already estimated this exact text
+  const jwt = localStorage.getItem('forge_token');
+  if(!jwt) return;
+  if(_foodEstimateBusy) return;
+  _foodEstimateBusy = true;
+  estimateFoodMacros._last = name;
+  setHint('✨ working out the macros…','var(--lime)');
+  try{
+    const res = await fetch('/api/coach/estimate-food',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},
+      body:JSON.stringify({description:name})
+    });
+    if(!res.ok){
+      const e = await res.json().catch(()=>({}));
+      estimateFoodMacros._last='';   // let them retry
+      setHint((e.error||'').includes('No API key')
+        ? 'Add your AI key in More to auto-fill — or type the macros manually'
+        : 'Couldn\'t auto-fill — type the macros manually');
+      return;
+    }
+    const {estimate} = await res.json();
+    if(!estimate){ setHint('Couldn\'t auto-fill — type manually'); return; }
+    // Only apply if the user hasn't changed the name again while we waited
+    if((nameEl?.value||'').trim() !== name) return;
+    document.getElementById('mf-cals').value = estimate.cals||'';
+    document.getElementById('mf-protein').value = estimate.protein||'';
+    document.getElementById('mf-carbs').value = estimate.carbs||'';
+    document.getElementById('mf-fat').value = estimate.fat||'';
+    setHint('✨ estimated — tweak any number that looks off','var(--lime)');
+  }catch{
+    estimateFoodMacros._last='';
+    setHint('Couldn\'t auto-fill (offline?) — type manually');
+  }finally{
+    _foodEstimateBusy = false;
+  }
 }
 
 // ---- TRAINING SET EDIT (for past dates) ----

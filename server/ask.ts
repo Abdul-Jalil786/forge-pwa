@@ -171,6 +171,73 @@ Rules:
 - numbers: up to 5 short "label: value" strings supporting the verdict.
 - meaning: 2-3 sentences max. action: one specific doable thing, or empty string if none needed.`;
 
+// Phase 49: estimate calories + macros for a food/meal the user types in plain
+// language, so an ad-hoc extra (a snack, a coffee, something out) can be logged
+// without entering macros by hand. Haiku, forced structured output, cheap.
+export interface FoodEstimate {
+  name: string;
+  cals: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}
+
+const FOOD_SYSTEM = `You estimate the nutrition of a food or a whole meal the user describes in plain language, so it can be logged in a food tracker.
+
+Rules:
+- Use the amounts the user gives ("200g chicken", "2 eggs", "a handful of almonds"). If no amount is given, assume ONE typical UK serving.
+- The description may list several items ("2 dates and a flat white") — SUM them into a single total.
+- Use realistic UK supermarket / restaurant values. Assume cooked weights unless stated.
+- Return whole numbers, and keep them internally consistent: calories ≈ protein*4 + carbs*4 + fat*9.
+- name: a short tidy label for the log (e.g. "2 dates + flat white"), max 60 chars.
+- If the input is not a food, return all zeros and name "unknown".`;
+
+export async function estimateFood(userId: string, description: string): Promise<FoodEstimate> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  if (!state.coachingKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(state.coachingKey); }
+  catch { throw new Error("Failed to decrypt stored API key"); }
+
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: HAIKU_MODEL,
+    max_tokens: 400,
+    system: FOOD_SYSTEM,
+    tools: [{
+      name: "submit_food",
+      description: "Submit the estimated nutrition for the described food.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          name: { type: "string", description: "Short tidy label for the log, max 60 chars." },
+          cals: { type: "number", description: "Total calories (kcal)." },
+          protein: { type: "number", description: "Total protein in grams." },
+          carbs: { type: "number", description: "Total carbohydrate in grams." },
+          fat: { type: "number", description: "Total fat in grams." },
+        },
+        required: ["name", "cals", "protein", "carbs", "fat"],
+      },
+    }],
+    tool_choice: { type: "tool", name: "submit_food" },
+    messages: [{ role: "user", content: `Food: ${description}` }],
+  });
+
+  const toolBlock: any = response.content.find((b: any) => b.type === "tool_use" && b.name === "submit_food");
+  if (!toolBlock) throw new Error("Model did not return an estimate");
+  const f = toolBlock.input || {};
+  const clamp = (n: any) => Math.max(0, Math.round(+n || 0));
+  return {
+    name: String(f.name || description).slice(0, 60),
+    cals: clamp(f.cals),
+    protein: clamp(f.protein),
+    carbs: clamp(f.carbs),
+    fat: clamp(f.fat),
+  };
+}
+
 export async function answerQuestion(userId: string, question: string): Promise<AskAnswer> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new Error("User not found");

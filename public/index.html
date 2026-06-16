@@ -491,7 +491,8 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
 <div class="modal-bg" id="modal-food">
   <div class="modal">
     <div class="modal-hdr"><div class="modal-title">Log Food</div><button class="modal-close" onclick="closeModal('modal-food')">✕</button></div>
-    <input class="inp" id="mf-name" placeholder="Food or meal name" style="margin-bottom:8px">
+    <input class="inp" id="mf-name" placeholder="Food or meal name (e.g. 200g chicken + rice)" autocomplete="off" onchange="estimateFoodMacros()" style="margin-bottom:4px">
+    <div id="mf-ai-hint" style="font-size:10px;color:var(--text3);margin-bottom:8px;">✨ Type a food and the macros fill in automatically</div>
     <div class="inp-row"><input class="inp" id="mf-cals" placeholder="Calories" type="number"><input class="inp" id="mf-protein" placeholder="Protein g" type="number"></div>
     <div class="inp-row"><input class="inp" id="mf-carbs" placeholder="Carbs g" type="number"><input class="inp" id="mf-fat" placeholder="Fat g" type="number"></div>
     <input class="inp" id="mf-time" type="time" style="margin-bottom:12px">
