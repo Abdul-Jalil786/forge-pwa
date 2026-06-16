@@ -404,7 +404,30 @@ function wmGateChoice(choice){
 
 // Phase 41k: ✕ now MINIMIZES the workout — preserves in-progress state for resume.
 // True session finish (with reflection + state clear) is finishGuidedWorkout().
+// Phase 47b: true if you've logged at least one real set this session today.
+function _wmHasLoggedWork(){
+  try{
+    const dayLog=getExLogForDate(todayStr());
+    return Object.entries(dayLog).some(([k,ex])=>k!=='_session'&&ex&&Array.isArray(ex.sets)&&ex.sets.some(s=>s.done&&(s.kg||s.reps||s.seconds)));
+  }catch{return false;}
+}
+
 function exitGuidedWorkout(){
+  // Phase 47b: smart close — if you actually trained this session and haven't seen
+  // the recap yet, show the "✓ DONE" recap instead of closing silently. The report
+  // used to be gated behind tapping through the very last exercise (Dead Bug on
+  // lower day), so finishing your real lifts and closing meant no recap + no
+  // low-down. Now any close after real work surfaces the report; the recap screen's
+  // own ✕ then closes cleanly (recapShown guards against a re-trigger loop).
+  if(wm.active&&!wm.recapShown&&typeof wmFinish==='function'&&_wmHasLoggedWork()){
+    if(wm.restInterval)clearInterval(wm.restInterval);
+    if(wm.transitionInterval)clearInterval(wm.transitionInterval);
+    if(wmTimer.interval)clearInterval(wmTimer.interval);
+    wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
+    _saveWmState();
+    wmFinish();
+    return;
+  }
   if(wm.restInterval)clearInterval(wm.restInterval);
   if(wm.transitionInterval)clearInterval(wm.transitionInterval);
   if(wmTimer.interval)clearInterval(wmTimer.interval);
@@ -1534,6 +1557,7 @@ function wmAddSessionNote(){
 }
 
 function wmFinish(){
+  wm.recapShown=true; // Phase 47b: recap is now on screen — let the next ✕ close cleanly
   const w=WORKOUTS[wm.session];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
