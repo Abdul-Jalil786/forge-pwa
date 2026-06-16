@@ -1158,15 +1158,14 @@ function get14DayAvgRate(metric){
   return Math.round(((last-first)/weeks)*100)/100;
 }
 
-// Phase 51: smoothed body-comp status — current 14-day average vs prior 14-day
-// average. Single bad-sleep water swings no longer flip the status colour.
+// Phase 51b: smoothed body-comp status — compares your RECENT average (last 7
+// days, so a single bad-sleep water spike can't flip it) to your value ~14 days
+// ago. It's a *smoothed point-to-point*, so the status colour ALWAYS matches the
+// direction of the 14-day number you see: lean UP = green, lean DOWN = amber/red.
 // Raw daily numbers are unchanged; only colour/status decisions use this.
 function smoothedBodyCompTrend(metric, phase = 'cut') {
   // metric: 'lbm' or 'fat'
   // phase: 'cut' | 'recomp' | 'lean-bulk' | 'maintenance'
-  // Calendar windows (non-overlapping):
-  //   current = today back 14 days (inclusive)
-  //   prior   = days 15-28 ago
 
   const today = todayStr();
   const toDate = s => new Date(s + 'T12:00:00');
@@ -1175,10 +1174,6 @@ function smoothedBodyCompTrend(metric, phase = 'cut') {
     const d = new Date(todayDate); d.setDate(d.getDate() - n);
     return d.toISOString().slice(0, 10);
   };
-  const curStart = subDays(13);
-  const curEnd = today;
-  const prevStart = subDays(27);
-  const prevEnd = subDays(14);
 
   // Build entries: array of {date, value} for the metric
   let entries;
@@ -1204,28 +1199,37 @@ function smoothedBodyCompTrend(metric, phase = 'cut') {
     return { status: 'insufficient', delta: null, currentAvg: null, prevAvg: null, provisional: true, entriesCurrent: 0, entriesPrior: 0, windowDays: 14 };
   }
 
-  const inWindow = (date, start, end) => date >= start && date <= end;
-  const curWin = entries.filter(e => inWindow(e.date, curStart, curEnd));
-  const prevWin = entries.filter(e => inWindow(e.date, prevStart, prevEnd));
-
+  const sorted = entries.slice().sort((a, b) => a.date.localeCompare(b.date));
   const avg = arr => arr.length ? arr.reduce((s, e) => s + e.value, 0) / arr.length : null;
-  const currentAvg = avg(curWin);
-  const prevAvg = avg(prevWin);
+
+  // RECENT anchor = average of the last 7 days (smooths a single noisy weigh-in).
+  // Fall back to the last up-to-3 readings overall if nothing in the last 7 days.
+  const recent = sorted.filter(e => e.date > subDays(7));
+  const recentUsed = (recent.length ? recent : sorted.slice(-3));
+  const currentAvg = avg(recentUsed);
+
+  // PAST anchor = the value ~14 days ago (latest reading on/before 14 days ago).
+  // This is the same "14 days ago" point the displayed 14d delta uses, so the
+  // colour can't contradict the number.
+  const pastEntry = sorted.filter(e => e.date <= subDays(14)).pop();
+  const prevAvg = pastEntry ? pastEntry.value : null;
 
   if (currentAvg == null || prevAvg == null) {
-    return { status: 'insufficient', delta: null, currentAvg, prevAvg, provisional: true, entriesCurrent: curWin.length, entriesPrior: prevWin.length, windowDays: 14 };
+    return { status: 'insufficient', delta: null, currentAvg, prevAvg, provisional: true, entriesCurrent: recentUsed.length, entriesPrior: pastEntry ? 1 : 0, windowDays: 14 };
   }
 
   const delta = Math.round((currentAvg - prevAvg) * 100) / 100;
-  const provisional = curWin.length < 4 || prevWin.length < 4;
+  const provisional = recentUsed.length < 2 || sorted.length < 4;
 
   // Status mapping
   let status;
   if (metric === 'lbm') {
-    // Lean: any rise or holding within noise = green; small drop = amber; big drop = red
+    // Lean: any rise or holding within noise = green; small drop = amber; only a
+    // genuine, sustained drop = red. Thresholds loosened (Phase 51b) so normal
+    // scale/BIA wobble can't trip the warning.
     // Provisional uses half-thresholds (more lenient because less confidence)
-    const greenAbove = provisional ? -0.075 : -0.15;
-    const redAtOrBelow = provisional ? -0.225 : -0.45;
+    const greenAbove = provisional ? -0.1 : -0.2;
+    const redAtOrBelow = provisional ? -0.3 : -0.55;
     if (delta >= greenAbove) status = 'green';
     else if (delta > redAtOrBelow) status = 'amber';
     else status = 'red';
@@ -1254,8 +1258,8 @@ function smoothedBodyCompTrend(metric, phase = 'cut') {
     currentAvg: Math.round(currentAvg * 100) / 100,
     prevAvg: Math.round(prevAvg * 100) / 100,
     provisional,
-    entriesCurrent: curWin.length,
-    entriesPrior: prevWin.length,
+    entriesCurrent: recentUsed.length,
+    entriesPrior: pastEntry ? 1 : 0,
     windowDays: 14
   };
 }

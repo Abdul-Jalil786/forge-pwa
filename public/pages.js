@@ -212,7 +212,7 @@ function renderToday(){
               }
               const arrow = t.delta > 0.05 ? '▲' : t.delta < -0.05 ? '▼' : '•';
               const tag = t.provisional ? ' <span style="opacity:.6;">(provisional)</span>' : '';
-              return `<div style="font-size:11px;color:${color};">${arrow} ${Math.abs(t.delta).toFixed(2)}kg vs prior 14d${tag}</div>`;
+              return `<div style="font-size:11px;color:${color};">${arrow} ${Math.abs(t.delta).toFixed(2)}kg vs 2 weeks ago${tag}</div>`;
             })()}
             ${p.targetLBM?`<div style="font-size:10px;color:var(--text3);">target hold ${p.targetLBM}kg</div>`:''}
           </div>
@@ -1023,7 +1023,7 @@ function renderTrack(){
     ${_trendRow('Weight',    cwNow != null ? cwNow + ' kg' : '—',    [wDelta7,   wDelta14],   _colorForFatDelta)}
     ${_trendRow('Fat mass',  cFatNow != null ? cFatNow + ' kg' : '—',[fatDelta7, fatDelta14], _colorForFatDelta)}
     ${_trendRow('Lean mass', clbmNow != null ? clbmNow + ' kg' : '—',[lbmDelta7, lbmDelta14], _colorForLBMDelta)}
-    <div style="font-size:10px;color:var(--text3);line-height:1.5;padding-top:10px;">Status reflects current 14-day average vs prior 14-day average — single-day swings don't flip the colour. Daily numbers shown as-is.</div>
+    <div style="font-size:10px;color:var(--text3);line-height:1.5;padding-top:10px;">Colour reflects your recent average vs ~2 weeks ago — a single-day swing won't flip it, and the colour follows the direction of the number (lean up = green). Daily numbers shown as-is.</div>
   </div>`;
 
   // Phase 30: Compare two dates card
