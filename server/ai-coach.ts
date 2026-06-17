@@ -274,7 +274,7 @@ const EX_NAMES: Record<string, string> = {
   u5: "Lat Pulldown", u6: "Bicep Curl", u7: "Tricep Pushdown", u8: "Face Pull", u9: "Plank",
   l1: "Leg Press", l2: "Romanian Deadlift", l3: "Leg Extension", l4: "Leg Curl",
   l5: "Hip Thrust", l6: "Calf Raise", l8: "Ab Crunch",
-  core_dead_bug: "Dead Bug", neck_ext: "Neck Extension (lying)",
+  core_dead_bug: "Dead Bug", neck_ext: "Cable Neck Extension (back)", neck_front: "Cable Neck Flexion (front)",
   core_pallof: "Pallof Press", core_suitcase: "Suitcase Carry",
 };
 

@@ -721,6 +721,8 @@ const FORM_CUES = {
   core_dead_bug:'Press the lower back flat, move slow, opposite arm + leg.',
   core_pallof:'Press straight out from the chest and hold — resist the rotation, brace, don\'t twist.',
   core_suitcase:'Single-arm carry. Go heavier on the LEFT side to correct left/right asymmetry. Stay tall, no leaning.',
+  neck_ext:'Light cable, slow controlled extension — small range, never crank or jerk the neck.',
+  neck_front:'Tuck the chin toward the chest under light tension — slow and smooth, no snapping.',
 };
 
 // Phase 28: recovery gate — checks today's Oura readiness + HRV trend
