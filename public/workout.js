@@ -54,6 +54,9 @@ function renderWorkout(){
   html+=`<div class="pg-title">${w.name}</div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">${w.muscles}</div>`;
 
+  // Phase 50: deterministic pre-session report (today's plan + last-session recap)
+  if(isToday && !isFuture) html+=buildSessionReport(date,session);
+
   if(isToday && !isFuture){
     // Phase 41k: if a workout is minimized for today, show RESUME instead of START
     const saved=(typeof _loadWmState==='function')?_loadWmState():null;
@@ -129,6 +132,85 @@ function renderWeekStrip(){
   return html;
 }
 
+// Phase 50: short "Nd ago" label from a date string.
+function _daysAgoLabel(dateStr){
+  if(!dateStr)return '';
+  const today=new Date(todayStr()+'T12:00:00');
+  const d=new Date(dateStr+'T12:00:00');
+  const days=Math.round((today-d)/86400000);
+  if(days<=0)return 'today';
+  if(days===1)return 'yesterday';
+  if(days<7)return days+'d ago';
+  const wk=Math.round(days/7);
+  return wk<=1?'1wk ago':wk+'wk ago';
+}
+
+// Phase 50: strength-tier chip for a lift (reuses the Track-page standards).
+// Returns '' unless the lift has a standard AND we have bodyweight + age —
+// so core/isolation lifts (Pallof, Dead Bug, plank) show nothing, by design.
+function _exLevelChip(exId){
+  if(typeof STRENGTH_STD==='undefined'||!STRENGTH_STD[exId])return '';
+  if(typeof _bestEstimated1RM!=='function'||typeof _classifyLift!=='function'||typeof _ageAdjustFactor!=='function')return '';
+  const personal=(STATE.profile||{}).personal||{};
+  const age=personal.age, sexKey=personal.sex==='female'?'female':'male';
+  const wl=STATE.weightLog||[], bl=STATE.bfLog||[];
+  const cw=wl.length?wl[wl.length-1].weight:null;
+  const cbf=bl.length?bl[bl.length-1].bf:null;
+  const lbm=(cw&&cbf)?cw*(1-cbf/100):null;
+  if(!cw||!age)return '';
+  const est=_bestEstimated1RM(exId);
+  if(!est)return '';
+  const cls=_classifyLift(est,cw,lbm,_ageAdjustFactor(age),STRENGTH_STD[exId][sexKey]||STRENGTH_STD[exId].male);
+  if(!cls)return '';
+  return `<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${cls.color};white-space:nowrap;">${cls.label}</span>`;
+}
+
+// Phase 50: deterministic pre-session report shown above START WORKOUT (today
+// only). Today's plan + a recap of the last same-type session — all from local
+// data, no AI call. The AI strategy brief still fires when you tap START.
+function buildSessionReport(date,session){
+  const w=WORKOUTS[session];
+  if(!w)return '';
+  const prev=(typeof getPreviousSessionData==='function')?getPreviousSessionData(date,session):null;
+  let lastBlock;
+  if(prev){
+    const score=(prev.log._session&&prev.log._session.score)||((typeof computeSessionScore==='function')?computeSessionScore(prev.date,session):null);
+    const vol=(typeof computeSessionVolume==='function')?computeSessionVolume(prev.log):0;
+    let setCount=0;
+    for(const [k,ex] of Object.entries(prev.log)){
+      if(k.startsWith('_')||!ex||!Array.isArray(ex.sets))continue;
+      setCount+=ex.sets.filter(s=>s.done&&(s.kg||s.reps||s.seconds)).length;
+    }
+    const pct=score?score.pct:null;
+    let verdict='',dot='';
+    if(pct!=null){
+      if(pct>=105){verdict='Strong last time — match or beat it.';dot='🟢';}
+      else if(pct>=95){verdict='Right on form last time — repeat it.';dot='🟢';}
+      else if(pct>=85){verdict='A touch down last time — bring it today.';dot='🟡';}
+      else {verdict='A light one last time — let\'s go.';dot='🟡';}
+    }
+    const em=score?score.effortMix:null;
+    const effStr=(em&&em.rated>0)?`${em.easy} easy · ${em.solid} solid · ${em.tough} tough`:'';
+    const dlabel=new Date(prev.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+    const metaBits=[];
+    if(vol>0)metaBits.push(`${Math.round(vol).toLocaleString()} kg`);
+    if(setCount)metaBits.push(`${setCount} sets`);
+    if(pct!=null)metaBits.push(`${dot} ${pct}% of 4-wk avg`);
+    lastBlock=`
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:11px;">Last ${w.name.toLowerCase()} · ${_daysAgoLabel(prev.date)} · ${dlabel}</div>
+      ${metaBits.length?`<div style="font-size:13px;color:var(--text);margin-top:3px;">${metaBits.join(' · ')}</div>`:''}
+      ${effStr?`<div style="font-size:11px;color:var(--text3);margin-top:3px;">Effort: ${effStr}</div>`:''}
+      ${verdict?`<div style="font-size:12px;color:var(--lime);margin-top:5px;">${verdict}</div>`:''}`;
+  } else {
+    lastBlock=`<div style="font-size:12px;color:var(--text3);margin-top:11px;">First ${w.name.toLowerCase()} logged here — we'll track from today. 💪</div>`;
+  }
+  return `<div class="card" style="margin-bottom:14px;border-color:var(--border2);padding:12px 14px;">
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Today's session</div>
+    <div style="font-size:13px;color:var(--text);margin-top:3px;">${w.exercises.length} exercises · ~${w.duration} min</div>
+    ${lastBlock}
+  </div>`;
+}
+
 function buildExItem(ex,dayLog,prevSession,readonly){
   const data=dayLog[ex.id]||{};
   const done=!!data.done;
@@ -138,18 +220,25 @@ function buildExItem(ex,dayLog,prevSession,readonly){
   const bestStr=best?(timed?`PB: ${fmtSec(best.seconds)}`:`PB: ${best.kg}kg`):'';
   const bestDetail=best?(timed?`🏆 Personal Best: ${fmtSec(best.seconds)} on ${fmtDate(best.date)}`:`🏆 Personal Best: ${best.kg}kg on ${fmtDate(best.date)}`):'';
 
-  // Previous session sets for this exercise
-  let prevLine='';
+  // Phase 50: last-session summary + strength level, now shown ALWAYS-VISIBLE
+  // under the plan line (was previously only inside the expanded body).
+  let lastSummary='';
   if(prevSession){
     const prevEx=prevSession.log[ex.id];
     if(prevEx?.sets?.length){
-      const summary=timed
+      lastSummary=timed
         ?prevEx.sets.filter(s=>s.seconds).map(s=>fmtSec(s.seconds)).join(', ')
-        :prevEx.sets.filter(s=>s.kg||s.reps).map(s=>`${s.kg||'-'}kg × ${s.reps||'-'}`).join(', ');
-      if(summary){
-        prevLine=`<div style="font-size:11px;color:var(--blue);background:rgba(61,155,255,.08);border-radius:6px;padding:6px 9px;margin-bottom:8px;">↺ Last: ${summary}</div>`;
-      }
+        :prevEx.sets.filter(s=>s.kg||s.reps).map(s=>`${s.kg||'-'}×${s.reps||'-'}`).join(', ');
     }
+  }
+  const levelChip=_exLevelChip(ex.id);
+  const daysAgo=prevSession?_daysAgoLabel(prevSession.date):'';
+  let lastLine='';
+  if(lastSummary||levelChip){
+    const left=lastSummary
+      ?`<span style="color:var(--blue);">↺ Last: ${lastSummary}${daysAgo?` · ${daysAgo}`:''}</span>`
+      :`<span style="color:var(--text3);">no history yet</span>`;
+    lastLine=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;margin-top:4px;">${left}${levelChip}</div>`;
   }
 
   return `
@@ -161,11 +250,11 @@ function buildExItem(ex,dayLog,prevSession,readonly){
       <div class="ex-info">
         <div class="ex-name">${ex.name}</div>
         <div class="ex-meta">${ex.sets} sets × ${ex.reps} · Rest ${ex.rest}s${bestStr?' · '+bestStr:''}</div>
+        ${lastLine}
       </div>
       <div class="ex-tag">${ex.muscle}</div>
     </div>
     <div class="ex-body" id="exb-${ex.id}">
-      ${prevLine}
       <div class="ex-gif" id="exgif-${ex.id}">
         <div class="ex-gif-placeholder">
           <div style="font-size:24px;margin-bottom:6px;">🎥</div>
