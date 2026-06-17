@@ -17,10 +17,10 @@ const WORKOUTS = {
       {id:'u7',name:'Tricep Pushdown',sets:3,reps:'10–12',rest:60,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+pushdown+form'},
       {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
       {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
-      {id:'u9',name:'Plank',sets:3,reps:'30–45s',rest:45,muscle:'Core',metric:'time',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
-      {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
       {id:'neck_ext',name:'Cable Neck Extension (back)',sets:2,reps:'12–15',rest:45,muscle:'Neck',size:'small',yt:'https://www.youtube.com/results?search_query=cable+neck+extension+harness+form'},
       {id:'neck_front',name:'Cable Neck Flexion (front)',sets:2,reps:'12–15',rest:45,muscle:'Neck',size:'small',yt:'https://www.youtube.com/results?search_query=cable+neck+flexion+harness+form'},
+      {id:'u9',name:'Plank',sets:3,reps:'30–45s',rest:45,muscle:'Core',metric:'time',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
+      {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
     ]
   },
   lower: {
