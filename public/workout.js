@@ -630,6 +630,8 @@ const FORM_CUES = {
   h4:'Hinge, dumbbells close to the legs, stretch then squeeze.',
   h5:'Lead with the elbows, raise to shoulder height, no swing.',
   core_dead_bug:'Press the lower back flat, move slow, opposite arm + leg.',
+  core_pallof:'Press straight out from the chest and hold — resist the rotation, brace, don\'t twist.',
+  core_suitcase:'Single-arm carry. Go heavier on the LEFT side to correct left/right asymmetry. Stay tall, no leaning.',
 };
 
 // Phase 28: recovery gate — checks today's Oura readiness + HRV trend

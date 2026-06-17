@@ -275,6 +275,7 @@ const EX_NAMES: Record<string, string> = {
   l1: "Leg Press", l2: "Romanian Deadlift", l3: "Leg Extension", l4: "Leg Curl",
   l5: "Hip Thrust", l6: "Calf Raise", l8: "Ab Crunch",
   core_dead_bug: "Dead Bug", neck_ext: "Neck Extension (lying)",
+  core_pallof: "Pallof Press", core_suitcase: "Suitcase Carry",
 };
 
 // Phase 38: per-lift detailed history — last 4 sessions per exercise
