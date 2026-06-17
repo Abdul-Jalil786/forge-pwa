@@ -674,6 +674,59 @@ async function seedJayMealPlanV9() {
   }
 }
 
+// Phase 49b: split the post-workout meal in two — Jay drinks the shake straight
+// after training, then eats the chicken/rice/salad when he gets home. Operates on
+// the LIVE plan (preserves current per-ingredient macros) instead of reseeding,
+// then renumbers the "Meal N ·" prefixes to match the new order.
+async function seedJayMealPlanV10() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.mealPlanV10Seeded) return;
+    const plan: any = state.mealPlan;
+    const mark = async () => { state.mealPlanV10Seeded = true; await prisma.user.update({ where: { id: user.id }, data: { state } }); };
+    if (!plan || !Array.isArray(plan.meals)) { await mark(); return; }
+    const idx = plan.meals.findIndex((m: any) => m.id === "dinner" || /post-?workout/i.test(m.name || ""));
+    if (idx === -1) { await mark(); return; }
+    const dinner = plan.meals[idx];
+    const ings: any[] = Array.isArray(dinner.ingredients) ? dinner.ingredients : [];
+    const shakeIng = ings.find((i: any) => /shake|whey/i.test(i.name || ""));
+    if (!shakeIng) { await mark(); return; } // already split or no shake present
+    const rest = ings.filter((i: any) => i !== shakeIng);
+    if (typeof shakeIng.name === "string") shakeIng.name = shakeIng.name.replace(/drink immediately on entering kitchen/i, "drink immediately after training");
+    const sum = (arr: any[], k: string) => Math.round(arr.reduce((s, i) => s + (+i[k] || 0), 0));
+    const shakeMeal = {
+      id: "post-shake",
+      name: "Post-workout shake — straight after training",
+      time: "17:00",
+      cals: sum([shakeIng], "cals"), protein: sum([shakeIng], "protein"), carbs: sum([shakeIng], "carbs"), fat: sum([shakeIng], "fat"),
+      ingredients: [shakeIng],
+      supplements: [],
+    };
+    const dinnerMeal = {
+      ...dinner,
+      id: "dinner",
+      name: "Post-workout dinner: Chicken, Rice & Big Salad",
+      time: dinner.time || "17:30",
+      cals: sum(rest, "cals"), protein: sum(rest, "protein"), carbs: sum(rest, "carbs"), fat: sum(rest, "fat"),
+      ingredients: rest,
+    };
+    plan.meals.splice(idx, 1, shakeMeal, dinnerMeal);
+    plan.meals.forEach((m: any, i: number) => {
+      const base = String(m.name || "").replace(/^Meal\s*\d+\s*·\s*/, "");
+      m.name = `Meal ${i + 1} · ${base}`;
+    });
+    state.mealPlan = plan;
+    state.mealPlanV10Seeded = true;
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay meal plan V10 — split post-workout shake into its own meal");
+  } catch (err) {
+    console.error("[migration] Jay meal plan V10 split failed:", err);
+  }
+}
+
 // Phase 41g: advance Jay to retinol Phase 3 (every-2-days = every other day).
 // Mirrors data.js setSkinPhase(3). Re-frequencies retinol + cicaplast products
 // and stamps a fresh phaseStartDate so the 3-week tolerance clock starts today.
@@ -1113,6 +1166,7 @@ const server = app.listen(PORT, async () => {
   await seedJayTargetOverridesV1();
   await seedJayTapeReminderV1();
   await seedJayMealPlanV9();
+  await seedJayMealPlanV10();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
   // ~a week has elapsed with no report, never a spurious mid-week one.
