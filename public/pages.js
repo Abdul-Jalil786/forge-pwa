@@ -1947,13 +1947,21 @@ function renderRetinolJourney(){
     </div>`;
   }).join('');
   let advance='';
-  if(readiness.ready&&readiness.nextPhase){
-    advance=`<div style="background:rgba(0,232,122,.1);border:1px solid var(--green);border-radius:8px;padding:10px;margin-top:10px;">
-      <div style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:8px;">✅ Ready to advance to Phase ${readiness.nextPhase}</div>
-      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="advanceSkinPhase(${readiness.nextPhase})">Advance to Phase ${readiness.nextPhase}</button>
-    </div>`;
-  }else if(!readiness.atMax){
-    advance=`<div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.5;border-top:1px solid var(--border);padding-top:8px;">Next phase unlocks when: ${escapeHtml(readiness.reason)}</div>`;
+  if(!readiness.atMax&&readiness.nextPhase){
+    if(readiness.ready){
+      advance=`<div style="background:rgba(0,232,122,.1);border:1px solid var(--green);border-radius:8px;padding:10px;margin-top:10px;">
+        <div style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:8px;">✅ Ready to advance to Phase ${readiness.nextPhase}</div>
+        <button class="btn btn-lime btn-sm" style="width:100%;" onclick="advanceSkinPhase(${readiness.nextPhase})">Advance to Phase ${readiness.nextPhase}</button>
+      </div>`;
+    }else{
+      // Phase 50f: the gate is ADVISORY — you know your own skin, so always offer a
+      // manual advance. The reason just tells you what the app would prefer to see
+      // first (usually missing in-app retinol ticks, not actual skin problems).
+      advance=`<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:10px;">
+        <div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:8px;">App suggests waiting until: ${escapeHtml(readiness.reason)}.<br>If your skin's calm and you want to step up, you can advance manually.</div>
+        <button class="btn btn-ghost btn-sm" style="width:100%;" onclick="advanceSkinPhase(${readiness.nextPhase})">Advance to Phase ${readiness.nextPhase} anyway</button>
+      </div>`;
+    }
   }
   // Tretinoin milestone — phase 5, 3+ weeks, no redness/burning
   let tret='';
