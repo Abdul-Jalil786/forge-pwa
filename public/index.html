@@ -755,6 +755,45 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
   </div>
 </div>
 
+<div class="modal-bg" id="modal-phase-edit">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">Programming Phase</div>
+      <button class="modal-close" onclick="closeModal('modal-phase-edit')">✕</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Phase</div>
+    <select id="phase-phase" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;">
+      <option value="Cut">Cut (lose fat, keep muscle)</option>
+      <option value="Recomp">Recomp (lose fat + build slowly)</option>
+      <option value="Maintenance">Maintenance (hold)</option>
+      <option value="Lean-bulk">Lean-bulk (controlled gain)</option>
+    </select>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Calorie target</div>
+        <input id="phase-cal" type="number" inputmode="numeric" placeholder="2200" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" /></div>
+      <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Calorie floor</div>
+        <input id="phase-calfloor" type="number" inputmode="numeric" placeholder="1900" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" /></div>
+      <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Protein floor (g)</div>
+        <input id="phase-prot" type="number" inputmode="numeric" placeholder="200" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" /></div>
+      <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Goal weight (kg)</div>
+        <input id="phase-goal" type="number" step="0.1" inputmode="decimal" placeholder="93" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" /></div>
+      <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Start weight (kg)</div>
+        <input id="phase-start" type="number" step="0.1" inputmode="decimal" placeholder="112" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" /></div>
+      <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Target BF % (low–high)</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input id="phase-bflow" type="number" inputmode="numeric" placeholder="15" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+          <span style="color:var(--text3);">–</span>
+          <input id="phase-bfhigh" type="number" inputmode="numeric" placeholder="18" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" /></div></div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Phase start date</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;">
+      <input id="phase-date" type="date" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('phase-date').value=todayStr()">Today</button>
+    </div>
+    <button class="btn btn-lime btn-full" onclick="savePhaseEdit()">Save phase</button>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-dexa">
   <div class="modal">
     <div class="modal-hdr">

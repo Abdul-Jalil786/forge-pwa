@@ -768,9 +768,9 @@ async function seedAbdulCutV1() {
         },
         {
           id: "post-shake", name: "Post-workout shake", time: "17:00",
-          cals: 215, protein: 28, carbs: 18, fat: 3,
+          cals: 179, protein: 20, carbs: 18, fat: 3,
           ingredients: [
-            { name: "1 scoop whey + water + 100g blueberries + 5g creatine", cals: 215, protein: 28, carbs: 18, fat: 3, gi: L },
+            { name: "1 scoop whey + water + 100g blueberries + 5g creatine", cals: 179, protein: 20, carbs: 18, fat: 3, gi: L },
           ],
           supplements: [],
         },
@@ -842,6 +842,39 @@ async function seedAbdulCutV1() {
     console.log("[migration] Abdul CUT seeded — 5-meal plan (~2,200 kcal) + activePhase record");
   } catch (err) {
     console.error("[migration] Abdul CUT seed failed:", err);
+  }
+}
+
+// Phase 54a: correct the whey scoop to 20g protein (was 28g) in the live meal plan
+// and re-derive that ingredient's calories + the meal totals from the ingredients.
+async function fixAbdulWheyV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.abdulWheyFixedV1) return;
+    const meals = state.mealPlan?.meals;
+    if (!Array.isArray(meals)) {
+      state.abdulWheyFixedV1 = true;
+      await prisma.user.update({ where: { id: user.id }, data: { state } });
+      return;
+    }
+    for (const m of meals) {
+      for (const ing of (m.ingredients || [])) {
+        if (/whey/i.test(ing.name || "") && (+ing.protein || 0) > 20) {
+          ing.protein = 20;
+          ing.cals = Math.round(20 * 4 + (+ing.carbs || 0) * 4 + (+ing.fat || 0) * 9); // re-derive from macros
+        }
+      }
+      const sum = (k: string) => Math.round((m.ingredients || []).reduce((s: number, i: any) => s + (+i[k] || 0), 0));
+      m.cals = sum("cals"); m.protein = sum("protein"); m.carbs = sum("carbs"); m.fat = sum("fat");
+    }
+    state.abdulWheyFixedV1 = true;
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Abdul whey corrected to 20g/scoop; meal totals re-derived");
+  } catch (err) {
+    console.error("[migration] fixAbdulWheyV1 failed:", err);
   }
 }
 
@@ -1286,6 +1319,7 @@ const server = app.listen(PORT, async () => {
   await seedJayMealPlanV9();
   await seedJayMealPlanV10();
   await seedAbdulCutV1();
+  await fixAbdulWheyV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
   // ~a week has elapsed with no report, never a spurious mid-week one.

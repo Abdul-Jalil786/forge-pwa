@@ -1485,6 +1485,61 @@ function _showLongToast(msg, durationMs){
   setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, durationMs || 5000);
 }
 
+// Phase 54: Programming-phase editor (More page) — reads/writes profile.activePhase
+// and syncs the derived fields via PUT /api/state/profile/active-phase.
+function openPhaseEdit(){
+  const ap=(STATE.profile||{}).activePhase||{};
+  const set=(id,val)=>{const el=document.getElementById(id);if(el)el.value=(val==null?'':val);};
+  set('phase-phase',ap.phase||'Cut');
+  set('phase-cal',ap.calorieTarget);
+  set('phase-calfloor',ap.calorieFloor);
+  set('phase-prot',ap.proteinFloor);
+  set('phase-goal',ap.goalWeight);
+  set('phase-start',ap.startWeight);
+  set('phase-bflow',ap.targetBFLow);
+  set('phase-bfhigh',ap.targetBFHigh);
+  set('phase-date',ap.startDate||todayStr());
+  openModal('modal-phase-edit');
+}
+
+async function savePhaseEdit(){
+  const v=id=>{const el=document.getElementById(id);return el?String(el.value).trim():'';};
+  const numOrNull=id=>{const x=parseFloat(v(id));return isFinite(x)?x:null;};
+  const phase=v('phase-phase')||'Cut';
+  const calorieTarget=numOrNull('phase-cal');
+  const goalWeight=numOrNull('phase-goal');
+  if(calorieTarget==null){showToast('Enter a calorie target');return;}
+  if(goalWeight==null){showToast('Enter a goal weight');return;}
+  const ap={
+    phase,
+    startDate:v('phase-date')||todayStr(),
+    calorieTarget,
+    proteinFloor:numOrNull('phase-prot')||0,
+    calorieFloor:numOrNull('phase-calfloor')||0,
+    startWeight:numOrNull('phase-start'),
+    goalWeight,
+    targetBFLow:numOrNull('phase-bflow'),
+    targetBFHigh:numOrNull('phase-bfhigh'),
+    updatedAt:new Date().toISOString(),
+  };
+  // optimistic local update + the synced fields the rest of the app reads
+  STATE.profile=STATE.profile||{};
+  STATE.profile.activePhase=ap;
+  STATE.profile.phase=phase.toLowerCase();
+  STATE.profile.targetWeight=goalWeight;
+  if(ap.targetBFHigh!=null)STATE.profile.targetBF=ap.targetBFHigh;
+  if(typeof updateLocalCache==='function')updateLocalCache();
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/state/profile/active-phase',{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},body:JSON.stringify(ap)});
+    if(!res.ok){const e=await res.json().catch(()=>({}));showToast(e.error||'Save failed');return;}
+  }catch{showToast('Saved offline — will sync when back online');}
+  closeModal('modal-phase-edit');
+  showToast(`Phase set to ${phase} ✓`);
+  if(typeof renderMore==='function')renderMore();
+  if(typeof renderToday==='function')renderToday();
+}
+
 async function askCoachMaxLBM(){
   if(!confirm('Ask AI Coach to compute your realistic LBM ceiling? Uses ~$0.10–$0.20 of your Anthropic credit. Opus 4.7 will analyze your demographics, blood markers, medications, training history.'))return;
   const jwt=localStorage.getItem('forge_token');

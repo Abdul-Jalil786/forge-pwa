@@ -86,6 +86,24 @@ function renderPhaseBanner(showToday){
   </div>`;
 }
 
+// Phase 54: More-page "Programming Phase" card + Edit button → openPhaseEdit().
+function renderPhaseSection(){
+  const ap=(STATE.profile||{}).activePhase;
+  const has=!!(ap&&ap.phase);
+  const cur=has?ap.phase:'Not set';
+  const sub=has
+    ?`${ap.calorieTarget} kcal · ${ap.proteinFloor}g+ protein · floor ${ap.calorieFloor} · ${ap.startWeight||'?'}→${ap.goalWeight}kg · ${ap.targetBFLow}–${ap.targetBFHigh}% BF · since ${ap.startDate}`
+    :'Set your current programming phase (cut / recomp / maintenance / lean-bulk).';
+  return `<div class="sec-label" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Programming Phase</span>
+      <button class="btn btn-ghost btn-sm" onclick="openPhaseEdit()">${has?'Edit':'Set phase'}</button>
+    </div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:15px;font-weight:800;font-family:'Archivo Black',sans-serif;">${cur}</div>
+      <div style="font-size:10px;color:var(--text2);margin-top:4px;line-height:1.5;">${sub}</div>
+    </div>`;
+}
+
 function renderToday(){
   const p=getActive(); if(!p)return;
   const session=getTodaySession();
@@ -2477,6 +2495,7 @@ function renderMore(){
   document.getElementById('page-more').innerHTML=`
     <div class="pg-title" style="margin-bottom:14px;">More</div>
 
+    ${renderPhaseSection()}
     ${renderWaterToday()}
 
     <div class="sec-label">Quick Actions</div>

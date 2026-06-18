@@ -376,6 +376,61 @@ router.put("/profile/personal", requireAuth, async (req: Request, res: Response)
   }
 });
 
+// Phase 54: active-phase editor — sets the canonical profile.activePhase record and
+// syncs the derived fields the rest of the app reads (phase, targetWeight, targetBF)
+// in one statement so a concurrent profile write can't half-apply.
+router.put("/profile/active-phase", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const b: any = req.body || {};
+    const PHASES = ["Cut", "Recomp", "Maintenance", "Lean-bulk"];
+    const phase = String(b.phase || "").trim();
+    if (!PHASES.includes(phase)) { res.status(400).json({ error: "phase must be one of " + PHASES.join("|") }); return; }
+    const num = (v: any, lo: number, hi: number): number | null => {
+      const n = Number(v);
+      return (isFinite(n) && n >= lo && n <= hi) ? Math.round(n * 10) / 10 : null;
+    };
+    const calorieTarget = num(b.calorieTarget, 800, 6000);
+    const goalWeight = num(b.goalWeight, 30, 400);
+    if (calorieTarget == null) { res.status(400).json({ error: "calorieTarget must be 800-6000" }); return; }
+    if (goalWeight == null) { res.status(400).json({ error: "goalWeight must be 30-400" }); return; }
+    const proteinFloor = num(b.proteinFloor, 0, 500) ?? 0;
+    const calorieFloor = num(b.calorieFloor, 0, 6000) ?? 0;
+    const startWeight = num(b.startWeight, 30, 400);
+    const targetBFLow = num(b.targetBFLow, 3, 60);
+    const targetBFHigh = num(b.targetBFHigh, 3, 60);
+    const startDate = (typeof b.startDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.startDate)) ? b.startDate : new Date().toISOString().slice(0, 10);
+
+    const ap = { phase, startDate, calorieTarget, proteinFloor, calorieFloor, startWeight, goalWeight, targetBFLow, targetBFHigh, updatedAt: new Date().toISOString() };
+    const apJson = JSON.stringify(ap);
+    const phaseLower = JSON.stringify(phase.toLowerCase());
+    const gw = JSON.stringify(goalWeight);
+    const tbf = JSON.stringify(targetBFHigh != null ? targetBFHigh : null);
+
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(
+          jsonb_set(
+            jsonb_set(
+              jsonb_set(COALESCE(state,'{}')::jsonb, '{profile}', COALESCE(state->'profile','{}'), true),
+              '{profile,activePhase}', ${apJson}::jsonb, true
+            ),
+            '{profile,phase}', ${phaseLower}::jsonb, true
+          ),
+          '{profile,targetWeight}', ${gw}::jsonb, true
+        ),
+        '{profile,targetBF}', ${tbf}::jsonb, true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true, activePhase: ap });
+  } catch (err) {
+    console.error("Put active-phase error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 29a: blood markers (subfield of profile)
 router.put("/profile/blood-markers", requireAuth, async (req: Request, res: Response) => {
   try {
