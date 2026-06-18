@@ -380,13 +380,16 @@ function buildStretchContext(state: any): string {
     e1_childs_pose: "Child's Pose (PM)", e2_figure_four: "Figure Four Glute Stretch",
     e3_forward_fold: "Seated Forward Fold", e4_spinal_twist: "Supine Spinal Twist",
     e5_legs_up_wall: "Legs Up the Wall", e6_neck_rolls: "Neck Rolls", e7_deep_breathing: "4-7-8 Breathing",
+    f1_hip_hinge: "Soft-Knee Hip Hinge", f2_hamstring: "Flat-Back Hamstring Stretch", f3_frog: "Frog Stretch",
+    f4_frog_rock: "Frog Rocking", f5_straddle: "Straddle / Pancake Fold", f6_couch: "Couch Stretch",
+    f7_runners_lunge: "Low Runner's Lunge", f8_split_slides: "Front Split Slides", f9_figure_four: "Figure-Four Glute Stretch (Flex)",
   };
 
   // Compliance over last 7d and prior 7d (for trend)
   function tally(start: number, span: number) {
-    let mDone = 0, eDone = 0;
+    let mDone = 0, eDone = 0, fDone = 0;
     const skipCounts: Record<string, number> = {};
-    const mDur: number[] = [], eDur: number[] = [];
+    const mDur: number[] = [], eDur: number[] = [], fDur: number[] = [];
     const mOnTime: number[] = [], eOnTime: number[] = [];
     for (let i = start; i < start + span; i++) {
       const d = daysAgoUK(i);
@@ -412,19 +415,25 @@ function buildStretchContext(state: any): string {
           eOnTime.push(h >= 17 && h < 22 ? 1 : 0);
         }
       }
-      for (const arr of [e.morning?.skippedStretches, e.evening?.skippedStretches]) {
+      if (e.flexibility?.completed) { // Phase 52: anytime routine — no on-time concept
+        fDone++;
+        if (e.flexibility.startedAt && e.flexibility.completedAt) {
+          fDur.push(Math.round((new Date(e.flexibility.completedAt).getTime() - new Date(e.flexibility.startedAt).getTime()) / 60000));
+        }
+      }
+      for (const arr of [e.morning?.skippedStretches, e.evening?.skippedStretches, e.flexibility?.skippedStretches]) {
         if (Array.isArray(arr)) for (const id of arr) skipCounts[id] = (skipCounts[id] || 0) + 1;
       }
     }
     const avg = (a: number[]) => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null;
     const sum = (a: number[]) => a.reduce((s, x) => s + x, 0);
-    return { mDone, eDone, skipCounts, mDur: avg(mDur), eDur: avg(eDur), mOnTime: sum(mOnTime), eOnTime: sum(eOnTime) };
+    return { mDone, eDone, fDone, skipCounts, mDur: avg(mDur), eDur: avg(eDur), fDur: avg(fDur), mOnTime: sum(mOnTime), eOnTime: sum(eOnTime) };
   }
   const cur = tally(0, 7);
   const prev = tally(7, 7);
 
   // Streaks
-  function streakOf(type: "morning" | "evening"): number {
+  function streakOf(type: "morning" | "evening" | "flexibility"): number {
     let s = 0;
     for (let i = 0; i < 400; i++) {
       const d = daysAgoUK(i);
@@ -436,6 +445,7 @@ function buildStretchContext(state: any): string {
   }
   const mStreak = streakOf("morning");
   const eStreak = streakOf("evening");
+  const fStreak = streakOf("flexibility");
 
   // Most skipped (current 7d)
   let mostSkippedId = "", mostSkippedN = 0;
@@ -444,10 +454,10 @@ function buildStretchContext(state: any): string {
   }
   const mostSkippedName = mostSkippedId ? (STRETCH_NAMES[mostSkippedId] || mostSkippedId) : "—";
 
-  const total = cur.mDone + cur.eDone;
-  const possible = 14;
+  const total = cur.mDone + cur.eDone + cur.fDone; // Phase 52: includes flexibility
+  const possible = 21;
   const pct = Math.round((total / possible) * 100);
-  const prevTotal = prev.mDone + prev.eDone;
+  const prevTotal = prev.mDone + prev.eDone + prev.fDone;
   const trend = total > prevTotal ? "improving" : total < prevTotal ? "declining" : (total === 0 && prevTotal === 0 ? "new" : "stable");
 
   const lines: string[] = [];
@@ -458,6 +468,9 @@ function buildStretchContext(state: any): string {
   lines.push("  Evening Routine (7 stretches, ~15 min):");
   lines.push(`    Days completed: ${cur.eDone}/7 · missed: ${7 - cur.eDone} · current streak: ${eStreak} day${eStreak === 1 ? "" : "s"}`);
   if (cur.eDur) lines.push(`    Avg session: ${cur.eDur} min · on-time (17:00-22:00): ${cur.eOnTime}/${cur.eDone}`);
+  lines.push("  Flexibility Routine (9 stretches, ~14 min · splits + forward fold; anytime, not before bed):");
+  lines.push(`    Days completed: ${cur.fDone}/7 · missed: ${7 - cur.fDone} · current streak: ${fStreak} day${fStreak === 1 ? "" : "s"}`);
+  if (cur.fDur) lines.push(`    Avg session: ${cur.fDur} min`);
   lines.push(`  Most skipped stretch: ${mostSkippedName}${mostSkippedN ? ` (${mostSkippedN}×)` : ""}`);
   lines.push(`  Combined: ${total}/${possible} sessions · ${pct}% compliance · trend vs last week: ${trend} (was ${prevTotal}/${possible})`);
   lines.push("");
@@ -1258,7 +1271,7 @@ DATA YOU NOW HAVE (Phase 29):
 10. SUPPLEMENT ADHERENCE
 11. PREVIOUS COACHING REPORTS (last 4 with their suggestions + apply/dismiss status) — your memory
 12. TRAINING DETAIL (per-lift last-4-session tables), SLEEP VS PERFORMANCE correlation, ACTIVE INJURIES
-13. STRETCHING COMPLIANCE (morning + evening mobility routines, compliance, streaks, most-skipped) — emitted only when the user has logged stretches
+13. STRETCHING COMPLIANCE (morning + evening + flexibility mobility routines, compliance, streaks, most-skipped) — emitted only when the user has logged stretches
 
 INTERPRETATION RULES:
 - Use Oura TOTAL calories (labelled "TDEE" in the data) as primary TDEE input. Mifflin-St Jeor is a fallback. ACTIVE calories alone is movement burn above BMR, NOT TDEE — never use active cals as TDEE.
@@ -1336,6 +1349,7 @@ INTERPRETATION RULES:
   - If both routines are >= 6/7: acknowledge excellent compliance, and ask the user to notice any reduction in lower-back pain or improvement in sleep onset — these are the direct benefits of consistency.
   - If either streak >= 7 days: name the streak and note that postural change becomes durable at ~4-6 weeks of daily consistency.
   - If morning compliance < 5/7 OR evening < 5/7, that gap is a strong candidate for one of the 3 Priority Actions — and the action must name the specific stretches (hip-flexor / pelvic-tilt for morning; 4-7-8 / legs-up-the-wall for evening).
+  - The Flexibility routine (splits + forward fold, anytime) is an OPTIONAL goal, not a daily essential like the posture/recovery routines. Acknowledge progress and streaks and encourage consistency, but do NOT make low flexibility compliance a Priority Action unless the user is clearly prioritising it.
 - SKIN CARE (only if a SKIN CARE ROUTINE block is present — a 6-phase retinol ramp from every-4-days up to nightly, then tretinoin):
   RETINOL PHASE RULES:
   - NEVER suggest advancing phase if ANY redness or burning logged in the last 14 days.

@@ -3052,6 +3052,8 @@ function renderStretchCards(){
     }else if(type==='morning'){
       if(hr<12){ stateLabel='START'; stateColor='var(--lime)'; icon='🌅'; }
       else { stateLabel='LATE'; stateColor='var(--orange)'; icon='⚠️'; }
+    }else if(type==='flexibility'){ // Phase 52: anytime — no time-window gating
+      stateLabel='START'; stateColor='var(--lime)'; icon='🤸';
     }else{
       if(hr<17){ stateLabel='LATER'; stateColor='var(--text3)'; icon='🌙'; }
       else if(hr<22){ stateLabel='START'; stateColor='var(--blue)'; icon='🌙'; }
@@ -3085,6 +3087,7 @@ function renderStretchCards(){
     <div id="stretchList">
       ${buildRow('morning')}
       ${buildRow('evening')}
+      ${buildRow('flexibility')}
     </div>`;
 }
 
@@ -3094,6 +3097,7 @@ function renderStretchHistory(){
   const c=getStretchCompliance(7);
   const mStreak=getStretchStreak('morning');
   const eStreak=getStretchStreak('evening');
+  const fStreak=getStretchStreak('flexibility'); // Phase 52
   const log=pGet('stretchLog',{});
   const total=Object.values(log).reduce((s,d)=>s+((d.morning?.completed?1:0)+(d.evening?.completed?1:0)),0);
   const today=todayStr();
@@ -3114,14 +3118,35 @@ function renderStretchHistory(){
     else {color='var(--border)';label='—';}
     days.push({ds,color,label,short:new Date(ds+'T12:00:00').toLocaleDateString('en-GB',{weekday:'narrow'})});
   }
+  // Phase 52: flexibility gets its own 7-day dot row (anytime routine)
+  const fdays=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const ds=_ukDate(d);
+    const entry=log[ds]||{};
+    const f=!!entry.flexibility?.completed;
+    const fPartial=entry.flexibility&&!entry.flexibility.completed&&(entry.flexibility.completedStretches||[]).length>0;
+    let color;
+    if(f)color='var(--green)';
+    else if(fPartial)color='var(--orange)';
+    else if(ds<=today)color='var(--red)';
+    else color='var(--border)';
+    fdays.push({ds,color,short:new Date(ds+'T12:00:00').toLocaleDateString('en-GB',{weekday:'narrow'})});
+  }
   return `<div class="sec-label">Stretching · Mobility</div>
   <div class="card" style="margin-bottom:10px;">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
       <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Morning · 7d</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:${c.morning.pct>=70?'var(--green)':c.morning.pct>=40?'var(--orange)':'var(--red)'};">${c.morning.done}<span style="font-size:11px;">/7</span></div><div style="font-size:10px;color:var(--text3);">🔥 ${mStreak} day streak</div></div>
       <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Evening · 7d</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:${c.evening.pct>=70?'var(--green)':c.evening.pct>=40?'var(--orange)':'var(--red)'};">${c.evening.done}<span style="font-size:11px;">/7</span></div><div style="font-size:10px;color:var(--text3);">🔥 ${eStreak} day streak</div></div>
+      <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Flexibility · 7d</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:${c.flexibility.pct>=70?'var(--green)':c.flexibility.pct>=40?'var(--orange)':'var(--red)'};">${c.flexibility.done}<span style="font-size:11px;">/7</span></div><div style="font-size:10px;color:var(--text3);">🔥 ${fStreak} day streak</div></div>
     </div>
+    <div style="font-size:9px;color:var(--text3);margin-bottom:3px;">🌅🌙 Morning + Evening</div>
     <div style="display:flex;gap:6px;margin-bottom:6px;">
       ${days.map(d=>`<div style="flex:1;text-align:center;"><div style="width:24px;height:24px;border-radius:50%;background:${d.color};margin:0 auto;" title="${d.ds} · ${d.label}"></div><div style="font-size:9px;color:var(--text3);margin-top:3px;">${d.short}</div></div>`).join('')}
+    </div>
+    <div style="font-size:9px;color:var(--text3);margin-bottom:3px;">🤸 Flexibility</div>
+    <div style="display:flex;gap:6px;margin-bottom:6px;">
+      ${fdays.map(d=>`<div style="flex:1;text-align:center;"><div style="width:24px;height:24px;border-radius:50%;background:${d.color};margin:0 auto;" title="${d.ds}"></div><div style="font-size:9px;color:var(--text3);margin-top:3px;">${d.short}</div></div>`).join('')}
     </div>
     <div style="font-size:11px;color:var(--text3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">Total sessions completed: ${total} · combined ${c.combined.pct}% (last 7d)</div>
   </div>`;

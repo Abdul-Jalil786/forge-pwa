@@ -184,7 +184,7 @@ let STATE = {
   bpLog: [],
   dexaScans: [],
   stretchLog: {},
-  stretchStreak: { morning: 0, evening: 0, combined: 0, lastMorningDate: null, lastEveningDate: null },
+  stretchStreak: { morning: 0, evening: 0, flexibility: 0, combined: 0, lastMorningDate: null, lastEveningDate: null, lastFlexibilityDate: null },
 };
 
 // ---- OWNER GATE (Phase 35) — some features are personal to the owner only ----
@@ -1866,6 +1866,53 @@ const STRETCH_ROUTINES = {
         cue:"The exhale longer than inhale is the key — this is what calms the nervous system" },
     ],
   },
+  // Phase 52: Flexibility routine — owner-only, "anytime" (no time-window gating).
+  // Added alongside morning/evening; shares the generic session engine + timer.
+  flexibility: {
+    id: 'flexibility',
+    title: 'Flexibility',
+    subtitle: 'Build splits & forward fold — protect the lower back',
+    totalMinutes: 14,
+    bestTime: 'After lifting on gym days, or midday on rest days — not before bed',
+    stretches: [
+      { id:'f1_hip_hinge', name:'Soft-Knee Hip Hinge', duration:10, unit:'reps', sides:false,
+        instructions:"Stand tall with a soft bend in the knees. Push the hips straight back, keeping the back flat, until you feel the hamstrings load. Stand back up. Slow and controlled.",
+        benefit:"Grooves a safe hip hinge and warms the hamstrings — the foundation for a flat-back forward fold without loading the spine.",
+        cue:"Hips back, flat back, stop before the spine rounds" },
+      { id:'f2_hamstring', name:'Flat-Back Hamstring Stretch', duration:60, unit:'seconds', sides:true,
+        instructions:"Place one heel slightly forward, leg straight, toes up. Hinge forward from the hip with a flat back until you feel the stretch behind the thigh. Hold and breathe. Keep the spine long.",
+        benefit:"Lengthens the hamstrings through a flat-back hinge so the stretch goes into the muscle, not the lower back.",
+        cue:"Hinge from hip, flat back, feel it in the hamstring not the spine" },
+      { id:'f3_frog', name:'Frog Stretch', duration:90, unit:'seconds', sides:false,
+        instructions:"On all fours, widen the knees out to the sides, knees bent about 90 degrees with feet in line with the knees. Sink the hips gently back toward the heels. Keep the lower back neutral.",
+        benefit:"Opens the inner thighs and hips — key mobility for the straddle and the front split.",
+        cue:"Knees ~90°, feet in line, tuck tailbone slightly to protect the back" },
+      { id:'f4_frog_rock', name:'Frog Rocking', duration:60, unit:'seconds', sides:false,
+        instructions:"From the frog position, rock the hips slowly forward and back within a comfortable range. Move with the breath. Stay well short of any pinch or strain.",
+        benefit:"Adds gentle movement to the frog stretch to ease the hips open without forcing the end range.",
+        cue:"Rock gently forward and back, don't force" },
+      { id:'f5_straddle', name:'Straddle / Pancake Fold', duration:60, unit:'seconds', sides:false,
+        instructions:"Sit with the legs wide apart, toes pointing up. Hinge forward from the hips with a flat back, walking the hands forward only as far as the flat back allows. Breathe into the stretch.",
+        benefit:"Builds the straddle (pancake) fold — hip and adductor mobility for the middle split.",
+        cue:"Legs wide, hinge forward flat-backed" },
+      { id:'f6_couch', name:'Couch Stretch', duration:45, unit:'seconds', sides:true,
+        instructions:"Place the back foot up against a wall or couch with the front foot planted in a lunge. Tuck the tailbone and rise the torso tall until you feel the stretch in the back-leg hip flexor and quad.",
+        benefit:"Opens the hip flexor and quad of the back leg — direct front-split preparation and relief for anterior pelvic tilt.",
+        cue:"Opens the back-leg hip flexor — front split prep" },
+      { id:'f7_runners_lunge', name:"Low Runner's Lunge", duration:45, unit:'seconds', sides:true,
+        instructions:"From a lunge, lower the back knee toward the floor and sink the hips forward. Keep the torso long and tall. Breathe into the front of the back hip.",
+        benefit:"Lengthens the hip flexors and opens the hips for split work.",
+        cue:"Sink into the lunge, keep the torso long" },
+      { id:'f8_split_slides', name:'Front Split Slides', duration:45, unit:'seconds', sides:true,
+        instructions:"With a towel under the front heel on a smooth floor, ease the front foot forward toward a split shape, hands on the floor carrying your weight. Go only to a comfortable stretch — never bounce.",
+        benefit:"Progresses the front split safely, with the hands controlling how deep you go.",
+        cue:"Ease toward split shape on a towel, hands supporting" },
+      { id:'f9_figure_four', name:'Figure-Four Glute Stretch', duration:60, unit:'seconds', sides:true,
+        instructions:"Lie on your back. Cross one ankle over the opposite knee. Pull both legs toward the chest, holding behind the thigh. Keep the head down and the shoulders relaxed.",
+        benefit:"Releases the glutes and hips after the split work — a back-friendly finish.",
+        cue:"Calms the hips, back-friendly finish" },
+    ],
+  },
 };
 
 // Owner-only gate for the stretching feature (jay@afjltd.co.uk).
@@ -1914,6 +1961,7 @@ function saveStretchSession(date,type,feel){
   streak[type]=getStretchStreak(type);
   streak.lastMorningDate=type==='morning'?date:streak.lastMorningDate;
   streak.lastEveningDate=type==='evening'?date:streak.lastEveningDate;
+  streak.lastFlexibilityDate=type==='flexibility'?date:streak.lastFlexibilityDate; // Phase 52
   STATE.stretchStreak=streak;
   updateLocalCache();
   saveFieldToServer(`/api/state/stretch-log/${date}`,{value:log[date]});
@@ -1939,17 +1987,19 @@ function getStretchStreak(type){
 }
 function getStretchCompliance(days){
   const log=pGet('stretchLog',{});
-  let mDone=0,eDone=0;
+  let mDone=0,eDone=0,fDone=0;
   for(let i=0;i<days;i++){
     const d=new Date();d.setDate(d.getDate()-i);
     const entry=log[_ukDate(d)]||{};
     if(entry.morning&&entry.morning.completed)mDone++;
     if(entry.evening&&entry.evening.completed)eDone++;
+    if(entry.flexibility&&entry.flexibility.completed)fDone++; // Phase 52
   }
   const total=days;
   return {
     morning:{done:mDone,total,pct:Math.round((mDone/total)*100)},
     evening:{done:eDone,total,pct:Math.round((eDone/total)*100)},
+    flexibility:{done:fDone,total,pct:Math.round((fDone/total)*100)}, // Phase 52
     combined:{done:mDone+eDone,total:total*2,pct:Math.round(((mDone+eDone)/(total*2))*100)},
   };
 }
