@@ -36,7 +36,7 @@ const WORKOUTS = {
       {id:'l6',name:'Calf Raise',sets:4,reps:'15–20',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
       {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
       {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
-      {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'20m each side',rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
+      {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'40s/side',metric:'carry',targetSeconds:40,rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
     ]
   },
   // Phase 42d: Full Body 3-day (gym) — beginner-friendly, shares exercise IDs with
@@ -83,6 +83,10 @@ function isTimeBased(ex){
   const n=(ex.name||'').toLowerCase();
   return _TIME_KEYWORDS.some(k=>n.includes(k));
 }
+// Phase 53: a loaded carry timed PER SIDE — each set logs weight + time held on
+// the LEFT and the RIGHT separately. Distinct from isTimeBased single-value holds
+// and from rep-based "each side" moves (Pallof, Dead Bug stay reps).
+function isCarry(ex){ return !!(ex&&ex.metric==='carry'); }
 function fmtSec(s){
   s=Math.floor(s);
   if(s<60)return s+'s';
@@ -1602,6 +1606,7 @@ function computeSessionVolume(dayLog){
   for(const [exId,ex] of Object.entries(dayLog||{})){
     if(exId.startsWith('_')||!ex||!Array.isArray(ex.sets))continue;
     const exObj=getAllExercises().find(e=>e.id===exId);
+    if(exObj&&typeof isCarry==='function'&&isCarry(exObj))continue; // Phase 53: carries excluded from volume (no kg×reps)
     const timed=exObj?isTimeBased(exObj):false;
     for(const s of ex.sets){
       if(timed)vol+=parseFloat(s.seconds)||0;

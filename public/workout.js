@@ -226,9 +226,13 @@ function buildExItem(ex,dayLog,prevSession,readonly){
   if(prevSession){
     const prevEx=prevSession.log[ex.id];
     if(prevEx?.sets?.length){
-      lastSummary=timed
-        ?prevEx.sets.filter(s=>s.seconds).map(s=>fmtSec(s.seconds)).join(', ')
-        :prevEx.sets.filter(s=>s.kg||s.reps).map(s=>`${s.kg||'-'}×${s.reps||'-'}`).join(', ');
+      if(typeof isCarry==='function'&&isCarry(ex)){ // Phase 53: "L 38s/R 35s" per set
+        lastSummary=prevEx.sets.filter(s=>s.leftSeconds!=null||s.rightSeconds!=null).map(s=>`L${s.leftSeconds||0}s/R${s.rightSeconds||0}s`).join(' · ');
+      }else{
+        lastSummary=timed
+          ?prevEx.sets.filter(s=>s.seconds).map(s=>fmtSec(s.seconds)).join(', ')
+          :prevEx.sets.filter(s=>s.kg||s.reps).map(s=>`${s.kg||'-'}×${s.reps||'-'}`).join(', ');
+      }
     }
   }
   const levelChip=_exLevelChip(ex.id);
@@ -1106,6 +1110,7 @@ function _wmMarkExerciseDone(){
 function renderWmSet(){
   const w=WORKOUTS[wm.session];
   const ex=w.exercises[wm.exIdx];
+  if(typeof isCarry==='function'&&isCarry(ex)){renderWmSetCarry();return;}
   const timed=isTimeBased(ex);
   if(timed){renderWmSetTimed();return;}
   const date=todayStr();
@@ -1233,30 +1238,39 @@ function renderWmSetTimed(){
   wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
 }
 
+// Phase 53: reusable count-up stopwatch primitives. Shared by the plank/hold
+// timer AND the suitcase-carry per-side timers (and any future timed move). They
+// only manage wmTimer state + the live tick on a display element; the CALLER owns
+// the button text/handler, so each flow advances how it likes.
+function _wmCountUpStart(displayId){
+  wmTimer.startedAt=Date.now();
+  wmTimer.running=true;
+  const d=document.getElementById(displayId);
+  if(d){d.classList.add('active');d.classList.remove('done');}
+  wmTimer.interval=setInterval(()=>{
+    const el=document.getElementById(displayId);
+    if(el)el.textContent=fmtSec(Math.floor((Date.now()-wmTimer.startedAt)/1000));
+  },100);
+}
+function _wmCountUpStop(displayId){
+  clearInterval(wmTimer.interval);
+  wmTimer.running=false;
+  const seconds=Math.floor((Date.now()-wmTimer.startedAt)/1000);
+  wmTimer.elapsed=seconds;
+  const d=document.getElementById(displayId);
+  if(d){d.textContent=fmtSec(seconds);d.classList.remove('active');d.classList.add('done');}
+  return seconds;
+}
+
 function wmToggleTimer(restSec){
   if(wmTimer.running){
-    // STOP
-    clearInterval(wmTimer.interval);
-    wmTimer.running=false;
-    const seconds=Math.floor((Date.now()-wmTimer.startedAt)/1000);
-    wmTimer.elapsed=seconds;
-    const display=document.getElementById('wm-hold-timer');
-    if(display){display.textContent=fmtSec(seconds);display.classList.remove('active');display.classList.add('done');}
+    _wmCountUpStop('wm-hold-timer');
     const btn=document.getElementById('wm-timer-btn');
     if(btn){btn.textContent='SET DONE';btn.className='wm-timer-start done';btn.onclick=()=>wmTimedSetDone(restSec);}
   }else{
-    // START
-    wmTimer.startedAt=Date.now();
-    wmTimer.running=true;
-    const display=document.getElementById('wm-hold-timer');
-    if(display){display.classList.add('active');display.classList.remove('done');}
+    _wmCountUpStart('wm-hold-timer');
     const btn=document.getElementById('wm-timer-btn');
     if(btn){btn.textContent='STOP';btn.className='wm-timer-start stop';}
-    wmTimer.interval=setInterval(()=>{
-      const elapsed=Math.floor((Date.now()-wmTimer.startedAt)/1000);
-      const d=document.getElementById('wm-hold-timer');
-      if(d)d.textContent=fmtSec(elapsed);
-    },100);
   }
 }
 
@@ -1279,6 +1293,152 @@ function wmTimedSetDone(restSec){
     renderWmTimedEffort();
   }else{
     wm.restTarget=restSec;
+    wm.mode='rest';
+    wm.restStarted=Date.now();
+    renderWmRest();
+  }
+}
+
+// ---- Phase 53: SUITCASE CARRY — timed per side, weight per side ----
+// Default weight per side + double-progression message: if every set hit the
+// target time on BOTH sides last session, suggest +1.25kg; else hold and chase
+// the time. The weight is only a default the user can override per side.
+function suggestCarry(exId,prevSession){
+  const ex=(typeof getAllExercises==='function')?getAllExercises().find(e=>e.id===exId):null;
+  const target=(ex&&ex.targetSeconds)||40;
+  const prev=prevSession&&prevSession.log&&prevSession.log[exId];
+  const sets=(prev&&Array.isArray(prev.sets))?prev.sets.filter(s=>s&&(s.leftSeconds!=null||s.rightSeconds!=null)):[];
+  if(!sets.length){
+    return {leftKg:'',rightKg:'',reason:`First time — pick a weight you can hold ~${fmtSec(target)} per side with a tall, level torso.`};
+  }
+  const last=sets[sets.length-1];
+  const prevLeftKg=last.leftKg!=null?last.leftKg:'';
+  const prevRightKg=last.rightKg!=null?last.rightKg:(prevLeftKg!==''?prevLeftKg:'');
+  const need=(ex&&ex.sets)||3;
+  const hitAll=sets.length>=need&&sets.every(s=>(s.leftSeconds||0)>=target&&(s.rightSeconds||0)>=target);
+  const inc=1.25;
+  const up=v=>v===''?'':Math.round((parseFloat(v)+inc)*4)/4;
+  if(hitAll){
+    return {leftKg:up(prevLeftKg),rightKg:up(prevRightKg),
+      reason:`✅ Hit ${fmtSec(target)} on both sides every set last time — go up ~${inc}kg.`};
+  }
+  return {leftKg:prevLeftKg,rightKg:prevRightKg,
+    reason:`Hold the weight and chase ${fmtSec(target)} on both sides, all sets — then we add weight.`};
+}
+
+function wmCarryStepKg(delta){
+  const el=document.getElementById('wm-carry-kg');
+  if(!el)return;
+  const cur=parseFloat(el.value)||0;
+  el.value=Math.max(0,Math.round((cur+delta)*4)/4);
+}
+
+function renderWmSetCarry(){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const target=ex.targetSeconds||40;
+  const set=dayLog[ex.id]?.sets?.[wm.setIdx]||{};
+  // Derive the side from what's already captured this set (robust to resume).
+  const side=(set.leftSeconds!=null&&set.rightSeconds==null)?'right':'left';
+  wm.carrySide=side;
+  wm.carrySeconds=0;
+  wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
+
+  const prev=getPreviousSessionData(date,wm.session);
+  const sug=(typeof suggestCarry==='function')?suggestCarry(ex.id,prev):null;
+  let defaultKg=(side==='left')
+    ? (set.leftKg!=null?set.leftKg:(sug?sug.leftKg:''))
+    : (set.rightKg!=null?set.rightKg:(set.leftKg!=null?set.leftKg:(sug?sug.rightKg:'')));
+  if(defaultKg==null)defaultKg='';
+
+  let setsHtml='';
+  for(let i=0;i<ex.sets;i++){
+    const s=dayLog[ex.id]?.sets?.[i]||{};
+    const lDone=s.leftSeconds!=null,rDone=s.rightSeconds!=null;
+    const isCur=i===wm.setIdx;
+    const val=(lDone||rDone)?`L${s.leftSeconds||0}/R${s.rightSeconds||0}`:'—';
+    setsHtml+=`<div class="wm-timer-set${isCur?' current':''}${lDone&&rDone?' completed':''}">
+      <span class="wm-timer-set-label">SET ${i+1}</span>
+      <span class="wm-timer-set-val">${val}</span>
+    </div>`;
+  }
+
+  const sideLabel=side==='left'?'LEFT SIDE':'RIGHT SIDE';
+  const sideColor=side==='left'?'var(--lime)':'var(--blue)';
+  document.getElementById('wmContent').innerHTML=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
+    <div class="wm-title" style="margin-top:6px;">${ex.name}</div>
+    <div class="wm-sub">Set ${wm.setIdx+1} of ${ex.sets} · target ${fmtSec(target)} per side</div>
+    <div style="display:flex;align-items:center;gap:10px;margin:8px 0 10px;flex-wrap:wrap;">
+      <a href="${ex.yt}" target="_blank" style="color:var(--blue);font-size:12px;text-decoration:none;">🎥 Watch form →</a>
+    </div>
+    ${(typeof _wmCueHTML==='function')?_wmCueHTML(ex.id):''}
+    ${sug&&sug.reason?`<div class="wm-progress-hint">${sug.reason}</div>`:''}
+    <div style="font-family:'Archivo Black',sans-serif;font-size:28px;color:${sideColor};letter-spacing:1px;text-align:center;margin:8px 0 4px;">${sideLabel}</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px;">
+      <span style="font-size:12px;color:var(--text3);">weight</span>
+      <button class="btn btn-ghost btn-sm" style="width:38px;" onclick="wmCarryStepKg(-1.25)">–</button>
+      <input id="wm-carry-kg" type="number" step="0.25" inputmode="decimal" value="${defaultKg}" placeholder="kg" style="width:84px;text-align:center;font-size:20px;font-family:'Archivo Black',sans-serif;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px;">
+      <button class="btn btn-ghost btn-sm" style="width:38px;" onclick="wmCarryStepKg(1.25)">+</button>
+      <span style="font-size:12px;color:var(--text3);">kg</span>
+    </div>
+    <div style="position:relative;text-align:center;padding:22px 0;">
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Archivo Black',sans-serif;font-size:70px;color:var(--text);opacity:.10;pointer-events:none;">${fmtSec(target)}</div>
+      <div id="wm-carry-timer" class="wm-hold-timer" style="position:relative;">0:00</div>
+    </div>
+    <div id="wm-timer-sets" style="margin-bottom:16px;">${setsHtml}</div>
+    <button id="wm-carry-btn" class="wm-timer-start" onclick="wmToggleCarryTimer()">START · ${sideLabel}</button>
+  `;
+}
+
+function wmToggleCarryTimer(){
+  const btn=document.getElementById('wm-carry-btn');
+  if(wmTimer.running){
+    wm.carrySeconds=_wmCountUpStop('wm-carry-timer');
+    if(btn){btn.textContent=(wm.carrySide==='left')?'NEXT — RIGHT SIDE →':'SET DONE ✓';btn.className='wm-timer-start done';btn.onclick=wmCarrySideDone;}
+  }else{
+    _wmCountUpStart('wm-carry-timer');
+    if(btn){btn.textContent='STOP';btn.className='wm-timer-start stop';}
+  }
+}
+
+function wmCarrySideDone(){
+  const w=WORKOUTS[wm.session];
+  const ex=w.exercises[wm.exIdx];
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const kg=parseFloat(document.getElementById('wm-carry-kg')?.value);
+  const seconds=wm.carrySeconds||0;
+  if(!dayLog[ex.id])dayLog[ex.id]={done:false,sets:[]};
+  while(dayLog[ex.id].sets.length<=wm.setIdx)dayLog[ex.id].sets.push({});
+  const set=dayLog[ex.id].sets[wm.setIdx]||{};
+  if(wm.carrySide==='left'){
+    set.leftKg=isNaN(kg)?'':kg; set.leftSeconds=seconds;
+    set.setStartedAt=set.setStartedAt||wm.setStartedAt||Date.now();
+    dayLog[ex.id].sets[wm.setIdx]=set;
+    saveExLogForDate(date,dayLog);
+    wm.carrySeconds=0;
+    wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
+    renderWmSetCarry(); // re-renders as RIGHT side
+    return;
+  }
+  // RIGHT side → set complete
+  set.rightKg=isNaN(kg)?'':kg; set.rightSeconds=seconds;
+  set.done=true; set.doneAt=Date.now(); set.setCompletedAt=Date.now();
+  dayLog[ex.id].sets[wm.setIdx]=set;
+  if(dayLog[ex.id].sets.filter(s=>s.done).length>=ex.sets)dayLog[ex.id].done=true;
+  saveExLogForDate(date,dayLog);
+  wm.carrySeconds=0; wm.carrySide='left';
+  wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
+  if(wm.setIdx>=ex.sets-1){
+    _wmMarkExerciseDone();
+    wm.mode='exDone';
+    renderWmExerciseDone();
+  }else{
+    wm.restTarget=ex.rest;
     wm.mode='rest';
     wm.restStarted=Date.now();
     renderWmRest();
@@ -1413,14 +1573,16 @@ function renderWmRest(){
   const w=WORKOUTS[wm.session];
   const ex=w.exercises[wm.exIdx];
   const timed=isTimeBased(ex);
+  const carry=(typeof isCarry==='function')&&isCarry(ex); // Phase 53
   const date=todayStr();
   const dayLog=getExLogForDate(date);
   const lastSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const effortEmoji={easy:'😌',solid:'💪',tough:'🔥',hard:'🔥',maybe:'🤔'};
-  const setDesc=timed?fmtSec(lastSet?.seconds||0):`${lastSet?.kg||'-'}kg × ${lastSet?.reps||'-'}`;
+  const setDesc=carry?`L ${lastSet?.leftSeconds||0}s · R ${lastSet?.rightSeconds||0}s`:timed?fmtSec(lastSet?.seconds||0):`${lastSet?.kg||'-'}kg × ${lastSet?.reps||'-'}`;
   // Phase 47: compute the next-set call from the set just done; store it so the
   // next set pre-fills, and show it UNDER the countdown so you load up in time.
-  const ar=_autoregNextSet(ex,lastSet,wm.setIdx+1);
+  // Phase 53: carries don't autoregulate (per-side time, no rep target).
+  const ar=carry?null:_autoregNextSet(ex,lastSet,wm.setIdx+1);
   if(ar)wm.autoReg={forSetIdx:wm.setIdx+1,kg:ar.kg,reps:ar.reps};
   const arColor=ar?(ar.dir==='up'?'var(--lime)':ar.dir==='down'?'#ffc107':'var(--blue)'):'';
   const arBg=ar?(ar.dir==='up'?'rgba(200,255,0,.08)':ar.dir==='down'?'rgba(255,193,7,.1)':'rgba(61,155,255,.08)'):'';
@@ -1566,15 +1728,18 @@ function renderWmExerciseDone(){
   const w=WORKOUTS[wm.session];
   const ex=w.exercises[wm.exIdx];
   const timed=isTimeBased(ex);
+  const carry=(typeof isCarry==='function')&&isCarry(ex); // Phase 53
   const date=todayStr();
   const dayLog=getExLogForDate(date);
   const sets=dayLog[ex.id]?.sets||[];
   const exEffort=dayLog[ex.id]?.effort;
-  const volume=timed?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
+  const volume=(timed||carry)?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
   const isLastEx=wm.exIdx>=w.exercises.length-1;
   const effortEmoji={easy:'😌',solid:'💪',tough:'🔥',hard:'🔥',maybe:'🤔'};
   const effortLabel={easy:'easy',hard:'hard',maybe:'maybe +5s'};
-  const subText=timed
+  const subText=carry
+    ?`${sets.filter(s=>s.done).length} sets · timed both sides`
+    :timed
     ?`${sets.filter(s=>s.done).length} sets${exEffort?' · effort: '+effortLabel[exEffort]:''}`
     :`${sets.filter(s=>s.done).length} sets · ${volume>0?volume.toFixed(0)+'kg total volume':''}`;
   const html=`
@@ -1584,7 +1749,7 @@ function renderWmExerciseDone(){
     <div class="wm-sub">${subText}</div>
     <div class="wm-h" style="margin-top:24px;">Sets</div>
     ${sets.filter(s=>s.done).map((s,i)=>{
-      const val=timed?fmtSec(s.seconds):`${s.kg}kg × ${s.reps}`;
+      const val=carry?`L ${s.leftSeconds||0}s · R ${s.rightSeconds||0}s`:timed?fmtSec(s.seconds):`${s.kg}kg × ${s.reps}`;
       return `<div class="wm-set-summary"><div>Set ${i+1}</div><div>${val}${s.effort?' '+effortEmoji[s.effort]:''}${s.restAfter?` · ${s.restAfter}s rest`:''}</div></div>`;
     }).join('')}
     <button class="wm-cta" style="margin-top:24px;" onclick="wmNextExercise()">${isLastEx?'FINISH WORKOUT 🎉':'NEXT EXERCISE →'}</button>
