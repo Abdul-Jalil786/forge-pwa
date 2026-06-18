@@ -1,0 +1,18 @@
+name: CI
+
+# Runs the test suite on every push and every pull request.
+# Warn-only: a red ✗ flags broken tests but does NOT block the Railway deploy.
+# (To make it blocking later, enable Railway's "Wait for CI" toggle — not done here.)
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
