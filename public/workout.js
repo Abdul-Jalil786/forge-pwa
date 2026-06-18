@@ -23,6 +23,7 @@ function renderWorkout(){
   const dateLabel=dateObj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'});
 
   let html=renderWeekStrip();
+  if(typeof renderPhaseBanner==='function')html+=renderPhaseBanner(false); // Phase 54
   html+=`<div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 14px;">
     <div>
       <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:700;">${isToday?'Today':isFuture?'Upcoming':'Past'}</div>

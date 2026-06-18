@@ -53,6 +53,39 @@ function trendDelta(values,days){
   return { dir, arrow, delta: Math.abs(change).toFixed(1) };
 }
 
+// Phase 54: active-phase banner — reads profile.activePhase (the single source of
+// truth). Shown on Today/Train/Body so it's always clear the current programming is
+// a Cut (not recomp/bulk). showToday=true also flags today's logged calories/protein
+// against the phase floors.
+function renderPhaseBanner(showToday){
+  const ap=(STATE.profile||{}).activePhase;
+  if(!ap||!ap.phase)return '';
+  const ph=String(ap.phase).toLowerCase();
+  const color=ph==='cut'?'var(--blue)':ph.includes('bulk')?'var(--orange)':ph.includes('recomp')?'var(--lime)':'var(--text2)';
+  const icon=ph==='cut'?'🔻':ph.includes('bulk')?'🔺':'⚖️';
+  let daysIn=null;
+  if(ap.startDate){daysIn=Math.floor((new Date(todayStr()+'T12:00:00')-new Date(ap.startDate+'T12:00:00'))/86400000)+1;if(daysIn<1)daysIn=1;}
+  const bf=(ap.targetBFLow!=null&&ap.targetBFHigh!=null)?` · ${ap.targetBFLow}–${ap.targetBFHigh}% BF`:'';
+  const sub=`${ap.calorieTarget} kcal · ${ap.proteinFloor}g+ protein · ${ap.startWeight||'?'}→${ap.goalWeight}kg${bf}`;
+  let flags='';
+  if(showToday&&typeof getTodayTotals==='function'){
+    const t=getTodayTotals();
+    const kcal=Math.round(t.cals||0),prot=Math.round(t.protein||0);
+    const warns=[];
+    if(kcal>0&&ap.calorieFloor&&kcal<ap.calorieFloor)warns.push(`⚠️ ${kcal} kcal today — under your ${ap.calorieFloor} floor (protect lean mass)`);
+    if(prot>0&&ap.proteinFloor&&prot<ap.proteinFloor)warns.push(`⚠️ protein ${prot}g today — under your ${ap.proteinFloor}g floor`);
+    if(warns.length)flags=`<div style="font-size:10px;color:var(--orange);margin-top:5px;line-height:1.5;">${warns.join('<br>')}</div>`;
+  }
+  return `<div style="background:var(--s2);border:1px solid ${color};border-radius:10px;padding:9px 12px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px;">
+    <div style="font-size:18px;line-height:1.1;">${icon}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:12px;font-weight:800;color:${color};text-transform:uppercase;letter-spacing:.5px;">${ap.phase}${daysIn?` · day ${daysIn}`:''}</div>
+      <div style="font-size:10px;color:var(--text2);line-height:1.45;">${sub}</div>
+      ${flags}
+    </div>
+  </div>`;
+}
+
 function renderToday(){
   const p=getActive(); if(!p)return;
   const session=getTodaySession();
@@ -131,6 +164,7 @@ function renderToday(){
   const fatMassSpark = fatMassSparkArr.length >= 2 ? spark(fatMassSparkArr, 'var(--orange)') : '';
 
   document.getElementById('page-today').innerHTML=`
+    ${renderPhaseBanner(true)}
     <div style="margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;">
         <div>
@@ -633,7 +667,7 @@ function renderTodaysPlan(){
   return `
     <div class="sec-label">Today's Plan${plan.name?' — '+plan.name:''}</div>
     <div class="card" style="margin-bottom:10px;border-color:var(--lime);background:linear-gradient(135deg,rgba(200,255,0,.04),transparent);">
-      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${plan.meals.length} meals · ${totalCals} kcal · ${totalP}g protein · tap a meal for details</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${plan.meals.length} meals · ${totalCals} kcal · ${totalP}g protein${(()=>{const ap=(STATE.profile||{}).activePhase;if(!ap||!ap.calorieTarget)return '';const d=totalCals-ap.calorieTarget;const big=Math.abs(d)>100;return ` · <span style="color:${big?'var(--orange)':'var(--text3)'};">${d>=0?'+':''}${d} vs ${ap.phase} target ${ap.calorieTarget}${big?' ⚠️':''}</span>`;})()} · tap a meal for details</div>
       ${plan.meals.map(m=>{
         const ings=getMealIngredients(m);
         const supps=getMealSupplements(m);
@@ -807,7 +841,7 @@ function _renderMealDetail(){
             <div onclick="openIngredientEdit(${i})" style="flex:1;font-size:13px;color:${dim?'var(--text3)':'var(--text)'};${dim?'text-decoration:line-through;':''}cursor:pointer;">${ing.name}${ing.edited?' <span style="font-size:10px;color:var(--orange);">✏️</span>':''}</div>
             <div style="font-size:11px;color:var(--text3);flex-shrink:0;text-align:right;">${dim?'—':`${ingCals} kcal`}</div>
           </div>
-          <div style="font-size:10px;color:var(--text3);margin-bottom:8px;">${dim?'skipped':`${ingP}g P · ${ingC}g C · ${ingF}g F`}${(()=>{const gi=(typeof estimateGI==='function')?estimateGI(ing.name):null;return (gi&&gi.label)?` · <span style="color:${gi.band==='high'?'var(--red)':gi.band==='moderate'?'var(--orange)':'var(--green)'};">${gi.label}</span>`:'';})()}</div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:8px;">${dim?'skipped':`${ingP}g P · ${ingC}g C · ${ingF}g F`}${(()=>{let gi=null;if(ing.gi){const b=ing.gi;gi={band:b,label:b==='high'?'🔴 Higher GI':b==='moderate'?'🟡 Moderate GI':'🟢 Low GI'};}else if(typeof estimateGI==='function')gi=estimateGI(ing.name);return (gi&&gi.label)?` · <span style="color:${gi.band==='high'?'var(--red)':gi.band==='moderate'?'var(--orange)':'var(--green)'};">${gi.label}</span>`:'';})()}</div>
           <div style="display:flex;gap:4px;">
             ${PORTION_OPTIONS.map(opt=>{
               const active=Math.abs((q||0)-opt.qty)<0.01;
@@ -2073,6 +2107,7 @@ function renderBody(){
   const allSwims=Object.entries(swimLog).flatMap(([date,entries])=>entries.map(e=>({...e,date}))).sort((a,b)=>b.date.localeCompare(a.date));
 
   document.getElementById('page-body').innerHTML=`
+    ${renderPhaseBanner(false)}
     <div class="pg-title" style="margin-bottom:14px;">Body & Health</div>
 
     ${renderWhereYouStand()}

@@ -727,6 +727,124 @@ async function seedJayMealPlanV10() {
   }
 }
 
+// Phase 54: Abdul's CUT — 5-meal plan (~2,200 kcal / 244P/145C/77F) + a structured
+// active-phase record on the profile (the single source of truth for the current
+// programming, shown in a banner and editable later). Targets jay@afjltd.co.uk
+// (the owner account, displayed as "Abdul").
+async function seedAbdulCutV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.abdulCutV1Seeded) return;
+
+    const L = "low", M = "moderate"; // GI bands (explicit per spec)
+    const plan = {
+      name: "Cut — 2,200 kcal · 244P/145C/77F",
+      meals: [
+        {
+          id: "breakfast", name: "Breakfast: Eggs, Avocado, Yoghurt & Oats", time: "12:00",
+          cals: 710, protein: 59, carbs: 41, fat: 35,
+          ingredients: [
+            { name: "3 whole eggs boiled + 4 egg whites", cals: 283, protein: 32, carbs: 1, fat: 15, gi: L },
+            { name: "200g Greek yoghurt 0%", cals: 114, protein: 20, carbs: 8, fat: 0, gi: L },
+            { name: "15g rolled oats", cals: 57, protein: 2, carbs: 10, fat: 1, gi: M },
+            { name: "80g mixed berries", cals: 38, protein: 1, carbs: 8, fat: 0, gi: L },
+            { name: "1/2 avocado", cals: 160, protein: 2, carbs: 9, fat: 15, gi: L },
+            { name: "1 tbsp chia seeds", cals: 58, protein: 2, carbs: 5, fat: 4, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "pre-workout", name: "Pre-workout: Chicken, Basmati & Broccoli", time: "15:00",
+          cals: 551, protein: 69, carbs: 38, fat: 13,
+          ingredients: [
+            { name: "200g chicken breast grilled", cals: 330, protein: 62, carbs: 0, fat: 7, gi: L },
+            { name: "100g cooked basmati rice", cals: 130, protein: 3, carbs: 28, fat: 0, gi: M },
+            { name: "150g broccoli", cals: 51, protein: 4, carbs: 10, fat: 1, gi: L },
+            { name: "1 tsp olive oil", cals: 40, protein: 0, carbs: 0, fat: 5, gi: L },
+          ],
+          supplements: [{ id: "supp-coq10", name: "CoQ10", dose: "2 caps (200mg)" }],
+        },
+        {
+          id: "post-shake", name: "Post-workout shake", time: "17:00",
+          cals: 215, protein: 28, carbs: 18, fat: 3,
+          ingredients: [
+            { name: "1 scoop whey + water + 100g blueberries + 5g creatine", cals: 215, protein: 28, carbs: 18, fat: 3, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "dinner", name: "Post-workout dinner: Chicken, Rice & Big Salad", time: "17:30",
+          cals: 432, protein: 52, carbs: 30, fat: 11,
+          ingredients: [
+            { name: "150g chicken breast grilled", cals: 248, protein: 47, carbs: 0, fat: 5, gi: L },
+            { name: "50g cooked basmati rice", cals: 65, protein: 1, carbs: 14, fat: 0, gi: M },
+            { name: "Big salad: 60g mixed leaves + 100g cucumber + 100g cherry tomatoes + 50g grated carrot + 50g pepper, balsamic + lemon (no oil)", cals: 79, protein: 4, carbs: 16, fat: 1, gi: L },
+            { name: "1 tsp olive oil on salad", cals: 40, protein: 0, carbs: 0, fat: 5, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "evening", name: "Evening: Greek Yoghurt & Almonds", time: "19:30",
+          cals: 344, protein: 36, carbs: 18, fat: 15,
+          ingredients: [
+            { name: "300g Greek yoghurt 0%", cals: 171, protein: 30, carbs: 12, fat: 0, gi: L },
+            { name: "30g almonds", cals: 173, protein: 6, carbs: 6, fat: 15, gi: L },
+          ],
+          supplements: [],
+        },
+      ],
+    };
+
+    // Pull starting weight from the latest body entry (fallback 112).
+    const wl: any[] = Array.isArray(state.weightLog) ? state.weightLog : [];
+    const latestW = wl.length ? (parseFloat(wl[wl.length - 1].weight) || 112) : 112;
+    const startW = Math.round(latestW * 10) / 10;
+    const TODAY = "2026-06-18";
+
+    const pf: any = state.profile || (state.profile = {});
+    // Canonical active-phase record — source of truth for the banner + future edits.
+    pf.activePhase = {
+      phase: "Cut",
+      startDate: TODAY,
+      calorieTarget: 2200,
+      proteinFloor: 200,
+      calorieFloor: 1900,
+      startWeight: startW,
+      goalWeight: 93,
+      targetBFLow: 15,
+      targetBFHigh: 18,
+      updatedAt: new Date().toISOString(),
+    };
+    // Sync the fields the rest of the app already reads, so nothing diverges.
+    pf.phase = "cut";
+    pf.personal = pf.personal || {};
+    pf.personal.phase = "cut";
+    pf.targetWeight = 93;
+    pf.startWeight = startW;
+    pf.targetBF = 18;
+    pf.proteinFloor = 200;
+    pf.targetOverrides = pf.targetOverrides || {};
+    pf.targetOverrides.calorieFloor = 1900;
+    // Display targets so the Today page matches the cut (plan macros, calories at the 2,200 target).
+    const dt = { calories: 2200, protein: 244, carbs: 145, fat: 77 };
+    pf.dynamicTargets = { rest: { ...dt }, upper: { ...dt }, lower: { ...dt } };
+    pf.calsRest = 2200; pf.calsGym = 2200;
+    pf.macros = { protein: 244, carbs: 145, fat: 77 };
+
+    state.mealPlan = plan;
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    state.eatingWindow = "12:00 to 20:00 UK";
+    pf.eatingWindow = { enabled: true, start: 12, end: 20 };
+    state.abdulCutV1Seeded = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Abdul CUT seeded — 5-meal plan (~2,200 kcal) + activePhase record");
+  } catch (err) {
+    console.error("[migration] Abdul CUT seed failed:", err);
+  }
+}
+
 // Phase 41g: advance Jay to retinol Phase 3 (every-2-days = every other day).
 // Mirrors data.js setSkinPhase(3). Re-frequencies retinol + cicaplast products
 // and stamps a fresh phaseStartDate so the 3-week tolerance clock starts today.
@@ -1167,6 +1285,7 @@ const server = app.listen(PORT, async () => {
   await seedJayTapeReminderV1();
   await seedJayMealPlanV9();
   await seedJayMealPlanV10();
+  await seedAbdulCutV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
   // ~a week has elapsed with no report, never a spurious mid-week one.
