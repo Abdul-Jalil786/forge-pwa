@@ -2115,6 +2115,47 @@ function renderWhereYouStand(){
 // ============================================================
 // BODY PAGE (Measurements + Sleep)
 // ============================================================
+// Phase 55: Health Records timeline — DEXA scans + blood panels as one connected
+// list (the coach reads the underlying numbers). Built from dexaScans + bloodMarkers
+// (grouped by date) + healthRecords metadata.
+function renderHealthRecords(){
+  if(typeof isOwner==='function'&&!isOwner())return ''; // Phase 55: owner-only (admin)
+  const dexa=(typeof getDexaScans==='function')?getDexaScans():[];
+  const bm=(STATE.profile&&Array.isArray(STATE.profile.bloodMarkers))?STATE.profile.bloodMarkers:[];
+  const recs=(typeof getHealthRecords==='function')?getHealthRecords():[];
+  const rows=[];
+  dexa.forEach(s=>{
+    const meta=recs.find(r=>r.type==='dexa'&&r.date===s.date);
+    rows.push({type:'dexa',date:s.date,title:'DEXA scan',
+      summary:[s.bodyFatPct!=null?`${s.bodyFatPct}% BF`:'',s.leanMass!=null?`${s.leanMass}kg lean`:'',s.vatCm2!=null?`VAT ${s.vatCm2}cm²`:''].filter(Boolean).join(' · ')||'body composition',
+      provider:(meta&&meta.provider)||s.provider||''});
+  });
+  Array.from(new Set(bm.map(m=>m.date).filter(Boolean))).forEach(d=>{
+    const panel=bm.filter(m=>m.date===d);
+    const flagged=panel.filter(m=>m.value!=null&&((m.refLow!=null&&Number(m.value)<m.refLow)||(m.refHigh!=null&&Number(m.value)>m.refHigh))).length;
+    const meta=recs.find(r=>r.type==='bloods'&&r.date===d);
+    rows.push({type:'bloods',date:d,title:'Blood test',summary:`${panel.length} markers${flagged?` · ${flagged} flagged`:''}`,provider:(meta&&meta.provider)||''});
+  });
+  rows.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  const list=rows.length?rows.map(r=>{
+    const icon=r.type==='dexa'?'🦴':'🩸';
+    const dl=r.date?new Date(r.date+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';
+    return `<div class="card" style="margin-bottom:6px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
+      <div style="font-size:18px;">${icon}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:700;">${r.title} · ${dl}</div>
+        <div style="font-size:10px;color:var(--text2);">${r.summary}${r.provider?` · ${r.provider}`:''}</div>
+      </div>
+    </div>`;
+  }).join(''):`<div class="card" style="padding:14px;text-align:center;color:var(--text3);font-size:12px;">No records yet. Add a blood test or DEXA scan — the coach factors them into its advice.</div>`;
+  return `<div class="sec-label" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Health Records</span>
+      <button class="btn btn-ghost btn-sm" onclick="openHealthAdd()">+ Add record</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:8px;line-height:1.5;">Blood tests + DEXA scans as one connected picture the AI coach reads — bloods &amp; body composition are metabolically linked (HbA1c · ALT · visceral fat · lean mass).</div>
+    ${list}`;
+}
+
 function renderBody(){
   const measLog=getMeasLog();
   const latest=getLatestMeas();
@@ -2129,6 +2170,8 @@ function renderBody(){
     <div class="pg-title" style="margin-bottom:14px;">Body & Health</div>
 
     ${renderWhereYouStand()}
+
+    ${renderHealthRecords()}
 
     <div class="sec-label">Measurements</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">

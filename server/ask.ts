@@ -7,7 +7,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { decrypt } from "./crypto-util";
-import { buildContext, HAIKU_MODEL } from "./ai-coach";
+import { buildContext, HAIKU_MODEL, MODEL } from "./ai-coach";
 
 export interface AskAnswer {
   status: "green" | "amber" | "red";
@@ -235,6 +235,119 @@ export async function estimateFood(userId: string, description: string): Promise
     protein: clamp(f.protein),
     carbs: clamp(f.carbs),
     fat: clamp(f.fat),
+  };
+}
+
+// Phase 55: Health Records — one-time AI extraction of a pasted lab report / DEXA
+// scan into structured items, EACH with the verbatim source snippet it was read
+// from (so the user verifies before saving) + a confidence flag, and conflicts
+// surfaced (never auto-picked) when the source disagrees with itself.
+export interface HealthExtraction {
+  recordType: "bloods" | "dexa";
+  date: string | null;
+  provider: string | null;
+  items: Array<{ name: string; key?: string; value: string; unit: string; refLow: number | null; refHigh: number | null; category: string; snippet: string; confidence: "high" | "low" }>;
+  conflicts: Array<{ name: string; candidates: Array<{ value: string; unit: string; snippet: string }>; note: string }>;
+}
+
+const EXTRACT_SYSTEM = `You extract EXACT medical values from a pasted lab report or DEXA scan into structured data for a health-records tracker. This is medical data — accuracy and verifiability matter more than completeness.
+
+HARD RULES:
+- Extract values EXACTLY as written. Never invent, round, or infer a value that isn't in the text. Keep symbols like ">90" or "<0.78" verbatim in value.
+- For EVERY item, "snippet" must be the VERBATIM phrase or line from the source you read the value from (copy it exactly, max ~120 chars). The user verifies each number against this snippet, so it must be a real quote, not a paraphrase.
+- Set "confidence":"low" if the value is ambiguous, hard to read, split across lines, unlabelled, or you are inferring/converting. Otherwise "high".
+- CONFLICTS: if the SAME marker/field appears with DIFFERENT values in the source (e.g. a summary table and a doctor's letter disagree), DO NOT pick one. OMIT it from "items" and add it to "conflicts" with EVERY candidate value and each one's verbatim snippet. The user chooses.
+- Extract the sample/scan "date" (YYYY-MM-DD) and "provider" if present.
+
+BLOODS: each item = one lab marker — name, value, unit, refLow/refHigh (reference-range numbers, null if one-sided/absent), category (e.g. "Liver","Diabetes","Hormones","Lipids","FBC"), snippet, confidence.
+DEXA: each item is a body-composition figure. Set "key" from this set where it applies: bodyFatPct, fatMass, leanMass, boneMass, vatCm2, bmdTotal, tScore, zScore, lmi, almi, fmi, androidFatPct, gynoidFatPct, weight. "name" = human label.`;
+
+export async function extractHealthRecord(userId: string, text: string, type: "bloods" | "dexa"): Promise<HealthExtraction> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  if (!state.coachingKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(state.coachingKey); } catch { throw new Error("Failed to decrypt stored API key"); }
+
+  const numOrNull = { type: ["number", "null"] as any };
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: MODEL, // Opus 4.8 — accuracy + verbatim quoting on medical extraction
+    max_tokens: 4000,
+    system: EXTRACT_SYSTEM,
+    tools: [{
+      name: "submit_extraction",
+      description: "Submit the extracted record.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          recordType: { type: "string", enum: ["bloods", "dexa"] },
+          date: { type: "string", description: "Sample/scan date YYYY-MM-DD, or empty." },
+          provider: { type: "string" },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                key: { type: "string", description: "DEXA field key, if applicable." },
+                value: { type: "string", description: "Value exactly as written (keep > or < symbols)." },
+                unit: { type: "string" },
+                refLow: numOrNull,
+                refHigh: numOrNull,
+                category: { type: "string" },
+                snippet: { type: "string", description: "Verbatim source text, max ~120 chars." },
+                confidence: { type: "string", enum: ["high", "low"] },
+              },
+              required: ["name", "value", "unit", "snippet", "confidence"],
+            },
+          },
+          conflicts: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                candidates: { type: "array", items: { type: "object", properties: { value: { type: "string" }, unit: { type: "string" }, snippet: { type: "string" } }, required: ["value", "snippet"] } },
+                note: { type: "string" },
+              },
+              required: ["name", "candidates"],
+            },
+          },
+        },
+        required: ["recordType", "items", "conflicts"],
+      },
+    }],
+    tool_choice: { type: "tool", name: "submit_extraction" },
+    messages: [{ role: "user", content: `Record type: ${type}\n\nSOURCE:\n${text.slice(0, 24000)}` }],
+  });
+
+  const toolBlock: any = response.content.find((b: any) => b.type === "tool_use" && b.name === "submit_extraction");
+  if (!toolBlock) throw new Error("Model did not return an extraction");
+  const x = toolBlock.input || {};
+  const s = (v: any, n: number) => String(v == null ? "" : v).slice(0, n);
+  const items = Array.isArray(x.items) ? x.items.slice(0, 120).map((it: any) => ({
+    name: s(it.name, 120),
+    key: it.key ? s(it.key, 40) : undefined,
+    value: s(it.value, 40),
+    unit: s(it.unit, 30),
+    refLow: typeof it.refLow === "number" ? it.refLow : null,
+    refHigh: typeof it.refHigh === "number" ? it.refHigh : null,
+    category: s(it.category, 40),
+    snippet: s(it.snippet, 160),
+    confidence: it.confidence === "low" ? "low" as const : "high" as const,
+  })) : [];
+  const conflicts = Array.isArray(x.conflicts) ? x.conflicts.slice(0, 40).map((c: any) => ({
+    name: s(c.name, 120),
+    candidates: Array.isArray(c.candidates) ? c.candidates.slice(0, 6).map((cd: any) => ({ value: s(cd.value, 40), unit: s(cd.unit, 30), snippet: s(cd.snippet, 160) })) : [],
+    note: s(c.note, 200),
+  })) : [];
+  return {
+    recordType: x.recordType === "dexa" ? "dexa" : "bloods",
+    date: (typeof x.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x.date)) ? x.date : null,
+    provider: x.provider ? s(x.provider, 120) : null,
+    items, conflicts,
   };
 }
 

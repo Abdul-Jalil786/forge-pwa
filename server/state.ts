@@ -758,6 +758,40 @@ router.put("/dexa-scans", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// Phase 55: Health Records — document metadata + source text for the Body-page
+// timeline. The extracted numbers live in profile.bloodMarkers / state.dexaScans
+// (which the coach reads); this just holds the source markdown + provider/title.
+router.put("/health-records", requireAuth, requireOwnerCheck, async (req: Request, res: Response) => {
+  try {
+    const { healthRecords } = req.body || {};
+    if (!Array.isArray(healthRecords)) { res.status(400).json({ error: "healthRecords must be an array" }); return; }
+    if (healthRecords.length > 200) { res.status(400).json({ error: "max 200 records" }); return; }
+    const clean = healthRecords.slice(0, 200).map((r: any) => {
+      if (!r || typeof r !== "object") return null;
+      return {
+        id: String(r.id || ("hr_" + Math.random().toString(36).slice(2))).slice(0, 40),
+        type: r.type === "dexa" ? "dexa" : "bloods",
+        date: (typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) ? r.date : "",
+        provider: String(r.provider || "").slice(0, 120),
+        title: String(r.title || "").slice(0, 160),
+        sourceText: String(r.sourceText || "").slice(0, 20000),
+        addedAt: String(r.addedAt || new Date().toISOString()).slice(0, 40),
+      };
+    }).filter(Boolean);
+    const valueJson = JSON.stringify(clean);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{healthRecords}', ${valueJson}::jsonb, true),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true, count: clean.length });
+  } catch (err) {
+    console.error("Put health-records error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 41l: blood pressure log (array of readings, full-array PUT pattern)
 router.put("/bp-log", requireAuth, async (req: Request, res: Response) => {
   try {

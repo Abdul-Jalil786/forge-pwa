@@ -187,6 +187,7 @@ let STATE = {
   cardioLog: {},
   bpLog: [],
   dexaScans: [],
+  healthRecords: [],
   stretchLog: {},
   stretchStreak: { morning: 0, evening: 0, flexibility: 0, combined: 0, lastMorningDate: null, lastEveningDate: null, lastFlexibilityDate: null },
 };
@@ -2268,6 +2269,27 @@ function deleteDexaScan(id){
   updateLocalCache();
   saveFieldToServer('/api/state/dexa-scans',{dexaScans:arr});
 }
+
+// Phase 55: Health Records — document wrappers (source text + provider/title) for
+// the Body-page timeline. The extracted NUMBERS live in bloodMarkers / dexaScans.
+function getHealthRecords(){const a=pGet('healthRecords',[]);return Array.isArray(a)?a:[];}
+function saveHealthRecords(arr){STATE.healthRecords=arr;updateLocalCache();saveFieldToServer('/api/state/health-records',{healthRecords:arr});}
+function addHealthRecord(rec){
+  const a=getHealthRecords();
+  const entry={
+    id:'hr_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+    type:rec.type==='dexa'?'dexa':'bloods',
+    date:rec.date||todayStr(),
+    provider:String(rec.provider||'').slice(0,120),
+    title:String(rec.title||'').slice(0,160),
+    sourceText:String(rec.sourceText||'').slice(0,20000),
+    addedAt:new Date().toISOString(),
+  };
+  a.push(entry);
+  saveHealthRecords(a);
+  return entry;
+}
+function deleteHealthRecord(id){saveHealthRecords(getHealthRecords().filter(r=>r&&r.id!==id));}
 
 // ---- Phase 41l: Blood pressure tracking (LVH-aware) ----
 const BP_TARGET_SYS=130, BP_TARGET_DIA=80; // ACC/AHA target for LVH / elevated CV risk

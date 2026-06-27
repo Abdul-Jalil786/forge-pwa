@@ -7,7 +7,7 @@ import { analyzeNutrition } from "./nutrition";
 // clearer writing — exactly what a coaching report needs). Forced tool_choice is
 // kept for reliable structured output, so adaptive thinking is not enabled here
 // (the two are incompatible on this SDK version).
-const MODEL = "claude-opus-4-8";
+export const MODEL = "claude-opus-4-8";
 const MAX_TOKENS = 5000;
 
 function ukToday(): string {
@@ -828,11 +828,21 @@ export function buildContext(state: any): string {
 
   // Phase 29a: blood markers — clinical context for every coaching decision
   if (bloodMarkers.length > 0) {
+    // Phase 55: panel-aware. Show ONLY the latest panel's markers (so multiple
+    // panels don't duplicate/bloat), and annotate flagged markers with their most
+    // recent earlier value for trend.
     const latestDate = bloodMarkers.reduce((d: string, m: any) => m.date && m.date > d ? m.date : d, "");
-    lines.push(`BLOOD MARKERS (most recent panel: ${latestDate || "unknown date"}):`);
+    const latest = latestDate ? bloodMarkers.filter((m: any) => m.date === latestDate) : bloodMarkers;
+    const priorDates = Array.from(new Set(bloodMarkers.map((m: any) => m.date).filter((d: string) => d && d !== latestDate))).sort().reverse();
+    const priorOf = (name: string): any => {
+      const hits = bloodMarkers.filter((m: any) => m.name === name && m.date && m.date < latestDate)
+        .sort((a: any, b: any) => String(b.date).localeCompare(String(a.date)));
+      return hits[0] || null;
+    };
+    lines.push(`BLOOD MARKERS (latest panel: ${latestDate || "unknown date"}${priorDates.length ? `; ${priorDates.length} earlier panel(s) on ${priorDates.join(", ")} — trend the flagged markers` : ""}):`);
     const flagged: any[] = [];
     const inRange: any[] = [];
-    for (const m of bloodMarkers) {
+    for (const m of latest) {
       const v = m.value;
       if (v == null) continue;
       let status = "in range";
@@ -845,7 +855,9 @@ export function buildContext(state: any): string {
       lines.push("  OUT OF RANGE (factor these into every recommendation):");
       for (const m of flagged) {
         const refStr = m.refLow != null && m.refHigh != null ? `${m.refLow}-${m.refHigh}` : m.refLow != null ? `>${m.refLow}` : m.refHigh != null ? `<${m.refHigh}` : "?";
-        lines.push(`    - ${m.name}: ${m.value}${m.unit ? ` ${m.unit}` : ""} [${m.status}, ref ${refStr}]${m.notes ? ` — ${m.notes}` : ""}`);
+        const p = priorOf(m.name);
+        const trend = p && p.value != null ? ` (was ${p.value}${p.unit ? ` ${p.unit}` : ""} on ${p.date})` : "";
+        lines.push(`    - ${m.name}: ${m.value}${m.unit ? ` ${m.unit}` : ""} [${m.status}, ref ${refStr}]${trend}${m.notes ? ` — ${m.notes}` : ""}`);
       }
     }
     if (inRange.length > 0) {

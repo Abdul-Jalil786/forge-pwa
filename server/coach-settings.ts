@@ -4,7 +4,7 @@ import prisma from "./db";
 import { requireAuth, requireOwnerCheck } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection, buildContext } from "./ai-coach";
-import { answerQuestion, estimateFood } from "./ask";
+import { answerQuestion, estimateFood, extractHealthRecord } from "./ask";
 
 const router = Router();
 
@@ -282,6 +282,25 @@ router.post("/estimate-food", requireAuth, aiBudget(), async (req: Request, res:
   } catch (err: any) {
     console.error("Estimate food error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to estimate" });
+  }
+});
+
+// Phase 55: Health Records — one-time AI extraction of a pasted lab/DEXA record.
+// Returns structured items w/ verbatim snippets + confidence + surfaced conflicts.
+router.post("/extract-record", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+  try {
+    const text = typeof req.body?.text === "string" ? req.body.text : "";
+    const type = req.body?.type === "dexa" ? "dexa" : "bloods";
+    if (text.trim().length < 20) { res.status(400).json({ error: "Paste the record text first (at least 20 characters)" }); return; }
+    if (text.length > 30000) { res.status(400).json({ error: "Record too long (max 30,000 characters)" }); return; }
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    if (!st.coachingKey) { res.status(400).json({ error: "No API key configured — add it in More" }); return; }
+    const extraction = await extractHealthRecord(req.userId as string, text, type);
+    res.json({ success: true, extraction });
+  } catch (err: any) {
+    console.error("Extract record error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to extract" });
   }
 });
 

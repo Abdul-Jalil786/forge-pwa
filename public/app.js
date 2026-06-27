@@ -1930,6 +1930,119 @@ function confirmReset(){
 // ============================================================
 // PHASE 41o — DEXA SCAN LOG
 // ============================================================
+// ---- Phase 55: HEALTH RECORDS — AI paste-and-extract with verify-before-save ----
+let _hrState={type:'bloods',extraction:null,text:''};
+function openHealthAdd(){
+  _hrState={type:'bloods',extraction:null,text:''};
+  const t=document.getElementById('hr-text'); if(t)t.value='';
+  const r=document.getElementById('health-review'); if(r)r.innerHTML='';
+  const f=document.getElementById('health-add-form'); if(f)f.style.display='';
+  setHealthType('bloods');
+  openModal('modal-health-add');
+}
+function setHealthType(type){
+  _hrState.type=(type==='dexa')?'dexa':'bloods';
+  const b=document.getElementById('hr-type-bloods'),d=document.getElementById('hr-type-dexa');
+  if(b)b.className='btn btn-sm'+(_hrState.type==='bloods'?' btn-lime':' btn-ghost');
+  if(d)d.className='btn btn-sm'+(_hrState.type==='dexa'?' btn-lime':' btn-ghost');
+}
+function openHealthManual(){
+  closeModal('modal-health-add');
+  if(_hrState.type==='dexa')openDexaEdit(null);
+  else openBloodMarkerEdit(null);
+}
+async function runHealthExtract(){
+  const text=(document.getElementById('hr-text')?.value||'').trim();
+  if(text.length<20){showToast('Paste the report text first');return;}
+  _hrState.text=text;
+  const review=document.getElementById('health-review');
+  if(review)review.innerHTML='<div style="text-align:center;color:var(--lime);padding:16px;font-size:13px;">✨ Reading the record carefully… (10–25s)</div>';
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/coach/extract-record',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},body:JSON.stringify({text,type:_hrState.type})});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok){if(review)review.innerHTML='';showToast(data.error||'Extraction failed');return;}
+    _hrState.extraction=data.extraction;
+    renderHealthReview(data.extraction);
+  }catch{if(review)review.innerHTML='';showToast('Extraction failed (offline?)');}
+}
+function renderHealthReview(x){
+  document.getElementById('health-add-form').style.display='none';
+  let h=`<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:12px;">
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Review — check each value against its source before saving</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+      <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:3px;">Date</div>
+        <input id="hr-date" type="date" value="${x.date||todayStr()}" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"></div>
+      <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:3px;">Provider</div>
+        <input id="hr-provider" type="text" value="${_esc(x.provider||'')}" placeholder="e.g. The Bloodwork Group" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"></div>
+    </div>`;
+  if(x.conflicts&&x.conflicts.length){
+    h+=`<div style="background:rgba(255,85,0,.08);border:1px solid var(--orange);border-radius:8px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:700;color:var(--orange);margin-bottom:8px;">⚠️ ${x.conflicts.length} conflict${x.conflicts.length>1?'s':''} — the source disagrees with itself. Pick which value to use:</div>`;
+    x.conflicts.forEach((c,ci)=>{
+      h+=`<div style="margin-bottom:10px;"><div style="font-size:12px;font-weight:600;margin-bottom:4px;">${_esc(c.name)}</div>`;
+      (c.candidates||[]).forEach((cd,di)=>{
+        h+=`<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;margin-bottom:5px;cursor:pointer;">
+          <input type="radio" name="hrc-${ci}" value="${di}" style="margin-top:3px;flex-shrink:0;">
+          <span><b>${_esc(cd.value)}${cd.unit?' '+_esc(cd.unit):''}</b><br><span style="font-size:10px;color:var(--text3);">source: “${_esc(cd.snippet)}”</span></span>
+        </label>`;
+      });
+      if(c.note)h+=`<div style="font-size:10px;color:var(--text3);margin-top:2px;">${_esc(c.note)}</div>`;
+      h+=`</div>`;
+    });
+    h+=`</div>`;
+  }
+  h+=`<div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">${x.items.length} value${x.items.length===1?'':'s'} — tap to correct any before saving</div>`;
+  x.items.forEach((it,i)=>{
+    const ref=(it.refLow!=null&&it.refHigh!=null)?`${it.refLow}–${it.refHigh}`:(it.refLow!=null?`>${it.refLow}`:(it.refHigh!=null?`<${it.refHigh}`:''));
+    const low=it.confidence==='low';
+    h+=`<div style="border:1px solid ${low?'var(--orange)':'var(--border)'};border-radius:8px;padding:8px 10px;margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div style="font-size:12px;font-weight:600;flex:1;min-width:0;">${_esc(it.name)}${it.category?` <span style="font-size:9px;color:var(--text3);">· ${_esc(it.category)}</span>`:''}</div>
+        <input id="hr-iv-${i}" type="text" value="${_esc(it.value)}" style="width:78px;text-align:center;padding:6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-weight:700;">
+        <span style="font-size:11px;color:var(--text3);min-width:34px;">${_esc(it.unit)}</span>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4;">${ref?`ref ${ref} · `:''}source: “${_esc(it.snippet)}”${low?'<span style="color:var(--orange);font-weight:700;"> · ⚠ verify (low confidence)</span>':''}</div>
+    </div>`;
+  });
+  h+=`<button class="btn btn-lime btn-full" style="margin-top:8px;" onclick="saveHealthRecord()">Save record</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:6px;" onclick="document.getElementById('health-add-form').style.display='';document.getElementById('health-review').innerHTML='';">← Back / re-paste</button>
+  </div>`;
+  document.getElementById('health-review').innerHTML=h;
+}
+async function saveHealthRecord(){
+  const x=_hrState.extraction; if(!x)return;
+  const date=document.getElementById('hr-date')?.value||todayStr();
+  const provider=document.getElementById('hr-provider')?.value||'';
+  const items=x.items.map((it,i)=>({...it,value:(document.getElementById('hr-iv-'+i)?.value||it.value)}));
+  if(x.conflicts&&x.conflicts.length){
+    for(let ci=0;ci<x.conflicts.length;ci++){
+      const sel=document.querySelector('input[name="hrc-'+ci+'"]:checked');
+      if(!sel){showToast('Resolve the conflict(s) first — pick a value');return;}
+      const c=x.conflicts[ci],cd=(c.candidates||[])[+sel.value];
+      if(cd)items.push({name:c.name,value:cd.value,unit:cd.unit,refLow:null,refHigh:null,category:'',snippet:cd.snippet,confidence:'high'});
+    }
+  }
+  if(!items.length){showToast('Nothing to save');return;}
+  const toNum=v=>{const n=Number(v);return isFinite(n)?n:v;}; // keeps ">90" etc. as text
+  if(x.recordType==='dexa'){
+    const scan={date,provider};
+    items.forEach(it=>{if(it.key)scan[it.key]=toNum(it.value);});
+    if(typeof addDexaScan==='function')addDexaScan(scan);
+  }else{
+    const markers=[...((STATE.profile&&STATE.profile.bloodMarkers)||[])];
+    items.forEach(it=>{markers.push({id:'blm_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),name:it.name,value:toNum(it.value),unit:it.unit,refLow:it.refLow,refHigh:it.refHigh,date,category:it.category||'',notes:''});});
+    STATE.profile=STATE.profile||{};STATE.profile.bloodMarkers=markers;
+    if(typeof updateLocalCache==='function')updateLocalCache();
+    const jwt=localStorage.getItem('forge_token');
+    try{await fetch('/api/state/profile/blood-markers',{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},body:JSON.stringify({bloodMarkers:markers})});}catch{}
+  }
+  if(typeof addHealthRecord==='function')addHealthRecord({type:x.recordType,date,provider,title:(x.recordType==='dexa'?'DEXA scan':'Blood test'),sourceText:_hrState.text});
+  closeModal('modal-health-add');
+  showToast('Health record saved ✓ — the coach will use it');
+  if(typeof renderBody==='function')renderBody();
+}
+
 function openDexaEdit(id){
   const existing=id?getDexaScans().find(s=>s.id===id):null;
   const set=(elId,v)=>{const el=document.getElementById(elId);if(el)el.value=v==null?'':v;};

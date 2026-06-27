@@ -794,6 +794,27 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
   </div>
 </div>
 
+<div class="modal-bg" id="modal-health-add">
+  <div class="modal" style="max-height:88vh;overflow-y:auto;">
+    <div class="modal-hdr">
+      <div class="modal-title">Add Health Record</div>
+      <button class="modal-close" onclick="closeModal('modal-health-add')">✕</button>
+    </div>
+    <div id="health-add-form">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Type</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button id="hr-type-bloods" class="btn btn-lime btn-sm" style="flex:1;" onclick="setHealthType('bloods')">🩸 Blood test</button>
+        <button id="hr-type-dexa" class="btn btn-ghost btn-sm" style="flex:1;" onclick="setHealthType('dexa')">🦴 DEXA scan</button>
+      </div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Paste the report text (markdown, or copied out of the PDF)</div>
+      <textarea id="hr-text" rows="8" placeholder="Paste your blood results or DEXA scan text here — the AI extracts the numbers and shows you each one next to its source so you can verify before saving." style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:monospace;resize:vertical;margin-bottom:10px;"></textarea>
+      <button class="btn btn-lime btn-full" style="margin-bottom:8px;" onclick="runHealthExtract()">✨ Extract with AI (you review before it saves)</button>
+      <div style="font-size:11px;color:var(--text3);text-align:center;">or <span onclick="openHealthManual()" style="text-decoration:underline;cursor:pointer;color:var(--text2);">enter the numbers manually</span></div>
+    </div>
+    <div id="health-review"></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-dexa">
   <div class="modal">
     <div class="modal-hdr">
