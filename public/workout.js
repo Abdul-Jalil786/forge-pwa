@@ -16,6 +16,10 @@ function setViewDate(d){
 function renderWorkout(){
   const date=getViewDate();
   const session=getSessionTypeForDate(date);
+  const dayLogTop=getExLogForDate(date);
+  // Phase 56: a make-up logged on a calendar rest day renders as that session type.
+  const isMakeup=!session&&!!(dayLogTop._session&&(dayLogTop._session.makeup||dayLogTop._session.forDate));
+  const renderSession=session||(isMakeup&&typeof _classifyLoggedSession==='function'?_classifyLoggedSession(dayLogTop):null);
   const el=document.getElementById('page-workout');
   const isToday=isViewingToday();
   const isFuture=isViewingFuture();
@@ -32,7 +36,26 @@ function renderWorkout(){
     ${!isToday?`<button class="btn btn-ghost btn-sm" onclick="setViewDate(todayStr())">← Today</button>`:''}
   </div>`;
 
-  if(!session){
+  if(!renderSession){
+    // Phase 56: on a rest/empty day, offer to make up an adjacent missed session
+    // (or resume one already in progress). Never overwrites a scheduled session.
+    if(isToday){
+      const savedMu=(typeof _loadWmState==='function')?_loadWmState():null;
+      if(savedMu&&savedMu.active){
+        html+=`<button class="btn btn-lime btn-full" style="margin-bottom:12px;font-size:16px;padding:15px;" onclick="resumeGuidedWorkout()">▶ RESUME workout</button>`;
+      }else{
+        const missed=(typeof getMissedSession==='function')?getMissedSession(date):null;
+        if(missed){
+          const mw=WORKOUTS[missed.type];
+          html+=`<div class="card" style="border-color:var(--orange);background:rgba(255,85,0,.05);margin-bottom:12px;">
+            <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:4px;">↩️ Missed session</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">You didn't log your <b>${mw?mw.name:missed.type}</b> on ${fmtDate(missed.date)}. Make it up today — it logs against that session and <b>nothing else on your calendar moves</b>.</div>
+            <button class="btn btn-lime btn-full" style="margin-bottom:6px;" onclick="startGuidedWorkout('${missed.type}','${missed.date}')">🔁 Make up ${mw?mw.name:missed.type}</button>
+            <button class="btn btn-ghost btn-full" style="font-size:12px;color:var(--text3);" onclick="skipMissedSessionAndRefresh('${missed.date}','${missed.type}')">Skip it — leave the calendar as is</button>
+          </div>`;
+        }
+      }
+    }
     html+=`<div class="rest-hero">
       <div class="rest-emoji">😴</div>
       <div class="rest-title">Rest Day</div>
@@ -46,17 +69,17 @@ function renderWorkout(){
     return;
   }
 
-  const w=WORKOUTS[session];
+  const w=WORKOUTS[renderSession];
   const dayLog=getExLogForDate(date);
   const done=w.exercises.filter(e=>dayLog[e.id]?.done).length;
   const pct=Math.round((done/w.exercises.length)*100);
-  const prev=getPreviousSessionData(date,session);
+  const prev=getPreviousSessionData(date,renderSession);
 
-  html+=`<div class="pg-title">${w.name}</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">${w.muscles}</div>`;
+  html+=`<div class="pg-title">${w.name}${isMakeup?' <span style="font-size:12px;color:var(--lime);vertical-align:middle;">· MAKE-UP</span>':''}</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">${w.muscles}${isMakeup&&dayLogTop._session.forDate?` · was due ${fmtDate(dayLogTop._session.forDate)}`:''}</div>`;
 
   // Phase 50: deterministic pre-session report (today's plan + last-session recap)
-  if(isToday && !isFuture) html+=buildSessionReport(date,session);
+  if(isToday && !isFuture && session) html+=buildSessionReport(date,session);
 
   if(isToday && !isFuture){
     // Phase 41k: if a workout is minimized for today, show RESUME instead of START
@@ -67,7 +90,7 @@ function renderWorkout(){
       const modeLabel=({outline:'overview',set:'lifting',rest:'resting',transition:'getting set',effort:'rating effort','timed-effort':'rating effort',exDone:'between exercises'})[saved.mode]||'';
       html+=`<button class="btn btn-lime btn-full" style="margin-bottom:6px;font-size:17px;padding:16px;" onclick="resumeGuidedWorkout()">▶ RESUME${exName?` · ${exName}${setInfo}`:''}</button>
         <div style="text-align:center;margin-bottom:14px;"><span style="font-size:10px;color:var(--text3);">in progress · ${modeLabel}</span> · <span onclick="discardGuidedWorkout()" style="font-size:10px;color:var(--text3);text-decoration:underline;cursor:pointer;">discard</span></div>`;
-    } else {
+    } else if(session) {
       html+=`<button class="btn btn-lime btn-full" style="margin-bottom:14px;font-size:17px;padding:16px;" onclick="startGuidedWorkout()">🚀 START WORKOUT</button>`;
     }
   }
@@ -414,16 +437,26 @@ function _wmStopAutoSave(){
   if(_wmAutoSaveInterval){clearInterval(_wmAutoSaveInterval);_wmAutoSaveInterval=null;}
 }
 
-function startGuidedWorkout(){
+function startGuidedWorkout(overrideSession,forDate){
   // Phase 41k: if there's already a minimized in-progress session for today, resume it
   const saved=(typeof _loadWmState==='function')?_loadWmState():null;
   if(saved&&saved.active){resumeGuidedWorkout();return;}
-  const session=getTodaySession(); if(!session)return showToast('Rest day — no workout');
-  wm = { active:true, exIdx:0, setIdx:0, mode:'outline', session, restTarget:0, restStarted:0, restInterval:null, setStartedAt:0 };
+  // Phase 56: overrideSession + forDate let a MISSED session be made up on a rest day.
+  const session=overrideSession||getTodaySession(); if(!session)return showToast('Rest day — no workout');
+  wm = { active:true, exIdx:0, setIdx:0, mode:'outline', session, restTarget:0, restStarted:0, restInterval:null, setStartedAt:0, makeupForDate:forDate||null };
   _saveWmState();
   _wmStartAutoSave();
   document.getElementById('workoutMode').classList.add('open');
   _renderWmEntry();
+}
+
+// Phase 56: mark a missed session skipped (calendar stays untouched) and refresh.
+function skipMissedSessionAndRefresh(date,type){
+  const nm=(WORKOUTS[type]&&WORKOUTS[type].name)||type;
+  if(!confirm(`Skip the missed ${nm} from ${fmtDate(date)}? Your calendar stays exactly as it is — later sessions don't move.`))return;
+  if(typeof skipMissedSession==='function')skipMissedSession(date,type);
+  showToast('Marked skipped — calendar unchanged');
+  if(typeof renderWorkout==='function')renderWorkout();
 }
 
 // Phase 44: entry router. Order matters — the feel tap comes BEFORE any
@@ -1084,6 +1117,8 @@ function _wmMarkSessionStart(){
   // Phase 46: record what was actually trained so progression matches reality,
   // not the calendar (handles training off the rigid 4-day cycle).
   if(!dayLog._session.sessionType&&wm&&wm.session)dayLog._session.sessionType=wm.session;
+  // Phase 56: make-up link — done on `date`, counts for the missed session's date.
+  if(wm&&wm.makeupForDate){dayLog._session.forDate=wm.makeupForDate;dayLog._session.makeup=true;}
   saveExLogForDate(date,dayLog);
 }
 function _wmMarkExerciseStart(){

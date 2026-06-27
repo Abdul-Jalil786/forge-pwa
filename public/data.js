@@ -632,6 +632,45 @@ const _ukDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London',year:
 function todayStr(){return _ukDate(new Date());}
 function dayOfWeek(){return new Date().getDay();} // 0=Sun
 function getTodaySession(){return getSessionTypeForDate(todayStr());}
+
+// ---- Phase 56: make-up sessions (non-cascading override) ----
+// A missed scheduled session can be made up on the ADJACENT rest/empty day. It
+// logs against the ACTUAL date but links to the missed date via
+// exLog[actualDate]._session.forDate. The fixed-calendar formula is never touched,
+// so nothing downstream shifts. Skips are stored as exLog[plannedDate]._session.skipped.
+function _dayHasLoggedWork(dayLog){
+  return Object.keys(dayLog||{}).some(k=>!k.startsWith('_')&&dayLog[k]&&Array.isArray(dayLog[k].sets)&&dayLog[k].sets.some(s=>s.kg||s.reps||s.seconds));
+}
+function isSessionSkipped(date){
+  const d=getExLogForDate(date);
+  return !!(d&&d._session&&d._session.skipped);
+}
+function isSessionMadeUp(plannedDate){
+  const exLog=getExLog();
+  return Object.values(exLog).some(d=>d&&d._session&&d._session.forDate===plannedDate);
+}
+// On a rest/empty day, returns {date,type} of the immediately-previous scheduled
+// session if it was missed (no work, not skipped, not already made up), else null.
+function getMissedSession(asOfDate){
+  asOfDate=asOfDate||todayStr();
+  if(getSessionTypeForDate(asOfDate)!==null)return null;       // today is itself a scheduled session
+  if(_dayHasLoggedWork(getExLogForDate(asOfDate)))return null; // today already has logged work
+  const y=new Date(asOfDate+'T12:00:00');y.setDate(y.getDate()-1);
+  const yDate=y.toISOString().slice(0,10);
+  const yType=getSessionTypeForDate(yDate);
+  if(!yType)return null;                                       // yesterday wasn't a scheduled session
+  if(_dayHasLoggedWork(getExLogForDate(yDate)))return null;    // yesterday was completed
+  if(isSessionSkipped(yDate))return null;                      // user skipped it
+  if(isSessionMadeUp(yDate))return null;                       // already made up somewhere
+  return {date:yDate,type:yType};
+}
+function skipMissedSession(date,type){
+  const dayLog=getExLogForDate(date);
+  if(!dayLog._session||typeof dayLog._session!=='object')dayLog._session={};
+  dayLog._session.skipped=true;
+  if(type&&!dayLog._session.sessionType)dayLog._session.sessionType=type;
+  saveExLogForDate(date,dayLog);
+}
 function dayName(){return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dayOfWeek()];}
 function fmtDate(str){return new Date(str+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'});}
 function fmtNow(){const n=new Date();return n.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}

@@ -1586,10 +1586,14 @@ function renderDayDetail(date){
 
   // TRAINING
   html+=`<div class="sec-label">Training</div>`;
-  if(!sessionType){
-    html+=`<div class="card" style="margin-bottom:10px;text-align:center;color:var(--text2);font-size:13px;padding:14px;">😴 Scheduled rest day</div>`;
+  // Phase 56: a made-up session logged on a calendar rest day still shows here.
+  const _isMakeupDay=!sessionType&&!!(sessionLog._session&&(sessionLog._session.makeup||sessionLog._session.forDate));
+  const _trainType=sessionType||(_isMakeupDay&&typeof _classifyLoggedSession==='function'?_classifyLoggedSession(sessionLog):null);
+  if(!_trainType){
+    const _sk=(typeof isSessionSkipped==='function')&&isSessionSkipped(date);
+    html+=`<div class="card" style="margin-bottom:10px;text-align:center;color:var(--text2);font-size:13px;padding:14px;">${_sk?'↩️ Session skipped — calendar unchanged':'😴 Scheduled rest day'}</div>`;
   }else{
-    const w=WORKOUTS[sessionType];
+    const w=WORKOUTS[_trainType];
     const doneEx=w.exercises.filter(e=>sessionLog[e.id]?.done);
     if(doneEx.length===0){
       html+=`<div class="card" style="margin-bottom:10px;text-align:center;color:var(--orange);font-size:13px;padding:14px;">⚠️ ${w.name} scheduled but no session logged</div>`;
@@ -1623,7 +1627,7 @@ function renderDayDetail(date){
         <div style="font-size:11px;color:var(--text3);margin-top:2px;font-style:italic;">not logged — tap to backfill</div>
       </div>`).join('');
       html+=`<div class="card" style="margin-bottom:10px;">
-        <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:var(--lime);margin-bottom:4px;">${w.name}</div>
+        <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:var(--lime);margin-bottom:4px;">${w.name}${_isMakeupDay?` <span style="font-size:10px;color:var(--text2);">· MAKE-UP${sessionLog._session.forDate?` (was due ${fmtDate(sessionLog._session.forDate)})`:''}</span>`:''}</div>
         <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${doneEx.length}/${w.exercises.length} exercises · ${totalVolume.toFixed(0)}kg total volume</div>
         ${setRows}
         ${notDoneRows}
