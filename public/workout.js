@@ -939,20 +939,30 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
 
   // Use ONLY the modal-weight sets for rep-range judgement (filters out warm-ups + experimental top sets)
   const allHitUpper = modalSets.every(s=>parseInt(s.reps)>=upperRep);
-  const firstFailed = parseInt(modalSets[0].reps)<(lowerRep||0);
 
-  // Check 3: smart progression with per-lift increments
+  // Check 3: smart progression with per-lift increments.
+  // Rule: weight only goes UP on Easy or Solid sessions that reach the top of the
+  // rep range. ANY set rated Tough = at/near failure -> HOLD weight + reps and repeat
+  // next session. Never auto-deload on a single session — the 3-session stall detector
+  // (Check 2 above) owns all deloads.
   if(hasEffort){
     const allEasy=efforts.every(e=>e==='easy');
-    const mostlySolid=efforts.filter(e=>e==='solid').length>=efforts.length/2;
     const anyTough=efforts.some(e=>e==='tough');
-    if(allEasy&&allHitUpper)    return { kg:_roundToPlate(lastKg+inc.easy),  reps:lowerRep, reason:`+${inc.easy}kg ↑ (last: ${prevSummary}${workingSummary}, felt easy)`, dir:'up' };
-    if(mostlySolid&&allHitUpper) return { kg:_roundToPlate(lastKg+inc.solid), reps:lowerRep, reason:`+${inc.solid}kg ↑ (last: ${prevSummary}${workingSummary}, solid)`, dir:'up' };
-    if(anyTough&&!allHitUpper)   return { kg:lastKg, reps:lastReps, reason:`Hold weight (last: ${prevSummary}${workingSummary}, was tough)`, dir:null };
+    if(anyTough){
+      return { kg:lastKg, reps:lastReps, reason:`Hold ${lastKg}kg × ${lastReps} — was tough, repeat it (last: ${prevSummary}${workingSummary})`, dir:null };
+    }
+    if(allEasy&&allHitUpper){
+      return { kg:_roundToPlate(lastKg+inc.easy), reps:lowerRep, reason:`+${inc.easy}kg ↑ (last: ${prevSummary}${workingSummary}, felt easy)`, dir:'up' };
+    }
+    if(allHitUpper){
+      return { kg:_roundToPlate(lastKg+inc.solid), reps:lowerRep, reason:`+${inc.solid}kg ↑ (last: ${prevSummary}${workingSummary}, solid)`, dir:'up' };
+    }
+    const t=Math.min(upperRep, lastReps+1);
+    return { kg:lastKg, reps:t, reason:`Same weight, aim ${t} reps (last: ${prevSummary}${workingSummary})`, dir:null };
   }
 
+  // No effort rating: hit top of range -> small bump; otherwise hold and climb reps.
   if(allHitUpper)  return { kg:_roundToPlate(lastKg+inc.solid), reps:lowerRep, reason:`+${inc.solid}kg ↑ (last: ${prevSummary}${workingSummary})`, dir:'up' };
-  if(firstFailed)  return { kg:Math.max(0,_roundToPlate(lastKg-inc.fail)), reps:upperRep, reason:`-${inc.fail}kg ↓ (last: ${prevSummary}${workingSummary}, struggled)`, dir:'down' };
   const targetReps = Math.min(upperRep, lastReps+1);
   return { kg:lastKg, reps:targetReps, reason:`Same weight, target ${targetReps} reps (last: ${prevSummary}${workingSummary})`, dir:null };
 }
