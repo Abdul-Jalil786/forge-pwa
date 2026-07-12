@@ -1917,6 +1917,16 @@ function wmFinish(){
       ${feel?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">You came in feeling: ${feel}.</div>`:''}
       ${sessNote?`<div style="font-size:11px;color:var(--text2);margin-top:6px;font-style:italic;">"${(typeof _esc==='function'?_esc(sessNote):sessNote)}"</div>`:''}
     </div>`;
+  let feelVsPerf='';
+  if(feel&&score&&typeof score.pct==='number'&&score.sessions4w>=1){
+    const feelMap={strong:'💪 Strong',ok:'👍 OK',tired:'😴 Tired'};
+    const pct=score.pct;
+    let fvpVerdict;
+    if(pct>=100) fvpVerdict = feel==='tired' ? 'You outperformed your average — stronger than you felt.' : 'Right on your average.';
+    else if(pct>=90) fvpVerdict = 'About on par with your 4-week average.';
+    else fvpVerdict = feel==='strong' ? 'A bit below average despite feeling good — worth noting.' : 'A lighter day, below your 4-week average.';
+    feelVsPerf=`<div style="text-align:center;color:var(--text2);font-size:13px;line-height:1.6;margin:0 0 16px;padding:12px 14px;background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.2);border-radius:12px;">You said <strong style="color:var(--text);">${feelMap[feel]||feel}</strong> — this ${w.name} hit <strong style="color:var(--lime);">${pct}%</strong> of your 4-week average. ${fvpVerdict}</div>`;
+  }
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:40px;text-align:center;">Workout complete</div>
@@ -1924,6 +1934,7 @@ function wmFinish(){
     <div style="text-align:center;font-size:40px;margin:16px 0;">🔥</div>
     ${recap}
     <div style="text-align:center;margin-bottom:14px;"><span onclick="wmAddSessionNote()" style="font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;">+ add a note about today</span></div>
+    ${feelVsPerf}
     <button class="wm-cta" onclick="finishGuidedWorkout()">FINISH</button>
   `;
   document.getElementById('wmContent').innerHTML=html;
