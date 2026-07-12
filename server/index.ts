@@ -896,6 +896,40 @@ async function fixAbdulPhaseStartV1() {
   }
 }
 
+// Phase 54c: Abdul graduated off SkinCeuticals Retinol 0.3% onto prescription
+// tretinoin 0.025%, restarting the frequency ladder at every-other-day for the
+// stronger product (5+ clean applications, no irritation). Rename the retinoid
+// slot, drop it to every-2-days, and reset the tolerance clock to phase 3 so the
+// Retinol Journey guides EOD → 5x/wk → nightly as his skin stays clear.
+async function switchAbdulToTretinoinV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state = (user as any).state || {};
+    if (state.abdulTretinoinV1) return;
+    const sc = state.skinCare;
+    if (!sc || !Array.isArray(sc.products)) return;
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" });
+    const ret = sc.products.find((p: any) => p && p.type === "retinol");
+    if (ret) {
+      ret.name = "Tretinoin 0.025%";
+      ret.concentration = "0.025%";
+      ret.frequency = "every-2-days";
+      ret.frequencyStartedAt = today;
+      ret.notes =
+        "Prescription tretinoin — started every other day off SkinCeuticals Retinol 0.3%. Step up to 5x/wk then nightly only after a clear stretch with zero irritation.";
+    }
+    sc.phase = 3; // every-other-day rung
+    sc.phaseStartDate = today; // resets the 3-week + 14-day tolerance clocks
+    sc.tretinoinReady = true;
+    state.abdulTretinoinV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Abdul retinoid switched to Tretinoin 0.025% every-other-day (phase 3)");
+  } catch (err) {
+    console.error("[migration] switchAbdulToTretinoinV1 failed:", err);
+  }
+}
+
 // Fix Abdul's startWeight — seedAbdulCutV1 overwrote the correct 113.5
 // (from progress baseline) with the latest weightLog entry (~109.8).
 async function fixAbdulStartWeightV1() {
@@ -1359,6 +1393,7 @@ const server = app.listen(PORT, async () => {
   await fixAbdulWheyV1();
   await fixAbdulPhaseStartV1();
   await fixAbdulStartWeightV1();
+  await switchAbdulToTretinoinV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
   // ~a week has elapsed with no report, never a spurious mid-week one.
