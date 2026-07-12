@@ -878,6 +878,24 @@ async function fixAbdulWheyV1() {
   }
 }
 
+// Phase 54b: fix Abdul's activePhase.startDate — seedAbdulCutV1 stamped the
+// migration-run date (2026-06-18) but the cut started 2026-05-08.
+async function fixAbdulPhaseStartV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state = (user as any).state || {};
+    if (state.abdulPhaseStartFixedV1) return;
+    const ap = state.profile?.activePhase;
+    if (ap) ap.startDate = "2026-05-08";
+    state.abdulPhaseStartFixedV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Abdul activePhase.startDate corrected to 2026-05-08");
+  } catch (err) {
+    console.error("[migration] fixAbdulPhaseStartV1 failed:", err);
+  }
+}
+
 // Phase 41g: advance Jay to retinol Phase 3 (every-2-days = every other day).
 // Mirrors data.js setSkinPhase(3). Re-frequencies retinol + cicaplast products
 // and stamps a fresh phaseStartDate so the 3-week tolerance clock starts today.
@@ -1320,6 +1338,7 @@ const server = app.listen(PORT, async () => {
   await seedJayMealPlanV10();
   await seedAbdulCutV1();
   await fixAbdulWheyV1();
+  await fixAbdulPhaseStartV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
   // ~a week has elapsed with no report, never a spurious mid-week one.

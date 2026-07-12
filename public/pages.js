@@ -460,7 +460,7 @@ function renderWaterToday(){
           </div>
         </div>
       </div>
-      ${eodWarn?`<div style="font-size:11px;color:var(--orange);margin-top:10px;line-height:1.5;">Only ${total}ml today — drink ${remaining}ml more before your eating window closes at 18:00.</div>`:''}
+      ${eodWarn?`<div style="font-size:11px;color:var(--orange);margin-top:10px;line-height:1.5;">Only ${total}ml today — drink ${remaining}ml more before your eating window closes at ${String((typeof getEatingWindow==='function'?getEatingWindow():{end:20}).end).padStart(2,'0')}:00.</div>`:''}
     </div>`;
 }
 
@@ -2828,25 +2828,30 @@ function renderFastingCard(){
   if(typeof getWindowCountdown!=='function')return '';
   const c=getWindowCountdown();
   if(!c)return ''; // Phase 42e: eating window disabled for this user
+  const ew=getEatingWindow();
+  const _hh=h=>String(h).padStart(2,'0')+':00';
+  const winLabel=_hh(ew.start)+'–'+_hh(ew.end);
+  const winHours=ew.end-ew.start;
+  const fastMins=(24-winHours)*60;
   let title,sub,detail,color,bg,pct;
   if(c.phase==='before'){
     title='Fasting Window Active';
     sub=`Window opens in ${_fmtHM(c.minsToOpen)}`;
     detail=`You have fasted for ${_fmtHM(c.fastedMins)}`;
     color='var(--blue)';bg='rgba(61,155,255,.06)';
-    pct=Math.round((c.fastedMins/(18*60))*100);
+    pct=Math.round((c.fastedMins/fastMins)*100);
   }else if(c.phase==='open'){
     title='Eating Window Open';
     sub=`Window closes in ${_fmtHM(c.minsToClose)}`;
-    detail=`${_fmtHM(c.elapsedMins)} into your 6-hour window`;
+    detail=`${_fmtHM(c.elapsedMins)} into your ${winHours}-hour window`;
     color='var(--green)';bg='rgba(0,232,122,.06)';
     pct=Math.round((c.elapsedMins/c.windowMins)*100);
   }else{
     title='Eating Window Closed';
-    sub='Fast resumed · next window opens 12:00';
+    sub=`Fast resumed · next window opens ${_hh(ew.start)}`;
     detail=`${_fmtHM(c.fastedMins)} into tonight's fast`;
     color='var(--blue)';bg='rgba(61,155,255,.06)';
-    pct=Math.round((c.fastedMins/(18*60))*100);
+    pct=Math.round((c.fastedMins/fastMins)*100);
   }
   pct=Math.max(0,Math.min(100,pct));
   const log=getFastingLog(todayStr());
@@ -2855,12 +2860,12 @@ function renderFastingCard(){
     <div class="card" style="margin-bottom:10px;border-color:${color};background:linear-gradient(135deg,${bg},transparent);">
       <div style="display:flex;justify-content:space-between;align-items:baseline;">
         <div style="font-family:'Archivo Black',sans-serif;font-size:14px;color:${color};">${title}</div>
-        <div style="font-size:11px;color:var(--text3);">12:00–18:00</div>
+        <div style="font-size:11px;color:var(--text3);">${winLabel}</div>
       </div>
       <div style="font-size:13px;color:var(--text);margin:6px 0 2px;font-weight:600;">${sub}</div>
       <div style="font-size:11px;color:var(--text2);">${detail}</div>
       <div class="pb" style="margin-top:8px;"><div class="pb-fill" style="width:${pct}%;background:${color};"></div></div>
-      ${broken?`<div style="font-size:11px;color:var(--orange);margin-top:8px;line-height:1.5;">⚠️ Food logged outside your window (12:00–18:00). Fasting streak affected.</div>`:''}
+      ${broken?`<div style="font-size:11px;color:var(--orange);margin-top:8px;line-height:1.5;">⚠️ Food logged outside your window (${winLabel}). Fasting streak affected.</div>`:''}
     </div>`;
 }
 
