@@ -982,21 +982,25 @@ function suggestTime(exId,exObj,prevSession,setIdx,opts){
   const effort=prevSession.log[exId].effort||sets[sets.length-1]?.effort;
   const allHitPrescribed=sets.every(s=>parseInt(s.seconds)>=upper);
 
-  // Phase 28: recovery gate
   if(opts?.lowRecovery){
     return{seconds:lastSec,reason:`Hold ${fmtSec(lastSec)} — low recovery (${opts.recoveryReason}). Focus on form.`,dir:null,timed:true,recovery:'low'};
   }
-
-  if(allHitPrescribed&&(effort==='easy'||effort==='maybe')){
-    return{seconds:lastSec+5,reason:`Try ${fmtSec(lastSec+5)} — beat last week's ${fmtSec(lastSec)}`,dir:'up',timed:true};
+  // Tough = at limit -> hold and repeat (mirrors the weighted-lift rule).
+  if(effort==='tough'){
+    return{seconds:lastSec,reason:`Hold ${fmtSec(lastSec)} — was tough, repeat it`,dir:null,timed:true};
   }
-  if(allHitPrescribed&&effort==='hard'){
-    return{seconds:lastSec,reason:`Hold ${fmtSec(lastSec)} — match last week`,dir:null,timed:true};
+  // Easy/Solid AND held the full prescribed time -> add time (easy = bigger jump).
+  if(allHitPrescribed&&effort==='easy'){
+    return{seconds:lastSec+10,reason:`Try ${fmtSec(lastSec+10)} — beat last ${fmtSec(lastSec)} (felt easy)`,dir:'up',timed:true};
   }
+  if(allHitPrescribed&&effort==='solid'){
+    return{seconds:lastSec+5,reason:`Try ${fmtSec(lastSec+5)} — beat last ${fmtSec(lastSec)} (solid)`,dir:'up',timed:true};
+  }
+  // Didn't reach prescribed time, or unrated -> hold and repeat. No single-session deload.
   if(!allHitPrescribed){
-    return{seconds:lastSec,reason:`Hold ${fmtSec(lastSec)} — match last week (last: ${prevSummary})`,dir:null,timed:true};
+    return{seconds:lastSec,reason:`Hold ${fmtSec(lastSec)} — match last (last: ${prevSummary})`,dir:null,timed:true};
   }
-  return{seconds:lastSec+5,reason:`Try ${fmtSec(lastSec+5)} — beat last week's ${fmtSec(lastSec)}`,dir:'up',timed:true};
+  return{seconds:lastSec+5,reason:`Try ${fmtSec(lastSec+5)} — beat last ${fmtSec(lastSec)}`,dir:'up',timed:true};
 }
 
 function renderWmOutline(){
@@ -1507,12 +1511,19 @@ function renderWmTimedEffort(){
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">All sets done</div>
     <div class="wm-title" style="font-size:22px;margin-top:6px;">${ex.name} — ${fmtSec(lastSec)}</div>
-    <div class="wm-sub" style="margin-bottom:24px;">Could you have held longer?</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px;">
-      <button class="wm-time-effort-btn" onclick="wmRecordTimedEffort('easy')">YES</button>
-      <button class="wm-time-effort-btn" onclick="wmRecordTimedEffort('hard')">NO</button>
-      <button class="wm-time-effort-btn" onclick="wmRecordTimedEffort('maybe')">MAYBE +5s</button>
-    </div>
+    <div class="wm-sub">How did that feel?</div>
+    <button class="wm-effort-btn" onclick="wmRecordTimedEffort('easy')">
+      <div class="em">😌</div>
+      <div class="lbl">EASY<div class="desc">Could've held a lot longer</div></div>
+    </button>
+    <button class="wm-effort-btn" onclick="wmRecordTimedEffort('solid')">
+      <div class="em">💪</div>
+      <div class="lbl">SOLID<div class="desc">10-15s left in the tank</div></div>
+    </button>
+    <button class="wm-effort-btn" onclick="wmRecordTimedEffort('tough')">
+      <div class="em">🔥</div>
+      <div class="lbl">TOUGH<div class="desc">At my limit, couldn't hold more</div></div>
+    </button>
     <button class="wm-cta ghost" onclick="wmRecordTimedEffort(null)">Skip rating</button>
   `;
   document.getElementById('wmContent').innerHTML=html;
@@ -1782,7 +1793,7 @@ function renderWmExerciseDone(){
   const volume=(timed||carry)?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
   const isLastEx=wm.exIdx>=w.exercises.length-1;
   const effortEmoji={easy:'😌',solid:'💪',tough:'🔥',hard:'🔥',maybe:'🤔'};
-  const effortLabel={easy:'easy',hard:'hard',maybe:'maybe +5s'};
+  const effortLabel={easy:'easy',solid:'solid',tough:'tough'};
   const subText=carry
     ?`${sets.filter(s=>s.done).length} sets · timed both sides`
     :timed
