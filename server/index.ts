@@ -896,6 +896,25 @@ async function fixAbdulPhaseStartV1() {
   }
 }
 
+// Fix Abdul's startWeight — seedAbdulCutV1 overwrote the correct 113.5
+// (from progress baseline) with the latest weightLog entry (~109.8).
+async function fixAbdulStartWeightV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state = (user as any).state || {};
+    if (state.abdulStartWeightFixedV1) return;
+    const pf = state.profile || {};
+    pf.startWeight = 113.5;
+    if (pf.activePhase) pf.activePhase.startWeight = 113.5;
+    state.abdulStartWeightFixedV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Abdul startWeight corrected to 113.5");
+  } catch (err) {
+    console.error("[migration] fixAbdulStartWeightV1 failed:", err);
+  }
+}
+
 // Phase 41g: advance Jay to retinol Phase 3 (every-2-days = every other day).
 // Mirrors data.js setSkinPhase(3). Re-frequencies retinol + cicaplast products
 // and stamps a fresh phaseStartDate so the 3-week tolerance clock starts today.
@@ -1339,6 +1358,7 @@ const server = app.listen(PORT, async () => {
   await seedAbdulCutV1();
   await fixAbdulWheyV1();
   await fixAbdulPhaseStartV1();
+  await fixAbdulStartWeightV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
   // ~a week has elapsed with no report, never a spurious mid-week one.
