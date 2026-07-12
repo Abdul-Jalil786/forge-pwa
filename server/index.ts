@@ -949,6 +949,39 @@ async function fixAbdulStartWeightV1() {
   }
 }
 
+// Phase 54d: bump Abdul's post-workout shake to 40g protein (1 scoop → 2 scoops
+// whey). Operates on the LIVE plan; re-derives the ingredient's calories and the
+// meal totals using the plan's cal formula (P*4 + C*4 + F*9).
+async function fixAbdulShakeProteinV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.abdulShakeProteinV1) return;
+    const meals = state.mealPlan?.meals;
+    const mark = async () => { state.abdulShakeProteinV1 = true; await prisma.user.update({ where: { id: user.id }, data: { state } }); };
+    if (!Array.isArray(meals)) { await mark(); return; }
+    const shakeMeal = meals.find((m: any) => m.id === "post-shake" || /post-?workout shake/i.test(m.name || ""));
+    if (!shakeMeal || !Array.isArray(shakeMeal.ingredients)) { await mark(); return; }
+    const shake = shakeMeal.ingredients.find((i: any) => /shake|whey/i.test(i.name || ""));
+    if (!shake) { await mark(); return; }
+    // Target 40g protein via a second whey scoop (+20g protein, +1g carb, +1g fat).
+    shake.protein = 40;
+    shake.carbs = (+shake.carbs || 0) + 1;
+    shake.fat = (+shake.fat || 0) + 1;
+    if (typeof shake.name === "string") shake.name = shake.name.replace(/\b1 scoop whey\b/i, "2 scoops whey");
+    shake.cals = Math.round((+shake.protein || 0) * 4 + (+shake.carbs || 0) * 4 + (+shake.fat || 0) * 9);
+    const sum = (k: string) => Math.round((shakeMeal.ingredients || []).reduce((s: number, i: any) => s + (+i[k] || 0), 0));
+    shakeMeal.cals = sum("cals"); shakeMeal.protein = sum("protein"); shakeMeal.carbs = sum("carbs"); shakeMeal.fat = sum("fat");
+    state.abdulShakeProteinV1 = true;
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Abdul post-workout shake bumped to 40g protein (2 scoops whey); meal totals re-derived");
+  } catch (err) {
+    console.error("[migration] fixAbdulShakeProteinV1 failed:", err);
+  }
+}
+
 // Phase 41g: advance Jay to retinol Phase 3 (every-2-days = every other day).
 // Mirrors data.js setSkinPhase(3). Re-frequencies retinol + cicaplast products
 // and stamps a fresh phaseStartDate so the 3-week tolerance clock starts today.
@@ -1393,6 +1426,7 @@ const server = app.listen(PORT, async () => {
   await fixAbdulWheyV1();
   await fixAbdulPhaseStartV1();
   await fixAbdulStartWeightV1();
+  await fixAbdulShakeProteinV1();
   await switchAbdulToTretinoinV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
