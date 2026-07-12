@@ -129,7 +129,7 @@ export function analyzeNutrition(state: any, asOf?: string): NutritionAnalysis {
   // --- average logged intake over the window ---
   let intakeSum = 0, loggedDays = 0;
   for (const d of Object.keys(foods)) {
-    if (d <= cutoff || d > today) continue;
+    if (d < cutoff || d > today) continue;
     const items = foods[d];
     if (!Array.isArray(items) || !items.length) continue;
     const kcal = items.reduce((s: number, f: any) => s + (+f?.cals || 0), 0);
@@ -139,7 +139,7 @@ export function analyzeNutrition(state: any, asOf?: string): NutritionAnalysis {
 
   // --- weight trend over the window ---
   const wPts = weightLog
-    .filter((w) => w?.date && w.weight != null && w.date > cutoff && w.date <= today)
+    .filter((w) => w?.date && w.weight != null && w.date >= cutoff && w.date <= today)
     .map((w) => ({ date: w.date, w: +w.weight }));
   const perDay = trendKgPerDay(wPts, today);
   const rateKgPerWk = perDay != null ? Math.round(-perDay * 7 * 100) / 100 : null; // positive = losing
@@ -147,7 +147,7 @@ export function analyzeNutrition(state: any, asOf?: string): NutritionAnalysis {
   // --- Oura TDEE cross-check ---
   let ouraSum = 0, ouraDays = 0;
   for (const d of Object.keys(calorieLog)) {
-    if (d <= cutoff || d > today) continue;
+    if (d < cutoff || d > today) continue;
     const t = calorieLog[d]?.total;
     if (t != null) { ouraSum += +t; ouraDays++; }
   }
@@ -166,7 +166,7 @@ export function analyzeNutrition(state: any, asOf?: string): NutritionAnalysis {
   const foodComplete = state.foodComplete || {};
   let completeDays = 0;
   for (const d of Object.keys(foodComplete)) {
-    if (d <= cutoff || d > today) continue;
+    if (d < cutoff || d > today) continue;
     if (foodComplete[d] === true) completeDays++;
   }
   // --- confidence (Phase 48b) ---
@@ -224,8 +224,11 @@ export function analyzeNutrition(state: any, asOf?: string): NutritionAnalysis {
   let carbDelta = Math.round(delta / 4);
   let calorieDelta = carbDelta * 4;
   let newTarget = curCal + calorieDelta;
+  const preFlopDelta = calorieDelta;
   if (newTarget < floorCal) { carbDelta += 1; calorieDelta = carbDelta * 4; newTarget = curCal + calorieDelta; }
-  const direction = calorieDelta > 20 ? "up" : calorieDelta < -20 ? "down" : "hold";
+  // If floor adjustment flipped direction (was cutting, now adding), hold instead
+  const direction = (preFlopDelta < 0 && calorieDelta > 0) ? "hold" as const
+    : calorieDelta > 20 ? "up" : calorieDelta < -20 ? "down" : "hold";
 
   const reasons: string[] = [];
   reasons.push(`Your real burn is about ${observedTDEE} kcal/day${ouraTDEE != null ? ` (Oura agrees: ${ouraTDEE})` : ""}.`);

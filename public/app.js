@@ -256,7 +256,8 @@ function saveFood(){
       if(gi&&gi.band==='high')setTimeout(()=>showToast('⚠️ Higher-GI food — consider a lower-GI swap (HbA1c 72)'),900);
     }
     const fh=parseInt(String(time).split(':')[0],10);
-    if(!isNaN(fh)&&(fh<12||fh>=18))setTimeout(()=>showToast('⚠️ Logged outside your 12:00–18:00 window — fasting streak affected'),600);
+    const ew=typeof getEatingWindow==='function'?getEatingWindow():{enabled:true,start:12,end:20};
+    if(ew.enabled&&!isNaN(fh)&&(fh<ew.start||fh>=ew.end))setTimeout(()=>showToast(`⚠️ Logged outside your ${String(ew.start).padStart(2,'0')}:00–${String(ew.end).padStart(2,'0')}:00 window — fasting streak affected`),600);
   }
 
   // Offer to save as template
