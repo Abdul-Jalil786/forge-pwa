@@ -698,19 +698,10 @@ function _autoregNextSet(ex, lastSet, setIdx){
   const effort=lastSet.effort;
   let dir, kgNext, msg;
   const variants=(arr)=>arr[(setIdx||0)%arr.length];
-  if(reps>=upper && effort==='easy'){
-    dir='up'; kgNext=_roundToPlate(kg+inc.easy);
-    msg=variants([
-      `Too light — you topped the range and it flew. ${kgNext}kg next set. Earn it.`,
-      `That was easy money. Add ${inc.easy}kg → ${kgNext}kg. Make it count.`,
-    ]);
-  } else if(reps>=upper){
-    dir='up'; kgNext=_roundToPlate(kg+inc.solid);
-    msg=variants([
-      `Topped the range clean. Nudge to ${kgNext}kg and own it.`,
-      `Full range, controlled. ${kgNext}kg next — small step, no ego.`,
-    ]);
-  } else if(reps<lower){
+  // Order matters: reps-missed and Tough are checked BEFORE the "topped the range"
+  // bumps, so a set rated tough NEVER goes up — even at the top of the range.
+  // Mirrors the session-to-session rule (any Tough set = at/near failure → hold).
+  if(reps<lower){
     dir='down'; kgNext=Math.max(0,_roundToPlate(kg-inc.fail));
     msg=variants([
       `Reps fell short. Back off to ${kgNext}kg — quality over ego, every rep clean.`,
@@ -721,6 +712,18 @@ function _autoregNextSet(ex, lastSet, setIdx){
     msg=variants([
       `A grind, but the reps were there. Hold ${kg}kg — match it, don't chase.`,
       `Hard-earned. Stay at ${kg}kg, same reps. Don't let form slip.`,
+    ]);
+  } else if(reps>=upper && effort==='easy'){
+    dir='up'; kgNext=_roundToPlate(kg+inc.easy);
+    msg=variants([
+      `Too light — you topped the range and it flew. ${kgNext}kg next set. Earn it.`,
+      `That was easy money. Add ${inc.easy}kg → ${kgNext}kg. Make it count.`,
+    ]);
+  } else if(reps>=upper){
+    dir='up'; kgNext=_roundToPlate(kg+inc.solid);
+    msg=variants([
+      `Topped the range clean. Nudge to ${kgNext}kg and own it.`,
+      `Full range, controlled. ${kgNext}kg next — small step, no ego.`,
     ]);
   } else {
     dir='hold'; kgNext=kg;
