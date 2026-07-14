@@ -982,6 +982,65 @@ async function fixAbdulShakeProteinV1() {
   }
 }
 
+// Phase 55: fibre + macro rebalance on Abdul's live plan (user-directed).
+//  - Pre-workout: broccoli → 80g garden peas (broccoli was hard to tolerate;
+//    peas give more fibre, less bloat), chicken 200g→150g, basmati 100g→85g.
+//  - Dinner: chicken 150g→120g.
+//  - Evening: add 1 tbsp psyllium husk (fibre, ~zero-cal lever for GLP-1 gut).
+// Chicken trimmed (not carbs/fat) so carbs+fat stay near target while calories
+// land ~2,200 at 233g protein (~2.2g/kg, well above the 200g floor). Re-derives
+// each touched meal's totals from its ingredient sums.
+async function fixAbdulPeasFibreRebalanceV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.abdulPeasFibreRebalanceV1) return;
+    const meals = state.mealPlan?.meals;
+    const mark = async () => { state.abdulPeasFibreRebalanceV1 = true; await prisma.user.update({ where: { id: user.id }, data: { state } }); };
+    if (!Array.isArray(meals)) { await mark(); return; }
+
+    const findMeal = (id: string, re: RegExp) => meals.find((m: any) => m.id === id || re.test(m.name || ""));
+    const sum = (ings: any[], k: string) => Math.round((ings || []).reduce((s: number, i: any) => s + (+i[k] || 0), 0));
+    const recompute = (m: any) => { m.cals = sum(m.ingredients, "cals"); m.protein = sum(m.ingredients, "protein"); m.carbs = sum(m.ingredients, "carbs"); m.fat = sum(m.ingredients, "fat"); };
+
+    // Pre-workout meal
+    const pre = findMeal("pre-workout", /pre-?workout/i);
+    if (pre && Array.isArray(pre.ingredients)) {
+      for (const ing of pre.ingredients) {
+        const n = String(ing.name || "");
+        if (/broccoli/i.test(n)) { ing.name = "80g garden peas"; ing.cals = 67; ing.protein = 5; ing.carbs = 11; ing.fat = 0; ing.gi = "moderate"; }
+        else if (/chicken/i.test(n)) { ing.name = "150g chicken breast grilled"; ing.cals = 248; ing.protein = 47; ing.carbs = 0; ing.fat = 5; }
+        else if (/basmati|rice/i.test(n)) { ing.name = "85g cooked basmati rice"; ing.cals = 111; ing.protein = 3; ing.carbs = 24; ing.fat = 0; }
+      }
+      recompute(pre);
+    }
+
+    // Dinner meal
+    const dinner = findMeal("dinner", /dinner/i);
+    if (dinner && Array.isArray(dinner.ingredients)) {
+      const chick = dinner.ingredients.find((i: any) => /chicken/i.test(i.name || ""));
+      if (chick) { chick.name = "120g chicken breast grilled"; chick.cals = 198; chick.protein = 38; chick.carbs = 0; chick.fat = 4; }
+      recompute(dinner);
+    }
+
+    // Evening meal — add psyllium husk once
+    const eve = findMeal("evening", /evening/i);
+    if (eve && Array.isArray(eve.ingredients) && !eve.ingredients.some((i: any) => /psyllium/i.test(i.name || ""))) {
+      eve.ingredients.push({ name: "1 tbsp psyllium husk (stir into yoghurt, drink with a big glass of water)", cals: 25, protein: 0, carbs: 7, fat: 0, gi: "low" });
+      recompute(eve);
+    }
+
+    state.mealPlan = state.mealPlan; // keep reference explicit
+    state.abdulPeasFibreRebalanceV1 = true;
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Abdul plan rebalanced — broccoli→peas, chicken trims, +psyllium; totals re-derived");
+  } catch (err) {
+    console.error("[migration] fixAbdulPeasFibreRebalanceV1 failed:", err);
+  }
+}
+
 // Phase 41g: advance Jay to retinol Phase 3 (every-2-days = every other day).
 // Mirrors data.js setSkinPhase(3). Re-frequencies retinol + cicaplast products
 // and stamps a fresh phaseStartDate so the 3-week tolerance clock starts today.
@@ -1427,6 +1486,7 @@ const server = app.listen(PORT, async () => {
   await fixAbdulPhaseStartV1();
   await fixAbdulStartWeightV1();
   await fixAbdulShakeProteinV1();
+  await fixAbdulPeasFibreRebalanceV1();
   await switchAbdulToTretinoinV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
