@@ -1215,6 +1215,9 @@ function renderTrack(){
       <div class="sb green"><div class="l">Food Log</div><div class="v">${foodStreak}<span class="u">days</span></div></div>
     </div>
 
+    <div class="sec-label">Am I Getting Stronger?</div>
+    ${renderStrengthTrend()}
+
     <div class="sec-label">Lifting Records</div>
     <div class="card">
       ${renderLiftingRecords()}
@@ -1445,6 +1448,77 @@ function renderStrengthStandards(){
       <div style="text-align:right;font-size:10px;color:${r.color};text-transform:uppercase;letter-spacing:1px;font-weight:700;">${r.label}</div>
     </div>`).join('')}
     <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.5;">1RMs estimated from working sets (Brzycki formula). Standards from ExRx + StrengthLevel data, age-adjusted ~0.5%/yr past 30. Machines vary — treat tiers as rough guidance, not gospel.</div>
+  </div>`;
+}
+
+// Phase 55: "Am I going up?" — the simplest possible strength-progress read.
+// For each lift, compares your two most recent sessions. The score for a session
+// is your best set's estimated 1RM (weight×reps, Brzycki) for weighted lifts, or
+// your longest hold in seconds for timed holds — so adding weight OR reps both
+// count as going up. Pure arithmetic, no AI.
+function _liftScoreForSession(ex, dayLog){
+  const sets=(dayLog&&dayLog[ex.id]&&dayLog[ex.id].sets)||[];
+  const timed=isTimeBased(ex);
+  let best=0, bestSet=null;
+  for(const s of sets){
+    if(timed){
+      const sec=parseInt(s.seconds)||0;
+      if(sec>best){best=sec;bestSet=s;}
+    } else {
+      const e=_brzycki1RM(s.kg,s.reps);
+      if(e>best){best=e;bestSet=s;}
+    }
+  }
+  if(!best)return null;
+  return {score:best, set:bestSet, timed};
+}
+
+function _liftTrend(ex){
+  const log=STATE.exLog||{};
+  const dates=Object.keys(log).sort(); // oldest → newest (date keys, never _-prefixed)
+  const sessions=[];
+  for(const d of dates){
+    const sc=_liftScoreForSession(ex,log[d]);
+    if(sc)sessions.push({date:d,...sc});
+  }
+  if(sessions.length<2)return null;
+  const latest=sessions[sessions.length-1];
+  const prev=sessions[sessions.length-2];
+  const pct=prev.score>0?Math.round(((latest.score-prev.score)/prev.score)*1000)/10:0;
+  const dir=pct>1?'up':pct<-1?'down':'same';
+  const label=latest.timed?fmtSec(latest.set.seconds):`${latest.set.kg}×${latest.set.reps}`;
+  return {name:ex.name, dir, pct, label, latestDate:latest.date, prevDate:prev.date, n:sessions.length};
+}
+
+function renderStrengthTrend(){
+  const trends=getAllExercises().map(_liftTrend).filter(Boolean);
+  if(trends.length===0){
+    return `<div class="card"><div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Do the same lift twice and I'll show you whether you're going up.</div></div>`;
+  }
+  const order={up:0,same:1,down:2};
+  trends.sort((a,b)=>order[a.dir]-order[b.dir]||b.pct-a.pct);
+  const up=trends.filter(t=>t.dir==='up').length;
+  const same=trends.filter(t=>t.dir==='same').length;
+  const down=trends.filter(t=>t.dir==='down').length;
+  const headline = up>0&&up>=down ? "You're going up 💪"
+                 : down>up ? "Some lifts are slipping ⚠️"
+                 : "Holding steady";
+  const badge=(t)=>{
+    if(t.dir==='up')  return `<span style="color:var(--green);font-weight:700;">▲ Up +${t.pct}%</span>`;
+    if(t.dir==='down')return `<span style="color:var(--red);font-weight:700;">▼ Down ${Math.abs(t.pct)}%</span>`;
+    return `<span style="color:var(--text3);font-weight:700;">— Same</span>`;
+  };
+  const rows=trends.map(t=>`<div class="list-row">
+    <div class="row-left"><div class="row-label">${t.name}</div><div class="row-val">now ${t.label}</div></div>
+    <div style="text-align:right;font-size:13px;">${badge(t)}</div>
+  </div>`).join('');
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:16px;color:var(--text);">${headline}</div>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:12px;">${up} up · ${same} same · ${down} down — vs your last session of each lift</div>
+    ${rows}
+    <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.5;">"Up" counts heavier weight <em>and</em> more reps (via estimated 1-rep max). Compares your two most recent sessions of each lift.</div>
   </div>`;
 }
 

@@ -1,4 +1,4 @@
-const CACHE='forge-v68';
+const CACHE='forge-v69';
 const ASSETS=['/','/index.html','/manifest.json','/targets.js','/data.js','/workout.js','/pages.js','/app.js','/login.html','/login.js'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
