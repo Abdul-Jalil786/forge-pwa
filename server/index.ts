@@ -443,6 +443,31 @@ async function seedJayInjuryV1() {
   }
 }
 
+// Phase 55: clear active injuries — user confirmed no current injuries. The
+// Phase 38 seeded lower-back flag was still active and cutting RDL + hip-hinge
+// load to 80% (mild ×0.80). Mark every active injury resolved (keeps the record
+// for history; stops the progression penalty). One-shot; the user re-flags any
+// real injury via More → Injury Management afterwards.
+async function clearAbdulInjuriesV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.abdulInjuriesClearedV1) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (state.injuries && typeof state.injuries === "object" && !Array.isArray(state.injuries)) {
+      for (const inj of Object.values(state.injuries) as any[]) {
+        if (inj && inj.status !== "resolved") { inj.status = "resolved"; inj.resolvedAt = today; }
+      }
+    }
+    state.abdulInjuriesClearedV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Abdul injuries cleared — all active flags resolved (no current injuries)");
+  } catch (err) {
+    console.error("[migration] clearAbdulInjuriesV1 failed:", err);
+  }
+}
+
 // Phase 39: enhance Jay's supplement list with timing + critical metadata.
 // Merges canonical 9 into the existing list: backfills metadata onto matching ids,
 // adds any missing, and leaves custom supplements untouched (no data loss).
@@ -1464,6 +1489,7 @@ const server = app.listen(PORT, async () => {
   await fixJayOmega3Dose();
   await seedJaySkinCareV1();
   await seedJayInjuryV1();
+  await clearAbdulInjuriesV1();
   await seedJayNutritionSuppsV1();
   await seedJayZincCoQ10();
   await removeJayCreatine();
