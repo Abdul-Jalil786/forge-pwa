@@ -1981,6 +1981,14 @@ function renderSkinChecklist(){
   const comp=getTodaySkinCompliance();
   const compColor=comp.pct>=100?'var(--green)':comp.pct>=75?'var(--orange)':'var(--red)';
   const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
+  // Label the retinoid night by the ACTUAL product (tretinoin/adapalene/retinol/…),
+  // not a hardcoded "Retinol" — the type stays 'retinol' internally for all retinoids.
+  const _retLabel=(()=>{
+    const it=(pm||[]).find(x=>x.product&&x.product.type==='retinol');
+    const nm=(it&&it.product&&it.product.name)||'';
+    const m=nm.match(/tretinoin|adapalene|retinaldehyde|retinal|retinol|retinoid/i);
+    return m?(m[0][0].toUpperCase()+m[0].slice(1).toLowerCase()):'Retinoid';
+  })();
 
   const row=(it)=>{
     const p=it.product, on=log[it.itemId]===true;
@@ -1992,9 +2000,9 @@ function renderSkinChecklist(){
   };
 
   // Rule 4 — Mounjaro Wednesday banner
-  const mjBanner=isMounjaroDay()?`<div style="background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:8px;padding:9px 11px;margin-bottom:10px;font-size:11px;color:#ffc107;line-height:1.5;">💉 <strong>Mounjaro injection day</strong> — skin may be more sensitive. Use the sandwich method for retinol if it's due tonight.</div>`:'';
+  const mjBanner=isMounjaroDay()?`<div style="background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:8px;padding:9px 11px;margin-bottom:10px;font-size:11px;color:#ffc107;line-height:1.5;">💉 <strong>Mounjaro injection day</strong> — skin may be more sensitive. Use the sandwich method for ${_retLabel.toLowerCase()} if it's due tonight.</div>`:'';
   // Rule 1 — retinol night banner
-  const retBanner=retinolNight?`<div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.25);border-radius:8px;padding:9px 11px;margin-bottom:10px;font-size:11px;color:var(--lime);line-height:1.5;">🌙 <strong>Retinol night</strong> — Alpha Arbutin and Niacinamide skipped automatically.</div>`:'';
+  const retBanner=retinolNight?`<div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.25);border-radius:8px;padding:9px 11px;margin-bottom:10px;font-size:11px;color:var(--lime);line-height:1.5;">🌙 <strong>${_retLabel} night</strong> — Alpha Arbutin and Niacinamide skipped automatically.</div>`:'';
   // Rule 5 — CE Ferulic ticked, SPF not yet → reminder
   const ce=am.find(it=>it.product.type==='vitamin-c');
   const spf=am.find(it=>it.product.type==='spf');
@@ -2007,7 +2015,7 @@ function renderSkinChecklist(){
   let irritBlock='';
   if(retinolNight){
     irritBlock=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
-      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">How does your skin feel after retinol?</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">How does your skin feel after ${_retLabel.toLowerCase()}?</div>
       ${retDone&&!irrit?`<div style="font-size:11px;color:var(--orange);margin-bottom:6px;">👆 Please log this — it's what lets the coach ramp retinol safely.</div>`:''}
       ${_SKIN_IRRITATION_OPTS.map(o=>{
         const sel=irrit===o.v;
