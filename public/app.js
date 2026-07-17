@@ -663,6 +663,136 @@ async function savePersonalProfile(){
   }
 }
 
+// ---- COACH SETTINGS (Phase 57, owner-only) ----
+function _coachProfile(){ return (STATE.profile || (STATE.profile = {})); }
+
+async function _saveCoachConfig(body, okMsg){
+  const jwt = localStorage.getItem('forge_token');
+  const res = await fetch('/api/state/profile/coach-config', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt }, body: JSON.stringify(body),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Save failed'); }
+  if (okMsg) showToast(okMsg);
+}
+
+function _renderHealthConditions(){
+  const el = document.getElementById('hc-list'); if (!el) return;
+  const list = _coachProfile().healthConditions || [];
+  if (!list.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:6px 0;">None — the coach applies no condition-specific rules.</div>'; return; }
+  el.innerHTML = list.map(c => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+    <div style="flex:1;"><div style="font-size:13px;font-weight:600;">${escapeHtml(c.label || c.key || '')}</div>${c.notes ? `<div style="font-size:11px;color:var(--text3);">${escapeHtml(c.notes)}</div>` : ''}</div>
+    <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--red);padding:5px 9px;" onclick="removeHealthCondition('${escapeHtml(c.key || c.label || '')}')">Remove</button>
+  </div>`).join('');
+}
+
+function loadCoachSettingsUI(){
+  if (typeof isOwner === 'function' && !isOwner()) return;
+  const pf = _coachProfile();
+  _renderHealthConditions();
+  const ct = pf.coachTargets || {};
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  set('ct-protfloor', ct.proteinFloorDaily);
+  set('ct-permeal', ct.proteinPerMeal);
+  if (ct.waterRestMl != null) set('ct-water-rest', Math.round(ct.waterRestMl / 100) / 10);
+  if (ct.waterGymMl != null) set('ct-water-gym', Math.round(ct.waterGymMl / 100) / 10);
+  set('ct-deficit', ct.deficitKcal);
+  const inj = document.getElementById('cs-injday'); if (inj && typeof pf.glp1InjectionDow === 'number') inj.value = String(pf.glp1InjectionDow);
+  const ew = pf.eatingWindow || {};
+  const ewEn = document.getElementById('cs-ew-enabled'); if (ewEn) ewEn.checked = ew.enabled !== false;
+  const ewS = document.getElementById('cs-ew-start'); if (ewS && ew.start != null) ewS.value = String(ew.start);
+  const ewE = document.getElementById('cs-ew-end'); if (ewE && ew.end != null) ewE.value = String(ew.end);
+  _toggleEwInputs();
+  const dob = (pf.personal && pf.personal.dateOfBirth) || '';
+  const dobEl = document.getElementById('cs-dob'); if (dobEl) dobEl.value = dob;
+  const note = document.getElementById('cs-dob-note');
+  if (note) note.textContent = (dob === '1974-01-01') ? '⚠ Seeded as an assumption (1974-01-01) — set your real date.' : '';
+}
+
+function _toggleEwInputs(){
+  const en = document.getElementById('cs-ew-enabled'); const box = document.getElementById('cs-ew-times');
+  if (!en || !box) return;
+  const on = en.checked;
+  box.querySelectorAll('select').forEach(s => { s.disabled = !on; s.style.opacity = on ? '1' : '0.4'; });
+}
+
+async function addHealthConditionQuick(key, label, notes){
+  const list = _coachProfile().healthConditions || [];
+  if (list.some(c => c.key === key)) { showToast('Already added'); return; }
+  const next = [...list, { key, label, notes }];
+  try { await _saveCoachConfig({ healthConditions: next }); _coachProfile().healthConditions = next; updateLocalCache(); _renderHealthConditions(); showToast('Condition added ✓'); }
+  catch (e) { showToast(e.message || 'Failed'); }
+}
+async function addHealthConditionFree(){
+  const inp = document.getElementById('hc-free'); const label = (inp ? inp.value : '').trim();
+  if (!label) { showToast('Enter a condition'); return; }
+  const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'condition';
+  const list = _coachProfile().healthConditions || [];
+  if (list.some(c => c.key === key)) { showToast('Already added'); return; }
+  const next = [...list, { key, label }];
+  try { await _saveCoachConfig({ healthConditions: next }); _coachProfile().healthConditions = next; updateLocalCache(); if (inp) inp.value = ''; _renderHealthConditions(); showToast('Condition added ✓'); }
+  catch (e) { showToast(e.message || 'Failed'); }
+}
+async function removeHealthCondition(key){
+  if (!confirm('The coach will stop factoring this into advice — confirm?')) return;
+  const list = _coachProfile().healthConditions || [];
+  const next = list.filter(c => (c.key || c.label) !== key);
+  try { await _saveCoachConfig({ healthConditions: next }); _coachProfile().healthConditions = next; updateLocalCache(); _renderHealthConditions(); showToast('Condition removed'); }
+  catch (e) { showToast(e.message || 'Failed'); }
+}
+
+async function saveCoachTargets(){
+  const num = id => { const v = parseFloat((document.getElementById(id) || {}).value); return isNaN(v) ? null : v; };
+  const protfloor = num('ct-protfloor'), permeal = num('ct-permeal'), wrest = num('ct-water-rest'), wgym = num('ct-water-gym'), deficit = num('ct-deficit');
+  const checks = [
+    [protfloor, 100, 350, 'Protein floor must be 100-350g'],
+    [permeal, 20, 80, 'Per-meal protein must be 20-80g'],
+    [wrest, 1, 6, 'Rest-day water must be 1-6L'],
+    [wgym, 1, 6, 'Gym-day water must be 1-6L'],
+    [deficit, 0, 1200, 'Calorie deficit must be 0-1200'],
+  ];
+  for (const [v, lo, hi, msg] of checks) { if (v != null && (v < lo || v > hi)) { showToast(msg); return; } }
+  const ct = {};
+  if (protfloor != null) ct.proteinFloorDaily = Math.round(protfloor);
+  if (permeal != null) ct.proteinPerMeal = Math.round(permeal);
+  if (wrest != null) ct.waterRestMl = Math.round(wrest * 1000);
+  if (wgym != null) ct.waterGymMl = Math.round(wgym * 1000);
+  if (deficit != null) ct.deficitKcal = Math.round(deficit);
+  if (!Object.keys(ct).length) { showToast('Nothing to save'); return; }
+  try { await _saveCoachConfig({ coachTargets: ct }, 'Targets saved ✓'); _coachProfile().coachTargets = { ...(_coachProfile().coachTargets || {}), ...ct }; updateLocalCache(); }
+  catch (e) { showToast(e.message || 'Failed'); }
+}
+
+async function saveInjectionDay(){
+  const el = document.getElementById('cs-injday'); if (!el) return;
+  const dow = parseInt(el.value, 10); if (isNaN(dow)) return;
+  try { await _saveCoachConfig({ glp1InjectionDow: dow }, 'Injection day saved ✓'); _coachProfile().glp1InjectionDow = dow; updateLocalCache(); }
+  catch (e) { showToast(e.message || 'Failed'); }
+}
+
+async function saveEatingWindow(){
+  const enabled = (document.getElementById('cs-ew-enabled') || {}).checked !== false;
+  const start = parseInt((document.getElementById('cs-ew-start') || {}).value, 10);
+  const end = parseInt((document.getElementById('cs-ew-end') || {}).value, 10);
+  if (enabled && !(end > start)) { showToast('End time must be after start'); return; }
+  const ew = { enabled, start: isNaN(start) ? 12 : start, end: isNaN(end) ? 20 : end };
+  try { await _saveCoachConfig({ eatingWindow: ew }, 'Eating window saved ✓'); _coachProfile().eatingWindow = ew; updateLocalCache(); }
+  catch (e) { showToast(e.message || 'Failed'); }
+}
+
+async function saveCoachDob(){
+  const dob = (document.getElementById('cs-dob') || {}).value;
+  if (!dob || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) { showToast('Pick a valid date'); return; }
+  const jwt = localStorage.getItem('forge_token');
+  try {
+    const res = await fetch('/api/state/profile/personal', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt }, body: JSON.stringify({ dateOfBirth: dob }) });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Save failed'); }
+    if (!STATE.profile) STATE.profile = {}; if (!STATE.profile.personal) STATE.profile.personal = {};
+    STATE.profile.personal.dateOfBirth = dob; updateLocalCache();
+    const note = document.getElementById('cs-dob-note'); if (note) note.textContent = '';
+    showToast('Date of birth saved ✓');
+  } catch (e) { showToast(e.message || 'Failed'); }
+}
+
 // ---- SKIN CARE (Phase 35, owner-only) ----
 let _skinEdit=null;
 
