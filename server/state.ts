@@ -858,6 +858,55 @@ router.put("/dexa-scans", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// Phase 58: Boditrax scans — trusted multi-frequency BIA (source:"boditrax").
+// Reliability sits below DEXA, above Withings; the blending engine consumes this
+// array. Range validation mirrors public/proactive-core.js BODITRAX_FIELDS.
+router.put("/boditrax-log", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { boditraxLog } = req.body || {};
+    if (!Array.isArray(boditraxLog)) { res.status(400).json({ error: "boditraxLog must be an array" }); return; }
+    if (boditraxLog.length > 500) { res.status(400).json({ error: "max 500 scans" }); return; }
+    const RANGES: Record<string, [number, number, boolean]> = {
+      weight: [30, 300, true], muscle: [5, 200, true], fat: [0, 200, true], visceral: [1, 60, true],
+      water: [5, 150, false], bone: [0.3, 15, false], ffm: [10, 250, false], cellular: [0, 20, false],
+      bmr: [500, 5000, false], metabolicAge: [5, 120, false], physique: [1, 9, false],
+      legMuscle: [0, 150, false], boditraxScore: [0, 1000, false], proteinPct: [5, 40, false],
+    };
+    const num = (v: any, lo: number, hi: number) => {
+      if (v == null || v === "") return null;
+      const n = +v;
+      if (!Number.isFinite(n) || n < lo || n > hi) return null;
+      return n;
+    };
+    const clean = boditraxLog.map((s: any) => {
+      if (!s || typeof s !== "object") return null;
+      const date = String(s.date || "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null; // date is required
+      const out: any = {
+        id: String(s.id || "").slice(0, 60) || ("bdx_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
+        source: "boditrax", date,
+        time: /^\d{2}:\d{2}$/.test(String(s.time || "")) ? String(s.time).slice(0, 5) : null,
+        loggedAt: String(s.loggedAt || new Date().toISOString()).slice(0, 30),
+      };
+      for (const f in RANGES) out[f] = num(s[f], RANGES[f][0], RANGES[f][1]);
+      // Required numerics must survive validation, else drop the row.
+      if (out.weight == null || out.muscle == null || out.fat == null || out.visceral == null) return null;
+      return out;
+    }).filter(Boolean);
+    const valueJson = JSON.stringify(clean);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{boditraxLog}', ${valueJson}::jsonb, true),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true, count: clean.length });
+  } catch (err) {
+    console.error("Put boditrax-log error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 55: Health Records — document metadata + source text for the Body-page
 // timeline. The extracted numbers live in profile.bloodMarkers / state.dexaScans
 // (which the coach reads); this just holds the source markdown + provider/title.

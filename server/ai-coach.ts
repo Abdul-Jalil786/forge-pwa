@@ -3,7 +3,7 @@ import prisma from "./db";
 import { decrypt } from "./crypto-util";
 import { analyzeNutrition } from "./nutrition";
 import { exerciseName, sessionTypeForDate, programmeLabel } from "./programme-shared";
-import { formatCorrelations } from "./proactive";
+import { formatCorrelations, blendedLeanSeries, leanTrendRate } from "./proactive";
 
 // Phase 57: age derived from date of birth (YYYY-MM-DD) so it never goes stale.
 // Preferred over a static profile.personal.age. Returns null if unparseable.
@@ -636,6 +636,49 @@ function buildDexaContext(state: any): string {
   return lines.join("\n");
 }
 
+// Phase 58: Boditrax scans — the user's most-trusted BIA (below DEXA, above
+// Withings). Emits each scan labelled by source, plus the reliability-weighted
+// lean trend so the coach never reports a Withings-only lean crash the trusted
+// device contradicts.
+function buildBoditraxContext(state: any): string {
+  const scans = Array.isArray(state.boditraxLog)
+    ? [...state.boditraxLog].filter((s: any) => s && s.date).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)))
+    : [];
+  if (!scans.length) return "";
+  const lines = ["BODITRAX SCANS (source: boditrax — trusted multi-frequency BIA, ranks ABOVE Withings, BELOW DEXA):"];
+  for (const s of scans) {
+    const parts: string[] = [];
+    if (s.weight != null) parts.push(`weight ${s.weight}kg`);
+    if (s.muscle != null) parts.push(`muscle ${s.muscle}kg`);
+    if (s.fat != null) parts.push(`fat ${s.fat}kg`);
+    if (s.ffm != null) parts.push(`fat-free mass ${s.ffm}kg`);
+    if (s.visceral != null) parts.push(`visceral ${s.visceral}`);
+    if (s.water != null) parts.push(`water ${s.water}kg`);
+    if (s.bmr != null) parts.push(`BMR ${s.bmr}`);
+    if (s.metabolicAge != null) parts.push(`metabolic age ${s.metabolicAge}`);
+    if (s.proteinPct != null) parts.push(`protein ${s.proteinPct}%`);
+    if (s.boditraxScore != null) parts.push(`Boditrax score ${s.boditraxScore}`);
+    lines.push(`  ${s.date}: ${parts.join(" · ")}`);
+  }
+  // Lean deltas across the Boditrax scans (fat-free mass, the trusted lean read).
+  const rel = scans.filter((s: any) => (s.ffm != null) || (s.weight != null && s.fat != null))
+    .map((s: any) => ({ date: s.date, lean: s.ffm != null ? s.ffm : Math.round((s.weight - s.fat) * 100) / 100 }));
+  if (rel.length >= 2) {
+    const first = rel[0], last = rel[rel.length - 1];
+    const days = Math.max(1, Math.round((new Date(last.date + "T12:00:00").getTime() - new Date(first.date + "T12:00:00").getTime()) / 86400000));
+    const perWk = Math.round(((last.lean - first.lean) / (days / 7)) * 100) / 100;
+    lines.push(`  Boditrax lean (fat-free mass): ${first.lean}kg (${first.date}) → ${last.lean}kg (${last.date}) = ${(last.lean - first.lean >= 0 ? "+" : "")}${Math.round((last.lean - first.lean) * 10) / 10}kg over ${days}d (${perWk >= 0 ? "+" : ""}${perWk}kg/week).`);
+  }
+  try {
+    const r = leanTrendRate(state, {});
+    if (r && r.perWeek != null) {
+      lines.push(`  RELIABILITY-WEIGHTED LEAN TREND (engine — DEXA>Boditrax>Withings): ${r.perWeek >= 0 ? "+" : ""}${r.perWeek}kg/week from ${r.source} (n=${r.n}). Trust THIS over any single-source Withings lean delta; if Withings shows a steeper lean drop, it is BIA noise the trusted device contradicts.`);
+    }
+  } catch { /* engine optional */ }
+  lines.push("");
+  return lines.join("\n");
+}
+
 // Phase 45: tape measurements — hydration-immune trend data. Always emits
 // (even when empty/stale) so the coach knows to nudge the user.
 function buildTapeContext(state: any): string {
@@ -1119,6 +1162,8 @@ export function buildContext(state: any): string {
   // carries the empty/stale nudge)
   const dexaBlock = buildDexaContext(state);
   if (dexaBlock) lines.push(dexaBlock);
+  const boditraxBlock = buildBoditraxContext(state);
+  if (boditraxBlock) lines.push(boditraxBlock);
   lines.push(buildTapeContext(state));
 
   // Phase 29 + 30: Oura activity. NOTE: total_calories ≈ TDEE (BMR + active);

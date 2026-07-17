@@ -1381,6 +1381,34 @@ async function seedJayDexa20260602() {
   }
 }
 
+// Phase 58: seed the three known Boditrax scans (source:"boditrax"). One-shot;
+// future scans go in via the Body-page form. Boditrax sits above Withings in the
+// lean-mass reliability hierarchy, so these anchor the trend.
+async function seedAbdulBoditraxV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.boditraxSeededV1) return;
+    if (!Array.isArray(state.boditraxLog)) state.boditraxLog = [];
+    const scans = [
+      { id: "bdx_seed_2026_05_16", date: "2026-05-16", weight: 114.4, muscle: 75.7, fat: 34.8, water: 56.7, bone: 3.9, ffm: 79.6, visceral: 17, cellular: 7.0, bmr: 2384, metabolicAge: 67, physique: 3, legMuscle: 77, boditraxScore: 612, proteinPct: 17 },
+      { id: "bdx_seed_2026_07_09", date: "2026-07-09", weight: 107.1, muscle: 74.6, fat: 28.6, water: 56.2, bone: 3.9, ffm: 78.5, visceral: 14, cellular: 7.1, bmr: 2327, metabolicAge: 56, physique: 6, legMuscle: 81, boditraxScore: 695, proteinPct: 17 },
+      { id: "bdx_seed_2026_07_15", date: "2026-07-15", weight: 106.1, muscle: 73.8, fat: 28.5, water: 55.1, bone: 3.8, ffm: 77.6, visceral: 14, cellular: 7.2, bmr: 2298, metabolicAge: 57, physique: 6, legMuscle: 79, boditraxScore: 689, proteinPct: 18 },
+    ];
+    for (const s of scans) {
+      if (!state.boditraxLog.some((e: any) => e?.id === s.id)) {
+        state.boditraxLog.push({ source: "boditrax", time: null, loggedAt: new Date().toISOString(), ...s });
+      }
+    }
+    state.boditraxSeededV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Boditrax: seeded 3 scans (16 May / 09 Jul / 15 Jul 2026)");
+  } catch (err) {
+    console.error("[migration] seedAbdulBoditraxV1 failed:", err);
+  }
+}
+
 // Phase 41n: swap breakfast eggs from "4 whole boiled" to "3 whole boiled +
 // 4 egg whites" (what Jay actually eats). Adds 9g protein, saves 5g fat,
 // virtually the same calories. Meal totals updated to reflect the swap.
@@ -1630,6 +1658,7 @@ const server = app.listen(PORT, async () => {
   await fixJayLegPressSledV1();
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();
+  await seedAbdulBoditraxV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
   // ~a week has elapsed with no report, never a spurious mid-week one.
