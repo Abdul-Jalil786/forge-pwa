@@ -3,6 +3,7 @@ import prisma from "./db";
 import { decrypt } from "./crypto-util";
 import { analyzeNutrition } from "./nutrition";
 import { exerciseName, sessionTypeForDate, programmeLabel } from "./programme-shared";
+import { formatCorrelations } from "./proactive";
 
 // Phase 57: age derived from date of birth (YYYY-MM-DD) so it never goes stale.
 // Preferred over a static profile.personal.age. Returns null if unparseable.
@@ -1103,6 +1104,13 @@ export function buildContext(state: any): string {
   const stretchBlock = buildStretchContext(state);
   if (stretchBlock) lines.push(stretchBlock);
 
+  // Phase 57: computed correlations (deterministic, full-history) — the coach
+  // cites these instead of eyeballing 7-14d windows.
+  if (state.correlations) {
+    const corrBlock = formatCorrelations(state.correlations);
+    if (corrBlock) { lines.push(corrBlock); lines.push(""); }
+  }
+
   // Phase 44: recovery-gate calibration — gate firings vs choices vs outcomes
   const calibrationBlock = buildCalibrationContext(state);
   if (calibrationBlock) lines.push(calibrationBlock);
@@ -1642,7 +1650,7 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
   };
 }
 
-export async function saveReport(userId: string, report: GeneratedReport): Promise<string> {
+export async function saveReport(userId: string, report: GeneratedReport, type: string = "weekly"): Promise<string> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new Error("User not found");
   const state: any = user.state || {};
@@ -1651,7 +1659,7 @@ export async function saveReport(userId: string, report: GeneratedReport): Promi
   reports.unshift({
     id,
     createdAt: new Date().toISOString(),
-    type: "weekly",
+    type,
     title: report.title,
     content: report.content,
     dateRange: report.dateRange,
@@ -1660,9 +1668,75 @@ export async function saveReport(userId: string, report: GeneratedReport): Promi
   });
   if (reports.length > 50) reports.length = 50;
   state.coachingReports = reports;
-  state.lastCoachingReportAt = new Date().toISOString();
+  // Monthly deep dives don't reset the weekly cadence clock.
+  if (type === "monthly") state.lastMonthlyDeepDiveAt = new Date().toISOString();
+  else state.lastCoachingReportAt = new Date().toISOString();
   await prisma.user.update({ where: { id: userId }, data: { state } });
   return id;
+}
+
+const MONTHLY_SYSTEM = `You are Forge's monthly deep-dive analyst. Once a month you step back from week-to-week noise and study the long arc. You get the same rich CONTEXT as the weekly report, INCLUDING a CORRELATIONS block computed deterministically over the user's FULL history (with r and sample size n).
+
+Write a report under 500 words (markdown, ## headings), in this exact structure:
+## Patterns — the 3 STRONGEST patterns this month. Cite computed numbers (r + n from the CORRELATIONS block, or specific deltas from the context). No vague claims; prefer correlations with real n over eyeballed ones.
+## Keep doing — exactly ONE thing clearly working that must NOT change, with the evidence.
+## The experiment — exactly ONE thing to try next month, with a MEASURABLE success criterion (a number AND a date to check it).
+
+Rules: PIN THE NUMBERS — every figure verbatim from the CONTEXT. Medical caveats as "consistent with X, discuss with your GP", never a diagnosis. This is a strategic step-back, NOT a repeat of the weekly report. Then emit up to 5 concrete suggestions (same schema as the weekly report) only when clearly supported.`;
+
+export async function generateMonthlyDeepDive(userId: string): Promise<GeneratedReport> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  if (!state.coachingKey) throw new Error("No Anthropic API key configured.");
+  let apiKey: string;
+  try { apiKey = decrypt(state.coachingKey); }
+  catch { throw new Error("Failed to decrypt stored API key — re-enter it in settings."); }
+
+  const context = buildContext(state);
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 2500,
+    system: MONTHLY_SYSTEM,
+    tools: [{
+      name: "submit_report",
+      description: "Submit the monthly deep-dive report and any suggestions.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          title: { type: "string", description: "Title, e.g. 'Monthly Deep Dive — May 2026'" },
+          content: { type: "string", description: "Markdown body, <=500 words, ## headings." },
+          suggestions: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["macros", "reminders", "note", "skincare", "skincare-phase", "training-swap", "injury-flag", "fasting-note", "supplement-reminder"] },
+                label: { type: "string" }, rationale: { type: "string" }, payload: { type: "object" },
+              },
+              required: ["type", "label", "rationale", "payload"],
+            },
+          },
+        },
+        required: ["title", "content", "suggestions"],
+      },
+    }],
+    tool_choice: { type: "tool", name: "submit_report" },
+    messages: [{ role: "user", content: `Here is the user's full context including full-history correlations. Write this month's deep dive.\n\n${context}` }],
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === "tool_use") as any;
+  if (!toolBlock) throw new Error("Model did not return a structured report");
+  const input = toolBlock.input as { title: string; content: string; suggestions: any[] };
+  const now = Date.now();
+  const dismissedKeys = _dismissedSuggestionKeys(state);
+  const suggestions: Suggestion[] = (input.suggestions || [])
+    .map((s, i) => ({ id: `sug_${now}_${i}`, type: s.type, label: String(s.label || ""), rationale: String(s.rationale || ""), payload: s.payload || {}, applied: false, dismissed: false }))
+    .filter((s) => !dismissedKeys.has(_suggestionKey(s)))
+    .slice(0, MAX_MODEL_SUGGESTIONS);
+  const monthLabel = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "Europe/London" });
+  return { title: input.title || `Monthly Deep Dive — ${monthLabel}`, content: input.content || "", dateRange: monthLabel, suggestions };
 }
 
 export function hoursSinceLastReport(state: any): number {

@@ -3,8 +3,9 @@ import webpush from "web-push";
 import prisma from "./db";
 import { syncOuraForAllUsers } from "./oura";
 import { syncWithingsForAllUsers } from "./withings";
-import { generateWeeklyReport, saveReport, hoursSinceLastReport, hoursSinceLastPlanRegen, recomputeMealPlanMacros } from "./ai-coach";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport, hoursSinceLastPlanRegen, recomputeMealPlanMacros, generateMonthlyDeepDive } from "./ai-coach";
 import { sessionTypeForDate } from "./programme-shared";
+import { runNightlyCorrelations, runDailyScanner, isFirstSundayOfMonth } from "./proactive";
 
 function ukToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -415,6 +416,23 @@ export function startCron() {
     }
   }, { timezone: "Europe/London" });
 
+  // Phase 57: nightly deterministic correlation compute (03:00 UK, no LLM, free).
+  // Caches state.correlations for the weekly report + the daily proactive scanner.
+  cron.schedule("0 3 * * *", async () => {
+    console.log("Running nightly correlation compute...");
+    try { await runNightlyCorrelations(); console.log("Nightly correlations complete"); }
+    catch (err) { console.error("Nightly correlation error:", err); }
+  }, { timezone: "Europe/London" });
+
+  // Phase 57: proactive daily scanner (08:30 UK). Deterministic checks are free;
+  // an LLM (Haiku, budget-governed) runs only when a governed trigger fires, and
+  // may still SKIP. Silent on a normal day.
+  cron.schedule("30 8 * * *", async () => {
+    console.log("Running proactive daily scanner...");
+    try { const r = await runDailyScanner(); console.log(`Proactive scanner: ${r.fired} fired, ${r.nudged} nudged of ${r.scanned}`); }
+    catch (err) { console.error("Proactive scanner error:", err); }
+  }, { timezone: "Europe/London" });
+
   // Phase 57: GLP-1 injection reminder — fires daily 14:00 UK but only pushes on
   // the user's configured injection weekday (profile.glp1InjectionDow; default
   // Wednesday for legacy), gated on actually being on a GLP-1. No hardcoded weekday.
@@ -603,4 +621,29 @@ export function startCron() {
   cron.schedule("0 9 * * 0",     () => runWeeklyCoaching(24, "sunday-9am"),       { timezone: "Europe/London" });
   cron.schedule("0 10-23 * * 0", () => runWeeklyCoaching(24, "sunday-catchup"),   { timezone: "Europe/London" });
   cron.schedule("0 12 * * *",    () => runWeeklyCoaching(150, "daily-safety-net"), { timezone: "Europe/London" });
+
+  // Phase 57: monthly deep dive — first Sunday 10:30 UK, AFTER the weekly report
+  // (09:00) so both render distinctly in the feed. One Opus call over the
+  // full-history correlations + long-horizon context; deduped to one per month.
+  cron.schedule("30 10 * * 0", async () => {
+    const today = ukToday();
+    if (!isFirstSundayOfMonth(today)) return;
+    console.log("Running monthly deep dive...");
+    try {
+      const users = await prisma.user.findMany();
+      for (const user of users) {
+        const state: any = user.state || {};
+        if (!state.coachingKey) continue;
+        const last = state.lastMonthlyDeepDiveAt;
+        if (last && (Date.now() - new Date(last).getTime()) / 86400000 < 25) continue; // one/month
+        try {
+          const report = await generateMonthlyDeepDive(user.id);
+          await saveReport(user.id, report, "monthly");
+          await sendPushToUser(user.id, { title: "🔭 Monthly deep dive ready", body: report.title });
+          console.log(`[coach] Monthly deep dive for ${user.email}`);
+        } catch (e: any) { console.error(`[coach] Monthly deep dive failed for ${user.email}:`, e?.message || e); }
+      }
+      console.log("Monthly deep dive complete");
+    } catch (err) { console.error("Monthly deep dive error:", err); }
+  }, { timezone: "Europe/London" });
 }

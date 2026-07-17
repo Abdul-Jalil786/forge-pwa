@@ -2510,7 +2510,7 @@ function renderCoach(){
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
             <div>
               <div style="font-family:'Archivo Black',sans-serif;font-size:15px;letter-spacing:-.3px;">${escapeHtml(r.title)}</div>
-              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">${escapeHtml(r.type||'')} · ${dt}</div>
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">${r.type==='monthly'?'<span style="color:var(--lime);font-weight:700;">🔭 Monthly Deep Dive</span>':'<span style="color:var(--text3);">'+escapeHtml(r.type||'')+'</span>'}<span style="color:var(--text3);"> · ${dt}</span></div>
             </div>
           </div>
           <div class="ai-report" style="font-size:13px;line-height:1.7;color:var(--text2);">${formatCoachingReport(r.content)}</div>
@@ -2766,6 +2766,11 @@ function renderMore(){
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:6px;">
         The facts the AI Coach uses to tailor advice. Changes take effect on your <strong>next generated report or Ask Forge answer</strong>.
       </div>
+
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 0;border-bottom:1px solid var(--border);">
+        <input id="cs-proactive" type="checkbox" onchange="saveProactiveToggle()" style="width:18px;height:18px;margin-top:1px;" />
+        <span style="flex:1;"><span style="font-size:13px;font-weight:600;">Proactive coach</span><br><span style="font-size:11px;color:var(--text3);line-height:1.5;">Pings you only when a pattern needs attention (low steps, poor sleep, a stall, muscle loss). Silent otherwise — at most one nudge a day.</span></span>
+      </label>
 
       <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:16px 0 4px;">Health Conditions</div>
       <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:8px;">The coach applies a condition's rules only while it's listed here (cardiac → tighter BP target; fatty liver → no alcohol; smoker → slower skin recovery). Remove one and that rule stops next report.</div>

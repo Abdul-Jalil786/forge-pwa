@@ -70,6 +70,16 @@ function exerciseName(id) {
 // ---- Schedule (session-type) logic ----------------------------------------
 // Pure: the training-start anchor is passed in, never read from a global.
 
+// Per-exercise working rep range [lower, upper] for weighted lifts with a numeric
+// range (mirrors public/data.js WORKOUTS; timed holds + "each side" moves omitted).
+// Single source so server-side stall detection can judge "hit top of range".
+var EXERCISE_REPS = {
+  u1: [6, 8], u2: [8, 10], u3: [6, 8], u4: [6, 8], u5: [8, 10], u6: [10, 12], u7: [10, 12], u8: [12, 15],
+  neck_ext: [12, 15], neck_front: [12, 15],
+  l1: [6, 8], l2: [6, 8], l3: [10, 12], l4: [10, 12], l5: [8, 10], l6: [15, 20],
+  h1: [10, 12], h2: [8, 15], h3: [8, 10], h4: [10, 12], h5: [12, 15],
+};
+
 // Human-readable programme id -> { name, pattern }. Single source for the split
 // description (so the AI coach no longer hardcodes "Upper/Rest/Lower/Rest 4-day").
 // Names match public/data.js PROGRAMS (enforced by the parity test).
@@ -122,6 +132,7 @@ function sessionTypeForDate(programId, dateStr, startDate) {
 var FORGE_PROGRAMME = {
   EXERCISE_NAMES: EXERCISE_NAMES,
   LEGACY_EXERCISE_NAMES: LEGACY_EXERCISE_NAMES,
+  EXERCISE_REPS: EXERCISE_REPS,
   exerciseName: exerciseName,
   PROGRAMME_LABELS: PROGRAMME_LABELS,
   programmeLabel: programmeLabel,
