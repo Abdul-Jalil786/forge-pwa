@@ -48,6 +48,12 @@ export function formatCorrelations(c: any): string {
   return core.formatCorrelations(c);
 }
 
+// Re-export the pure first-Sunday check for the cron monthly deep-dive (keeps
+// this module free of any ai-coach import, avoiding a circular dependency).
+export function isFirstSundayOfMonth(dateStr: string): boolean {
+  return (core as any).isFirstSundayOfMonth(dateStr);
+}
+
 // Nightly job — cheap, deterministic, no LLM. Caches on state.correlations via a
 // single-field jsonb_set (no whole-state clobber).
 export async function runNightlyCorrelations(): Promise<void> {

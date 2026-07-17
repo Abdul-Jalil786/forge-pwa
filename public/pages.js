@@ -2510,7 +2510,7 @@ function renderCoach(){
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
             <div>
               <div style="font-family:'Archivo Black',sans-serif;font-size:15px;letter-spacing:-.3px;">${escapeHtml(r.title)}</div>
-              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">${escapeHtml(r.type||'')} · ${dt}</div>
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">${r.type==='monthly'?'<span style="color:var(--lime);font-weight:700;">🔭 Monthly Deep Dive</span>':'<span style="color:var(--text3);">'+escapeHtml(r.type||'')+'</span>'}<span style="color:var(--text3);"> · ${dt}</span></div>
             </div>
           </div>
           <div class="ai-report" style="font-size:13px;line-height:1.7;color:var(--text2);">${formatCoachingReport(r.content)}</div>

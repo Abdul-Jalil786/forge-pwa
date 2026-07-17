@@ -282,11 +282,17 @@ function selectNudge(history, fired, today, config) {
   return eligible[0];
 }
 
+// True if dateStr is the first Sunday of its month (Phase 3 monthly deep-dive).
+function isFirstSundayOfMonth(dateStr) {
+  var dt = new Date(dateStr + "T12:00:00");
+  return dt.getDay() === 0 && dt.getDate() <= 7;
+}
+
 var PROACTIVE_CORE = {
   MIN_N: MIN_N, MIN_CYCLES: MIN_CYCLES,
   pearson: pearson, slope: slope, dailyIntake: dailyIntake, sessionPerf: sessionPerf, detectStalls: detectStalls,
   computeCorrelations: computeCorrelations, formatCorrelations: formatCorrelations,
-  computeTriggers: computeTriggers, selectNudge: selectNudge,
+  computeTriggers: computeTriggers, selectNudge: selectNudge, isFirstSundayOfMonth: isFirstSundayOfMonth,
 };
 if (typeof window !== "undefined") window.PROACTIVE_CORE = PROACTIVE_CORE;
 if (typeof module !== "undefined" && module.exports) module.exports = PROACTIVE_CORE;

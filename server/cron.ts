@@ -3,9 +3,9 @@ import webpush from "web-push";
 import prisma from "./db";
 import { syncOuraForAllUsers } from "./oura";
 import { syncWithingsForAllUsers } from "./withings";
-import { generateWeeklyReport, saveReport, hoursSinceLastReport, hoursSinceLastPlanRegen, recomputeMealPlanMacros } from "./ai-coach";
+import { generateWeeklyReport, saveReport, hoursSinceLastReport, hoursSinceLastPlanRegen, recomputeMealPlanMacros, generateMonthlyDeepDive } from "./ai-coach";
 import { sessionTypeForDate } from "./programme-shared";
-import { runNightlyCorrelations, runDailyScanner } from "./proactive";
+import { runNightlyCorrelations, runDailyScanner, isFirstSundayOfMonth } from "./proactive";
 
 function ukToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -621,4 +621,29 @@ export function startCron() {
   cron.schedule("0 9 * * 0",     () => runWeeklyCoaching(24, "sunday-9am"),       { timezone: "Europe/London" });
   cron.schedule("0 10-23 * * 0", () => runWeeklyCoaching(24, "sunday-catchup"),   { timezone: "Europe/London" });
   cron.schedule("0 12 * * *",    () => runWeeklyCoaching(150, "daily-safety-net"), { timezone: "Europe/London" });
+
+  // Phase 57: monthly deep dive — first Sunday 10:30 UK, AFTER the weekly report
+  // (09:00) so both render distinctly in the feed. One Opus call over the
+  // full-history correlations + long-horizon context; deduped to one per month.
+  cron.schedule("30 10 * * 0", async () => {
+    const today = ukToday();
+    if (!isFirstSundayOfMonth(today)) return;
+    console.log("Running monthly deep dive...");
+    try {
+      const users = await prisma.user.findMany();
+      for (const user of users) {
+        const state: any = user.state || {};
+        if (!state.coachingKey) continue;
+        const last = state.lastMonthlyDeepDiveAt;
+        if (last && (Date.now() - new Date(last).getTime()) / 86400000 < 25) continue; // one/month
+        try {
+          const report = await generateMonthlyDeepDive(user.id);
+          await saveReport(user.id, report, "monthly");
+          await sendPushToUser(user.id, { title: "🔭 Monthly deep dive ready", body: report.title });
+          console.log(`[coach] Monthly deep dive for ${user.email}`);
+        } catch (e: any) { console.error(`[coach] Monthly deep dive failed for ${user.email}:`, e?.message || e); }
+      }
+      console.log("Monthly deep dive complete");
+    } catch (err) { console.error("Monthly deep dive error:", err); }
+  }, { timezone: "Europe/London" });
 }
