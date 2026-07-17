@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { decrypt } from "./crypto-util";
 import { analyzeNutrition } from "./nutrition";
+import { exerciseName, sessionTypeForDate } from "./programme-shared";
 
 // Phase 46: upgraded 4.7 → 4.8 (drop-in; better at knowledge-work analysis and
 // clearer writing — exactly what a coaching report needs). Forced tool_choice is
@@ -268,15 +269,10 @@ function buildSkinContext(state: any): string {
   return L.join("\n");
 }
 
-// Phase 38: exercise id → display name (mirrors public/data.js WORKOUTS)
-const EX_NAMES: Record<string, string> = {
-  u1: "Chest Press", u2: "Incline Dumbbell Press", u3: "Seated Row", u4: "Shoulder Press",
-  u5: "Lat Pulldown", u6: "Bicep Curl", u7: "Tricep Pushdown", u8: "Face Pull", u9: "Plank",
-  l1: "Leg Press", l2: "Romanian Deadlift", l3: "Leg Extension", l4: "Leg Curl",
-  l5: "Hip Thrust", l6: "Calf Raise", l8: "Ab Crunch",
-  core_dead_bug: "Dead Bug", neck_ext: "Cable Neck Extension (back)", neck_front: "Cable Neck Flexion (front)",
-  core_pallof: "Pallof Press", core_suitcase: "Suitcase Carry",
-};
+// Exercise id → display name now comes from the shared programme module
+// (server/programme-shared.ts → public/programme-shared.js), the single source of
+// truth. `exerciseName(id)` covers current + retired (legacy) ids and falls back
+// to the raw id, so history never renders as "unknown".
 
 // Phase 38: per-lift detailed history — last 4 sessions per exercise
 // Phase 47: user-written training notes — per-exercise running notes (stick to
@@ -319,7 +315,7 @@ function buildTrainingDetail(state: any): string {
   const lines: string[] = [];
   lines.push("TRAINING DETAIL (per-lift, last 4 sessions, newest first — read this to spot stalls, deloads, and rep progress):");
   for (const exId of exIds) {
-    lines.push(`  ${EX_NAMES[exId] || exId}:`);
+    lines.push(`  ${exerciseName(exId)}:`);
     for (const h of perEx[exId]) {
       const setStr = h.sets.map((s: any) =>
         s.seconds ? `${s.seconds}s` : `${s.kg || "-"}×${s.reps || "-"}${s.effort ? `(${String(s.effort)[0]})` : ""}`
@@ -938,13 +934,10 @@ export function buildContext(state: any): string {
     cardioSessions7++;
     cardioMinutes7 += +e.duration || 0;
     if (typeof e.avgHr === "number") { cardioHrSum += e.avgHr; cardioHrN++; }
-    // Determine if this date was a rest day per the training cycle
-    const startDate = state.trainingStartDate || "2026-05-08";
-    const start = new Date(startDate + "T12:00:00").getTime();
-    const target = new Date(d + "T12:00:00").getTime();
-    const days = Math.floor((target - start) / 86400000);
-    const cycle = ((days % 4) + 4) % 4;
-    const wasTrainingDay = (cycle === 0 || cycle === 2);
+    // Determine if this date was a training day, honouring the user's programme
+    // (delegates to the shared schedule — no hardcoded upper/lower cycle).
+    const programId = state.profile?.programId || "upper-lower-4d";
+    const wasTrainingDay = sessionTypeForDate(programId, d, state.trainingStartDate) !== null;
     if (wasTrainingDay) nonRestCount++; else restDayCount++;
   }
   if (cardioSessions7 > 0 || cardioLog && Object.keys(cardioLog).length > 0) {
@@ -1197,7 +1190,7 @@ export function buildContext(state: any): string {
   if (activeInjuries.length > 0) {
     lines.push("ACTIVE INJURIES (loads on affected lifts are auto-reduced — factor recovery, deloads and form into advice):");
     for (const j of activeInjuries as any[]) {
-      const exNames = (j.affectedExercises || []).map((id: string) => EX_NAMES[id] || id).join(", ");
+      const exNames = (j.affectedExercises || []).map((id: string) => exerciseName(id)).join(", ");
       lines.push(`  - ${j.name} (${j.severity}${j.bodyPart ? `, ${j.bodyPart}` : ""})${exNames ? ` — affects: ${exNames}` : ""}${j.notes ? ` · "${j.notes}"` : ""}`);
     }
     lines.push("");

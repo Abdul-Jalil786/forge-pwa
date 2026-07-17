@@ -4,6 +4,7 @@ import prisma from "./db";
 import { syncOuraForAllUsers } from "./oura";
 import { syncWithingsForAllUsers } from "./withings";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, hoursSinceLastPlanRegen, recomputeMealPlanMacros } from "./ai-coach";
+import { sessionTypeForDate } from "./programme-shared";
 
 function ukToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -63,17 +64,12 @@ function skinDueOnServer(product: any, dateStr: string): boolean {
   return step ? (days % step === 0) : true;
 }
 
-// Phase 41: server-side session-type lookup (mirrors data.js _trainingDayInCycle)
-function sessionTypeFor(state: any, dateStr: string): "upper" | "lower" | null {
-  const startDate = state.trainingStartDate || "2026-05-08";
-  const start = new Date(startDate + "T12:00:00").getTime();
-  const target = new Date(dateStr + "T12:00:00").getTime();
-  const days = Math.floor((target - start) / 86400000);
-  if (days < 0) return null;
-  const cycle = ((days % 4) + 4) % 4;
-  if (cycle === 0) return "upper";
-  if (cycle === 2) return "lower";
-  return null;
+// Server-side session-type lookup — delegates to the shared programme module
+// (public/programme-shared.js) so client + server share ONE schedule impl, and
+// respects the user's profile.programId instead of assuming upper-lower-4d.
+function sessionTypeFor(state: any, dateStr: string): string | null {
+  const programId = state.profile?.programId || "upper-lower-4d";
+  return sessionTypeForDate(programId, dateStr, state.trainingStartDate);
 }
 
 async function sendPushToUser(userId: string, payload: { title: string; body: string }): Promise<void> {

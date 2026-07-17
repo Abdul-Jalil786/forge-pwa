@@ -93,45 +93,38 @@ function fmtSec(s){
   return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
 }
 
-// Training cycle — anchored to a start date
+// Training cycle — anchored to a start date. Delegates to the shared programme
+// module (programme-shared.js) so the client + server share ONE schedule impl.
 // 4-day pattern: Day 0=Upper, Day 1=Rest, Day 2=Lower, Day 3=Rest
 function _trainingDayInCycle(dateStr){
-  const startDate = STATE.trainingStartDate || '2026-05-08';
-  const start = new Date(startDate + 'T12:00:00');
-  const target = new Date(dateStr + 'T12:00:00');
-  const diffDays = Math.floor((target - start) / 86400000);
-  if (diffDays < 0) return -1;
-  return ((diffDays % 4) + 4) % 4;
+  return FORGE_PROGRAMME.trainingDayInCycle(dateStr, STATE.trainingStartDate);
 }
 
 // ---- Phase 42d: program templates ----
 // profile.programId selects the schedule + sessions. Default = the original
-// Upper/Lower 4-day cycle, so existing users see zero change.
+// Upper/Lower 4-day cycle, so existing users see zero change. The schedule
+// (getSessionType) now delegates to the shared FORGE_PROGRAMME.sessionTypeForDate
+// so exercise-schedule logic lives in exactly one place (see programme-shared.js).
 const PROGRAMS = {
   'upper-lower-4d': {
     id:'upper-lower-4d', name:'Upper / Lower 4-Day',
     desc:'Alternating Upper / Rest / Lower / Rest cycle',
     getSessionType(dateStr){
-      const cycle=_trainingDayInCycle(dateStr);
-      if(cycle===0)return 'upper';
-      if(cycle===2)return 'lower';
-      return null;
+      return FORGE_PROGRAMME.sessionTypeForDate('upper-lower-4d', dateStr, STATE.trainingStartDate);
     },
   },
   'full-body-3d': {
     id:'full-body-3d', name:'Full Body 3-Day',
     desc:'Mon · Wed · Fri full-body sessions',
     getSessionType(dateStr){
-      const dow=new Date(dateStr+'T12:00:00').getDay();
-      return (dow===1||dow===3||dow===5)?'full':null;
+      return FORGE_PROGRAMME.sessionTypeForDate('full-body-3d', dateStr, STATE.trainingStartDate);
     },
   },
   'home-3d': {
     id:'home-3d', name:'Home Full Body 3-Day',
     desc:'Mon · Wed · Fri at home — dumbbells + bodyweight',
     getSessionType(dateStr){
-      const dow=new Date(dateStr+'T12:00:00').getDay();
-      return (dow===1||dow===3||dow===5)?'home':null;
+      return FORGE_PROGRAMME.sessionTypeForDate('home-3d', dateStr, STATE.trainingStartDate);
     },
   },
 };
