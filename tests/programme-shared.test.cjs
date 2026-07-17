@@ -117,3 +117,19 @@ test("dates before the training anchor are rest (null) for upper-lower", () => {
   assert.equal(shared.sessionTypeForDate("upper-lower-4d", "2026-05-01", ANCHOR), null);
   assert.equal(shared.trainingDayInCycle("2026-05-01", ANCHOR), -1);
 });
+
+test("PROGRAMME_LABELS names match data.js PROGRAMS names", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "public", "data.js"), "utf8");
+  const start = src.indexOf("const PROGRAMS = {");
+  assert.ok(start >= 0, "PROGRAMS not found in data.js");
+  const end = src.indexOf("\n};", start);
+  const block = src.slice(start, end);
+  const re = /id:\s*'([^']+)'\s*,\s*name:\s*'([^']+)'/g;
+  let m;
+  const names = {};
+  while ((m = re.exec(block)) !== null) names[m[1]] = m[2];
+  assert.ok(Object.keys(names).length >= 3, "expected >=3 programmes parsed");
+  for (const [id, name] of Object.entries(names)) {
+    assert.equal(shared.PROGRAMME_LABELS[id] && shared.PROGRAMME_LABELS[id].name, name, `programme name drift for ${id}`);
+  }
+});

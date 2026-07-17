@@ -243,6 +243,10 @@ function buildSkinContext(state: any): string {
 
   // 14-day irritation
   const irr: Record<string, number> = { none: 0, "mild-dryness": 0, peeling: 0, redness: 0, burning: 0 };
+  // Phase 57: day-after-injection derived from the GLP-1 injection day (no hardcoded Thursday).
+  const _pfSkin = state.profile || {};
+  const _skinInjDow = onGlp1(Array.isArray(_pfSkin.medications) ? _pfSkin.medications : []) && typeof _pfSkin.glp1InjectionDow === "number" ? _pfSkin.glp1InjectionDow : null;
+  const _dayAfterInj = _skinInjDow != null ? (_skinInjDow + 1) % 7 : null;
   let mjCorr = 0;
   for (let i = 0; i < 14; i++) {
     const d = daysAgoUK(i);
@@ -251,12 +255,12 @@ function buildSkinContext(state: any): string {
     const ir = dlog._irritation;
     if (ir && irr[ir] !== undefined) irr[ir]++;
     const dow = new Date(d + "T12:00:00").getDay();
-    if (dow === 4 && (ir === "redness" || ir === "burning" || ir === "peeling")) mjCorr++;
+    if (_dayAfterInj != null && dow === _dayAfterInj && (ir === "redness" || ir === "burning" || ir === "peeling")) mjCorr++;
   }
   L.push("14-DAY IRRITATION:");
   L.push(`  none ${irr.none} · mild-dryness ${irr["mild-dryness"]} · peeling ${irr.peeling} · redness ${irr.redness} · burning ${irr.burning}`);
   if (irr.burning > 0) L.push(`  ⚠️ BURNING logged ${irr.burning}× — HIGH PRIORITY. Instruct 5 rest days before resuming retinol.`);
-  if (mjCorr > 0) L.push(`  ${mjCorr} irritation event(s) on Thursday (day after Mounjaro) — possible injection-sensitivity correlation`);
+  if (mjCorr > 0 && _dayAfterInj != null) L.push(`  ${mjCorr} irritation event(s) on ${DOW_NAMES[_dayAfterInj]} (day after the GLP-1 injection) — possible injection-sensitivity correlation`);
   L.push("");
 
   // Weekly journal — last 4
@@ -1351,7 +1355,7 @@ INTERPRETATION RULES:
 - Meal plan adherence: <70% on multiple days = the plan doesn't fit life, not a discipline problem. Suggest a swap, not a guilt trip.
 - MEMORY: reference what you said in previous reports. If you suggested a change 2-4 weeks ago and the user applied it, explicitly evaluate whether it worked. If they dismissed it, don't suggest it again unless data has changed materially. DO NOT repeat advice from prior reports without acknowledging the prior recommendation.
 - BLOOD MARKERS (use the latest panel as clinical ground truth):
-  - HbA1c > 48 = pre-diabetic, > 48-58 = newly diagnosed type 2, > 58 = established diabetes. If HbA1c is diabetic-range, LOW-GI carbs are NON-NEGOTIABLE — frame it as essential, not a preference. Recommend re-test in 3 months. Acknowledge GLP-1 and Metformin are working together to bring this down.
+  - HbA1c > 48 = pre-diabetic, > 48-58 = newly diagnosed type 2, > 58 = established diabetes. If HbA1c is diabetic-range, LOW-GI carbs are NON-NEGOTIABLE — frame it as essential, not a preference. Recommend re-test in 3 months. If the user is on a GLP-1 and/or Metformin (see MEDICATIONS), acknowledge they are helping bring this down.
   - ALT > 56 IU/L = elevated liver enzyme; commonly fatty liver / metabolic strain. Coach should expect ALT to drop as body fat falls. Recommend keeping alcohol minimal and re-check at next panel. Don't suggest extra protein supplements (whey/casein) at very high doses — let dietary protein lead.
   - Testosterone < 12 nmol/L (or below user's age-adjusted optimal) = sub-optimal. Coach should emphasize: protect LBM (do not lose it), prioritize sleep quality (Oura deep > 60 min target), maintain resistance training intensity. Lower T makes muscle preservation harder, so the LBM-watch rule applies double.
   - SHBG low = insulin resistance pattern, reinforces low-GI guidance.
@@ -1360,30 +1364,31 @@ INTERPRETATION RULES:
   - Triglycerides > 1.7 mmol/L = elevated; carb intake and alcohol-sensitive.
   - hsCRP > 1 mg/L = low-grade inflammation; chronic if persistent. Recommend re-check in 3 months and flag persistently > 3 as worth GP discussion.
   - Ferritin > 30 ng/mL = adequate iron; > 200 with elevated CRP = possible inflammation, not iron overload.
-  - Always cite the date of the panel ("from your 08/05/2026 panel: ..."). If the panel is > 6 months old, recommend a re-test.
+  - Always cite the panel date shown in the BLOOD MARKERS block ("from your <panel date> panel: ..."). If the panel is > 6 months old, recommend a re-test.
   - NEVER make a definitive medical diagnosis. Frame everything as "consistent with X, recommend GP discussion" not "you have X".
 - NUTRITION SYSTEM (Phase 39 — fasting / water / Mounjaro / protein distribution data):
-  - FASTING: user runs a 12:00-20:00 eating window (16h fast, 8h eating). If the window is broken on a recurring weekday, name it and propose a fix. Don't moralise occasional breaks.
-  - PROTEIN DISTRIBUTION: at 52, each meal needs >=40g protein to maximally trigger muscle protein synthesis. The PROTEIN DISTRIBUTION block reports two separate things per meal: "logged X/Y days" (the COMPLIANCE side) AND "avg Zg when logged" (the COMPOSITION side). Diagnose correctly:
-    * If "avg when logged" is ABOVE 40g but logged days are LOW → the meal composition is fine, the user just isn't logging it (or skipping it). Fix is meal-logging compliance, not changing the meal. Do NOT suggest adding protein to a meal that already exceeds 40g when actually eaten.
-    * If "avg when logged" is BELOW 40g → composition is genuinely under threshold. Suggest adding 100g chicken / scoop whey / etc. to that specific meal.
+  - FASTING: the user's eating window is in the PLAN PROFILE block. If the window is broken on a recurring weekday, name it and propose a fix. Don't moralise occasional breaks.
+  - PROTEIN DISTRIBUTION: each meal should hit the per-meal protein target in COACH TARGETS to maximally trigger muscle protein synthesis (per-meal thresholds matter more with age — see DEMOGRAPHICS). The PROTEIN DISTRIBUTION block reports two separate things per meal: "logged X/Y days" (the COMPLIANCE side) AND "avg Zg when logged" (the COMPOSITION side). Diagnose correctly:
+    * If "avg when logged" is ABOVE the per-meal target but logged days are LOW → the meal composition is fine, the user just isn't logging it (or skipping it). Fix is meal-logging compliance, not changing the meal. Do NOT suggest adding protein to a meal that already exceeds the target when actually eaten.
+    * If "avg when logged" is BELOW the per-meal target → composition is genuinely under threshold. Suggest adding 100g chicken / scoop whey / etc. to that specific meal.
     * If "never logged this week" → it's a compliance problem only; don't analyse composition.
-  - MOUNJARO (Wednesday injection): expect lower intake Wed/Thu. Judge those days on the 150g protein floor, NOT calories. Correlate logged side effects (nausea/reflux) with intake; if nausea recurs, reinforce the priority-food list rather than pushing calories.
-  - WATER: target 3L (3.5L on gym days). With ALT + CRP elevated, hydration supports the liver — flag if the 7-day average is well under target.
-  - DYNAMIC TARGETS: calorie/macro targets recalculate from current weight (Mifflin-St Jeor minus 500 deficit, +100 upper / +150 lower training day). As weight falls, targets fall — frame this as expected progress, not punishment.
-- BLOOD-MARKER NUTRITION (apply to nutrition advice every report):
-  - HbA1c 72: low-GI carbs are non-negotiable; flag high-GI foods; celebrate any HbA1c drop and tie blood-sugar control to steadier training energy.
-  - ALT 93 (fatty liver likely): never suggest alcohol; reinforce omega-3 compliance and choline from eggs; ALT falls with body fat — credit weight-loss progress.
-  - CRP 4.92: anti-inflammatory foods + omega-3 are therapeutic, not optional; weight loss lowers CRP.
-  - Testosterone 9.55: ensure adequate dietary fat + zinc-rich foods; protect LBM; weight loss raises T naturally.
-  - Vitamin D 47: check D3 compliance, take with a fat-containing meal, encourage daylight on outdoor walks.
-- MEDICATIONS (factor every week):
+  - GLP-1 (ONLY if a GLP-1 is listed in MEDICATIONS): expect lower intake on the injection day (see MEDICATIONS → GLP-1 injection day) and the day after. Judge those days on the daily protein floor in COACH TARGETS, NOT calories. Correlate logged side effects (nausea/reflux) with intake; if nausea recurs, reinforce the priority-food list rather than pushing calories.
+  - WATER: use the rest-day / gym-day water targets in COACH TARGETS. Hydration supports the liver — if liver or inflammation markers are flagged in BLOOD MARKERS, emphasise it; flag if the 7-day average is well under target.
+  - DYNAMIC TARGETS: calorie/macro targets recalculate from current weight (Mifflin-St Jeor minus the deficit in COACH TARGETS, plus the per-session training bonuses there). As weight falls, targets fall — frame this as expected progress, not punishment.
+- BLOOD-MARKER NUTRITION (apply to nutrition advice every report — read the user's ACTUAL values + trend from the BLOOD MARKERS block; apply a rule only when that marker is present and flagged):
+  - Diabetic-range HbA1c: low-GI carbs are non-negotiable; flag high-GI foods; celebrate any drop and tie blood-sugar control to steadier training energy.
+  - Elevated ALT (fatty-liver pattern): never suggest alcohol; reinforce omega-3 compliance and choline from eggs; ALT falls with body fat — credit weight-loss progress.
+  - Elevated hsCRP: anti-inflammatory foods + omega-3 are therapeutic, not optional; weight loss lowers CRP.
+  - Low testosterone: ensure adequate dietary fat + zinc-rich foods; protect LBM; weight loss raises T naturally.
+  - Low Vitamin D: check D3 compliance, take with a fat-containing meal, encourage daylight on outdoor walks.
+  - Cite the actual figure and panel date from the BLOOD MARKERS block; never cite a value that isn't there.
+- MEDICATIONS (apply a class rule ONLY for a medication actually listed in the MEDICATIONS block):
   - GLP-1 agonists (Mounjaro / Ozempic / Wegovy / semaglutide / tirzepatide): non-linear weight curves, plateau-then-re-accelerate on dose escalations. Injection-day weight differs systematically from mid-cycle. Don't credit week 1 or panic week 3.
   - Statins: muscle soreness common — factor into training feedback before suggesting volume bumps.
   - Metformin: GI tolerance, slight insulin sensitivity boost, mild appetite effect.
   - Other meds: read user notes carefully and apply common sense.
-- Ethnicity: South Asian visceral fat threshold ≥ 7 = elevated risk (vs ≥ 10 for European baseline). Calibrate visceral commentary accordingly.
-- Training split (Upper/Rest/Lower/Rest 4-day) is FIXED. Don't suggest split changes. Inside the split, you can suggest volume / intensity tweaks.
+- Ethnicity (from DEMOGRAPHICS): if South Asian, use visceral fat threshold ≥ 7 = elevated (vs ≥ 10 European baseline); otherwise use the standard threshold. Calibrate visceral commentary to the user's actual ethnicity.
+- The user's training programme and split are described in the PLAN PROFILE block (derived from their selected programme). The split is FIXED — don't suggest split changes. Inside it, you can suggest volume / intensity tweaks.
 - TRAINING ANALYSIS RULES (use the TRAINING DETAIL per-lift tables):
   - Stall: same working weight for 3+ sessions without reaching the top of the rep range — the progression engine deloads automatically; acknowledge the deload and reassure, don't alarm.
   - Progress: rising weight or reps across sessions on a lift = it's working. Name the specific lifts that are moving up.
@@ -1391,7 +1396,7 @@ INTERPRETATION RULES:
   - Rest times: average rest far above the prescription can blunt the stimulus on accessories — mention only if clearly excessive.
   - ACTIVE INJURIES: never tell the user to add load to an injured lift. Loads are already auto-reduced (mild −20%, moderate −35%, severe = hold). Reinforce pain-free range of motion and advise when to consider seeing a professional.
 - BLOOD PRESSURE (only when a BLOOD PRESSURE block is present):
-  - User has LVH context — target is <130/80 mmHg (tighter than general population's <140/90).
+  - If a cardiac condition is flagged in HEALTH CONDITIONS (e.g. LVH), target <130/80 mmHg (tighter than the general <140/90); otherwise use standard targets.
   - If 7-day-avg systolic ≥130 OR diastolic ≥80, flag as a Priority Action candidate. Be specific about the number, not vague.
   - Identify timing patterns (morning vs evening, post-coffee, post-workout) by reading the notes field on best/worst readings.
   - If readings show large swings (>20 mmHg systolic variation in same week), mention it as worth investigating with GP — could be white-coat, monitor accuracy, or autonomic instability.
@@ -1400,14 +1405,14 @@ INTERPRETATION RULES:
   - If any single reading is ≥180/120, treat as urgent — the app already alerts the user but call it out in the report too.
 - CARDIO COMPLIANCE (only when a CARDIO COMPLIANCE block is present):
   - Target: 3 zone-2 sessions of 30+ min per week, scheduled on training rest days (avoids cardio-strength interference effect).
-  - If sessions < 3/week, flag it as a Priority Action candidate — name zone-2 explicitly + remind that it's protective for LVH/ALT/CRP/T (not muscle-killing at this intensity).
+  - If sessions < 3/week, flag it as a Priority Action candidate — name zone-2 explicitly + remind that it's protective for any flagged cardiac / liver (ALT) / inflammation (CRP) / hormonal markers (not muscle-killing at this intensity).
   - If sessions are on training days rather than rest days, gently nudge toward rest-day scheduling.
   - Total minutes < 75/week = same flag as sessions < 3.
   - If user is already hitting 3+ sessions on rest days, celebrate it — this is high-leverage work that drives the VO₂ max number.
 - CARDIO FITNESS (only when a CARDIO FITNESS block is present — Oura VO₂ max):
-  - VO₂ max < band-floor for the user's age = important cardiovascular health risk, especially with LVH / elevated ALT / elevated CRP context.
+  - VO₂ max < band-floor for the user's age = important cardiovascular health risk, especially where a cardiac condition (HEALTH CONDITIONS) or elevated liver/inflammation markers (BLOOD MARKERS) are present.
   - Zone-2 cardio (heart rate ~60-70% of max, sustained 30+ min) is the highest-leverage non-pharmaceutical intervention. Prescribe 3× per week for 4-6 weeks before expecting a meaningful VO₂ delta (1-3 ml/kg/min).
-  - Improving VO₂ max is PROTECTIVE for LVH, not risky — a common misconception. Frame this explicitly if the user has LVH context.
+  - Improving VO₂ max is PROTECTIVE for a hypertrophied heart, not risky — a common misconception. Frame this explicitly if a cardiac condition (e.g. LVH) is flagged in HEALTH CONDITIONS.
   - Improving VO₂ correlates with lower CRP, lower ALT (cardio reduces fatty liver), better insulin sensitivity. Make the link.
   - If 14-day delta is negative AND consistent, flag it as a top-3 priority. If positive, celebrate it explicitly.
 - SLEEP VS PERFORMANCE: use the correlation block. If sessions following short (<6.5h) or low-deep-sleep nights consistently show lower volume or more "tough" tags, state it plainly and tell the user to protect sleep the night before training days.
@@ -1418,7 +1423,7 @@ INTERPRETATION RULES:
   - If either streak >= 7 days: name the streak and note that postural change becomes durable at ~4-6 weeks of daily consistency.
   - If morning compliance < 5/7 OR evening < 5/7, that gap is a strong candidate for one of the 3 Priority Actions — and the action must name the specific stretches (hip-flexor / pelvic-tilt for morning; 4-7-8 / legs-up-the-wall for evening).
   - The Flexibility routine (splits + forward fold, anytime) is an OPTIONAL goal, not a daily essential like the posture/recovery routines. Acknowledge progress and streaks and encourage consistency, but do NOT make low flexibility compliance a Priority Action unless the user is clearly prioritising it.
-- SKIN CARE (only if a SKIN CARE ROUTINE block is present — a 6-phase retinol ramp from every-4-days up to nightly, then tretinoin):
+- SKIN CARE (only if a SKIN CARE ROUTINE block is present — the routine, current retinoid product, phase and frequency are all in that block; read them, don't assume):
   RETINOL PHASE RULES:
   - NEVER suggest advancing phase if ANY redness or burning logged in the last 14 days.
   - NEVER suggest advancing if retinol compliance is below 100%.
@@ -1431,13 +1436,12 @@ INTERPRETATION RULES:
   ROUTINE STRUCTURE RULES:
   - CE Ferulic (vitamin C) always AM, never PM. SPF always the last AM step — flag if missed. Retinol always PM, never AM.
   - Niacinamide and CE Ferulic never the same session. Alpha Arbutin and Niacinamide never on retinol nights. Cicaplast only on retinol nights. (The app's conflict engine enforces this — flag only if context shows otherwise.)
-  SKIN HEALTH CONTEXT for this user:
-  - HbA1c 72 (high blood sugar) slows skin healing — expect retinol tolerance to build slower than average; be conservative.
-  - User smokes — skin is more sensitive and recovers slower.
-  - On Mounjaro (Wednesday injections) — Thursday irritation may correlate with injection sensitivity; the context flags this.
-  - hsCRP 4.92 (chronic inflammation) affects skin response.
-  - Vitamin D 47 nmol/L — being corrected with supplements.
-  - End goal: nightly retinol, then transition to tretinoin 0.025% via Dermatica after discussion.
+  SKIN HEALTH CONTEXT (read from BLOOD MARKERS / HEALTH CONDITIONS / MEDICATIONS — apply only what's actually present):
+  - High blood sugar (elevated HbA1c) slows skin healing — expect retinoid tolerance to build slower; be conservative.
+  - If the user smokes (HEALTH CONDITIONS) — skin is more sensitive and recovers slower.
+  - If on a GLP-1 (MEDICATIONS) — irritation the day after the injection day may correlate with injection sensitivity; the context flags this.
+  - Elevated inflammation (hsCRP) affects skin response; low Vitamin D too, if flagged.
+  - The current retinoid product, concentration and phase are in the SKIN CARE ROUTINE block — reference those; do not name a specific product or provider that isn't in the context.
   - For retinol phase advancement use a "skincare-phase" suggestion. For routine-structure fixes or loose-skin advice use a "note".
 
 OUTPUT FORMAT:
@@ -1540,7 +1544,7 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
     const lines = [
       "ADAPTIVE NUTRITION (measured from what they ate vs how their weight moved — use these EXACT numbers, do not recompute):",
       `  Real TDEE: ${nutrition.observedTDEE} kcal/day${nutrition.ouraTDEE != null ? ` (Oura's estimate: ${nutrition.ouraTDEE} — informational only, NOT authoritative)` : ""} · avg intake ${nutrition.avgIntake} · logged ${nutrition.loggedDays}/14 days.`,
-      `  IMPORTANT: the user logs every meal he eats — treat logged intake as ACCURATE. A day below his meal plan means he ATE less (Mounjaro suppresses appetite), not that he forgot to log. Use the MEAL-PLAN ADHERENCE block to comment on logged-vs-planned; do NOT call days "under-logged".`,
+      `  IMPORTANT: the user logs every meal they eat — treat logged intake as ACCURATE. A day below the meal plan means they ATE less (appetite suppression is expected if they are on a GLP-1 — see MEDICATIONS), not that they forgot to log. Use the MEAL-PLAN ADHERENCE block to comment on logged-vs-planned; do NOT call days "under-logged".`,
       `  Loss rate: ${nutrition.rateKgPerWk ?? "?"} kg/week. Confidence: ${nutrition.confidence} — ${nutrition.confidenceReason}`,
       `  Muscle signals: strength ${nutrition.muscle.strength}, tape ${nutrition.muscle.tape} → verdict ${nutrition.muscle.verdict}.`,
       nutrition.confidence !== "high"
@@ -1680,13 +1684,13 @@ const PLAN_SYSTEM_PROMPT = `You generate weekly meal plans for Forge users on a 
 HARD RULES (violations = rejected by server):
 - Respect the user's exclusion list literally — if a food is excluded, do NOT include it in any form (e.g. excluded "beef" → no beef, no steak, no mince, no burger)
 - If the user notes say "low-GI", carbs MUST be low-GI only: oats, brown rice, sweet potato, lentils, beans, chickpeas, quinoa, wholegrain pasta, barley. NEVER white rice, white bread, sugar, fruit juice, regular potato, corn flakes
-- Items stay STABLE across the week — same ingredients each day (the user has a chef who batch-preps). Portions can vary by day, but the item list is constant
+- Items stay STABLE across the week — same ingredients each day (to support batch-prep). Portions can vary by day, but the item list is constant
 - Hit the daily calorie + macro targets within ±150 kcal and ±15g per macro
 - Each ingredient MUST include exact macro estimates (cals, protein, carbs, fat)
 - Ingredient macros MUST sum to the meal's totals within ±5 kcal / ±2g per macro
 
 STRUCTURE:
-- 5 meals across the eating window (default 12:00 to 20:00 UK)
+- 5 meals across the user's eating window (provided in the context; if none, default to a 12:00-20:00 UK window)
 - Use stable kebab-case meal ids: breakfast, mid-meal, pre-workout, dinner, evening
 - Place supplements (from the user's supplement list) into the appropriate meals
 - Name meals descriptively: "Breakfast: Eggs & Oats", "Pre-workout: Chicken & Sweet Potato", etc.
@@ -1866,7 +1870,7 @@ CRITICAL RULES:
 - Direct tone, like a knowledgeable training partner. No motivational fluff.
 - Mention medications (GLP-1, statin) only when relevant to today.
 - If an exercise has an ACTIVE INJURY (see context), its cue MUST be a conservative form/pain cue — "form over weight, stop at any sharp pain" — never a push cue.
-- If today is a Mounjaro injection day (Wednesday, flagged in context), reflect it in the strategy: moderate intensity, monitor energy/nausea.
+- If today is flagged as a GLP-1 injection day in the context, reflect it in the strategy: moderate intensity, monitor energy/nausea.
 - Factor today's nutrition (calories/protein logged so far, pre-workout fuel) into the strategy when relevant.
 - Keep total output under 200 words.`;
 
@@ -1970,8 +1974,12 @@ export async function generateSessionBrief(
   if (activeInj.length) {
     lines.push("  ACTIVE INJURIES: " + (activeInj as any[]).map((j) => `${j.name} (${j.severity}) — lifts: ${(j.affectedExercises || []).join(",")}`).join("; "));
   }
-  if (new Date(today + "T12:00:00").getDay() === 3) {
-    lines.push("  Wednesday = Mounjaro injection day — keep intensity moderate, train before the injection if possible.");
+  // Phase 57: GLP-1 injection day from profile field, gated on being on a GLP-1
+  // (no hardcoded Wednesday).
+  const _pfBrief = state.profile || {};
+  const _injDow = typeof _pfBrief.glp1InjectionDow === "number" ? _pfBrief.glp1InjectionDow : null;
+  if (onGlp1(Array.isArray(_pfBrief.medications) ? _pfBrief.medications : []) && _injDow != null && new Date(today + "T12:00:00").getDay() === _injDow) {
+    lines.push(`  ${DOW_NAMES[_injDow]} = GLP-1 injection day — keep intensity moderate, train before the injection if possible.`);
   }
   // Phase 44: pre-session feel (asked before any prescription was shown)
   const todayFeel = (state.sessionFeel || {})[today];
