@@ -7,10 +7,13 @@
 // it there — this keeps ONE definition instead of a hand-copied server mirror.
 import path from "path";
 
+interface ProgrammeLabel { name: string; pattern: string; }
 interface ProgrammeShared {
   EXERCISE_NAMES: Record<string, string>;
   LEGACY_EXERCISE_NAMES: Record<string, string>;
   exerciseName(id: string): string | null;
+  PROGRAMME_LABELS: Record<string, ProgrammeLabel>;
+  programmeLabel(programId: string): ProgrammeLabel;
   trainingDayInCycle(dateStr: string, startDate?: string): number;
   sessionTypeForDate(programId: string, dateStr: string, startDate?: string): string | null;
   DEFAULT_TRAINING_START: string;
@@ -34,4 +37,9 @@ export function sessionTypeForDate(
   startDate?: string
 ): string | null {
   return shared.sessionTypeForDate(programId, dateStr, startDate);
+}
+
+// Human-readable { name, pattern } for a programme id (falls back to the default).
+export function programmeLabel(programId: string): ProgrammeLabel {
+  return shared.programmeLabel(programId || "upper-lower-4d");
 }

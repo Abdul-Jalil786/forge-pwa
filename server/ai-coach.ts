@@ -2,7 +2,25 @@ import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { decrypt } from "./crypto-util";
 import { analyzeNutrition } from "./nutrition";
-import { exerciseName, sessionTypeForDate } from "./programme-shared";
+import { exerciseName, sessionTypeForDate, programmeLabel } from "./programme-shared";
+
+// Phase 57: age derived from date of birth (YYYY-MM-DD) so it never goes stale.
+// Preferred over a static profile.personal.age. Returns null if unparseable.
+export function ageFromDob(dob: any): number | null {
+  if (!dob || typeof dob !== "string") return null;
+  const b = new Date(dob + "T12:00:00");
+  if (isNaN(b.getTime())) return null;
+  const now = new Date();
+  let a = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) a--;
+  return a >= 0 && a < 130 ? a : null;
+}
+// True when the user is on any GLP-1 agonist (reads MEDICATIONS, not a hardcode).
+export function onGlp1(meds: any[]): boolean {
+  return Array.isArray(meds) && meds.some((m: any) => /mounjaro|tirzepatide|ozempic|wegovy|semaglutide|glp-?1/i.test(m?.name || ""));
+}
+const DOW_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 // Phase 46: upgraded 4.7 → 4.8 (drop-in; better at knowledge-work analysis and
 // clearer writing — exactly what a coaching report needs). Forced tool_choice is
@@ -804,13 +822,15 @@ export function buildContext(state: any): string {
   }
 
   const currentWeight = wl.length ? wl[wl.length - 1].weight : profile.startWeight;
-  const tdee = estimateTDEE(personal, currentWeight);
+  // Phase 57: prefer age derived from date of birth; fall back to a static age.
+  const effectiveAge = ageFromDob(personal.dateOfBirth) ?? personal.age ?? null;
+  const tdee = estimateTDEE({ ...personal, age: effectiveAge }, currentWeight);
 
   const lines: string[] = [];
   lines.push(`Today (UK): ${today}`);
   lines.push("");
   lines.push("DEMOGRAPHICS + GOAL FRAMING:");
-  lines.push(`  Age: ${personal.age ?? "(not set)"} · Height: ${personal.heightCm ?? "?"}cm · Sex (for BMR): ${personal.sex ?? "(not set)"} · Ethnicity: ${personal.ethnicity ?? "(not set)"}`);
+  lines.push(`  Age: ${effectiveAge ?? "(not set)"} · Height: ${personal.heightCm ?? "?"}cm · Sex (for BMR): ${personal.sex ?? "(not set)"} · Ethnicity: ${personal.ethnicity ?? "(not set)"}`);
   lines.push(`  Activity outside gym: ${personal.activityLevel ?? "(not set)"}`);
   lines.push(`  CURRENT PHASE: ${personal.phase ?? "(not specified — default behaviour: assume fat-loss cut)"}`);
   if (personal.targetLBMStretch) lines.push(`  STRETCH LBM GOAL: ${personal.targetLBMStretch}kg lean body mass (vs default target ${profile.targetLBM ?? "?"}kg). User wants to build muscle, not just lose fat — frame coaching toward the LBM ceiling.`);
@@ -820,6 +840,12 @@ export function buildContext(state: any): string {
   lines.push("MEDICATIONS (factor these into interpretation):");
   if (meds.length === 0) lines.push("  (none recorded)");
   else for (const m of meds) lines.push(`  - ${m.name}${m.dose ? ` ${m.dose}` : ""}${m.schedule ? ` · ${m.schedule}` : ""}${m.notes ? ` · ${m.notes}` : ""}`);
+  // Phase 57: GLP-1 injection day — read from profile field, gated on actually
+  // being on a GLP-1 (no hardcoded "Wednesday").
+  if (onGlp1(meds)) {
+    const dow = typeof profile.glp1InjectionDow === "number" ? profile.glp1InjectionDow : null;
+    lines.push(`  GLP-1 injection day: ${dow != null ? DOW_NAMES[dow] : "(not set)"}${dow != null ? " — expect lower appetite/intake that day and the day after" : ""}`);
+  }
   lines.push("");
 
   // Phase 57: health conditions — gate condition-specific coaching rules on
@@ -882,9 +908,31 @@ export function buildContext(state: any): string {
   lines.push(`  Plan start: ${profile.startDate || profile.planStartDate || "?"}`);
   lines.push(`  Daily targets: gym=${profile.calsGym ?? "?"}kcal, rest=${profile.calsRest ?? "?"}kcal`);
   lines.push(`  Macros: P=${macros.protein ?? "?"}g, C=${macros.carbs ?? "?"}g, F=${macros.fat ?? "?"}g`);
-  if (profile.eatingWindow) lines.push(`  Eating window: ${profile.eatingWindow}`);
-  if (state.trainingStartDate) lines.push(`  Training anchor: ${state.trainingStartDate} (Upper/Rest/Lower/Rest 4-day cycle)`);
+  // Phase 57: render the eating window from profile.eatingWindow (object or string).
+  const ew = profile.eatingWindow;
+  if (ew) {
+    const ewStr = typeof ew === "string"
+      ? ew
+      : ew.enabled === false
+        ? "disabled (no fasting window)"
+        : `${String(ew.start).padStart(2, "0")}:00-${String(ew.end).padStart(2, "0")}:00 (${24 - (ew.end - ew.start)}h fast / ${ew.end - ew.start}h eating)`;
+    lines.push(`  Eating window: ${ewStr}`);
+  }
+  // Phase 57: programme description derived from the shared module via programId
+  // (single source — no hardcoded "Upper/Rest/Lower/Rest").
+  const prog = programmeLabel(profile.programId);
+  lines.push(`  Programme: ${prog.name} — ${prog.pattern}. The split is fixed; suggest volume/intensity tweaks within it, not split changes.${state.trainingStartDate ? ` Training anchor: ${state.trainingStartDate}.` : ""}`);
   lines.push("");
+
+  // Phase 57: coach targets — reference these numbers instead of assuming fixed values.
+  const ct = profile.coachTargets || {};
+  if (Object.keys(ct).length > 0) {
+    lines.push("COACH TARGETS (use these figures — do not assume fixed defaults):");
+    lines.push(`  Protein: ${ct.proteinFloorDaily ?? "?"}g/day floor · ${ct.proteinPerMeal ?? "?"}g/meal to maximise MPS`);
+    lines.push(`  Water: ${ct.waterRestMl ?? "?"}ml rest days · ${ct.waterGymMl ?? "?"}ml gym days`);
+    lines.push(`  Deficit basis: ${ct.deficitKcal != null ? `~${ct.deficitKcal} kcal/day below maintenance` : "per dynamic targets"}${ct.trainingBonusUpper != null ? ` (+${ct.trainingBonusUpper} kcal upper / +${ct.trainingBonusLower} kcal lower training day)` : ""}`);
+    lines.push("");
+  }
 
   lines.push("WEIGHT (last 14d):");
   if (wl.length === 0) lines.push("  (no entries)");

@@ -321,11 +321,17 @@ router.put("/skin-care-phase", requireAuth, requireOwnerCheck, async (req: Reque
 // Phase 27 + 32: personal demographics (subfield of profile)
 router.put("/profile/personal", requireAuth, async (req: Request, res: Response) => {
   try {
-    const { age, heightCm, sex, ethnicity, activityLevel, phase, targetLBMStretch } = req.body || {};
+    const { age, heightCm, sex, ethnicity, activityLevel, phase, targetLBMStretch, dateOfBirth } = req.body || {};
     const out: any = {};
     if (age != null) {
       if (typeof age !== "number" || age < 10 || age > 120) { res.status(400).json({ error: "age must be 10-120" }); return; }
       out.age = Math.round(age);
+    }
+    if (dateOfBirth != null) {
+      if (typeof dateOfBirth !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) || isNaN(new Date(dateOfBirth + "T12:00:00").getTime())) {
+        res.status(400).json({ error: "dateOfBirth must be YYYY-MM-DD" }); return;
+      }
+      out.dateOfBirth = dateOfBirth;
     }
     if (heightCm != null) {
       if (typeof heightCm !== "number" || heightCm < 100 || heightCm > 250) { res.status(400).json({ error: "heightCm must be 100-250" }); return; }
@@ -358,12 +364,14 @@ router.put("/profile/personal", requireAuth, async (req: Request, res: Response)
     }
     out.updatedAt = new Date().toISOString();
     const valueJson = JSON.stringify(out);
+    // Phase 57: MERGE into existing personal (was a wholesale replace, which would
+    // drop any field not included in the request — e.g. the seeded dateOfBirth).
     await prisma.$executeRaw`
       UPDATE "User"
       SET state = jsonb_set(
         jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
         '{profile,personal}',
-        ${valueJson}::jsonb,
+        COALESCE(state->'profile'->'personal', '{}'::jsonb) || ${valueJson}::jsonb,
         true
       ),
       "updatedAt" = NOW()
@@ -372,6 +380,55 @@ router.put("/profile/personal", requireAuth, async (req: Request, res: Response)
     res.json({ success: true });
   } catch (err) {
     console.error("Put personal error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Phase 57: coach-config — the profile-level fields that de-hardcode the AI-coach
+// prompts (health conditions, coach targets, GLP-1 injection day, eating window),
+// so they're editable from state rather than baked into prompt text.
+router.put("/profile/coach-config", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const body: any = req.body || {};
+    const writes: Array<{ path: string; json: string }> = [];
+    if (body.healthConditions != null) {
+      if (!Array.isArray(body.healthConditions) || body.healthConditions.length > 40) { res.status(400).json({ error: "healthConditions must be an array (max 40)" }); return; }
+      const clean = body.healthConditions.map((c: any) => ({ key: String(c?.key || "").slice(0, 40), label: String(c?.label || c?.key || "").slice(0, 120), notes: c?.notes ? String(c.notes).slice(0, 300) : undefined }));
+      writes.push({ path: "{profile,healthConditions}", json: JSON.stringify(clean) });
+    }
+    if (body.coachTargets != null) {
+      if (typeof body.coachTargets !== "object") { res.status(400).json({ error: "coachTargets must be an object" }); return; }
+      const ct: any = {};
+      for (const k of ["proteinPerMeal", "proteinFloorDaily", "waterRestMl", "waterGymMl", "deficitKcal", "trainingBonusUpper", "trainingBonusLower"]) {
+        if (body.coachTargets[k] != null) { const n = Number(body.coachTargets[k]); if (!Number.isFinite(n) || n < 0 || n > 10000) { res.status(400).json({ error: `coachTargets.${k} out of range` }); return; } ct[k] = Math.round(n); }
+      }
+      writes.push({ path: "{profile,coachTargets}", json: JSON.stringify(ct) });
+    }
+    if (body.glp1InjectionDow != null) {
+      const d = Number(body.glp1InjectionDow);
+      if (!Number.isInteger(d) || d < 0 || d > 6) { res.status(400).json({ error: "glp1InjectionDow must be 0-6" }); return; }
+      writes.push({ path: "{profile,glp1InjectionDow}", json: JSON.stringify(d) });
+    }
+    if (body.eatingWindow != null) {
+      const e: any = body.eatingWindow;
+      const ew = { enabled: e.enabled !== false, start: Math.max(0, Math.min(23, Math.round(Number(e.start) || 12))), end: Math.max(1, Math.min(24, Math.round(Number(e.end) || 20))) };
+      writes.push({ path: "{profile,eatingWindow}", json: JSON.stringify(ew) });
+    }
+    if (writes.length === 0) { res.status(400).json({ error: "no valid fields" }); return; }
+    for (const w of writes) {
+      await prisma.$executeRaw`
+        UPDATE "User"
+        SET state = jsonb_set(
+          jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+          ${w.path}::text[], ${w.json}::jsonb, true
+        ),
+        "updatedAt" = NOW()
+        WHERE id = ${req.userId}
+      `;
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put coach-config error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
