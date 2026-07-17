@@ -415,33 +415,42 @@ export function startCron() {
     }
   }, { timezone: "Europe/London" });
 
-  // Phase 40: Wednesday 14:00 UK — Mounjaro injection reminder
-  cron.schedule("0 14 * * 3", async () => {
-    console.log("Running Wednesday Mounjaro reminder...");
+  // Phase 57: GLP-1 injection reminder — fires daily 14:00 UK but only pushes on
+  // the user's configured injection weekday (profile.glp1InjectionDow; default
+  // Wednesday for legacy), gated on actually being on a GLP-1. No hardcoded weekday.
+  cron.schedule("0 14 * * *", async () => {
+    console.log("Running GLP-1 injection reminder check...");
     try {
+      const todayDow = new Date(ukToday() + "T12:00:00").getDay();
+      const glp1Re = /mounjaro|tirzepatide|ozempic|wegovy|semaglutide|glp-?1/i;
       const users = await prisma.user.findMany();
       for (const user of users) {
         const state: any = user.state || {};
+        const pf: any = state.profile || {};
         const supps = state.supplements || [];
-        const hasMounjaro = Array.isArray(supps) && supps.some((s: any) =>
-          /mounjaro|tirzepatide/i.test(s?.name || "") || s?.frequency === "weekly-wednesday");
-        if (!hasMounjaro) continue;
+        const meds = Array.isArray(pf.medications) ? pf.medications : [];
+        const onGlp1 =
+          (Array.isArray(supps) && supps.some((s: any) => glp1Re.test(s?.name || "") || s?.frequency === "weekly-wednesday")) ||
+          meds.some((m: any) => glp1Re.test(m?.name || ""));
+        if (!onGlp1) continue;
+        const injDow = typeof pf.glp1InjectionDow === "number" ? pf.glp1InjectionDow : 3;
+        if (todayDow !== injDow) continue;
         const added = addStateNotification(state, {
           type: "medication",
-          title: "💉 Mounjaro injection due today",
+          title: "💉 Injection due today",
           message: "Inject after meal 2 (around 3pm). Have ginger tea ready, and Omeprazole if reflux is an issue.",
         });
         if (added) {
           await prisma.user.update({ where: { id: user.id }, data: { state } });
           await sendPushToUser(user.id, {
-            title: "💉 Mounjaro injection due today",
+            title: "💉 Injection due today",
             body: "Inject after meal 2 (~3pm). Ginger tea ready?",
           });
         }
       }
-      console.log("Wednesday Mounjaro reminder complete");
+      console.log("GLP-1 injection reminder check complete");
     } catch (err) {
-      console.error("Wednesday Mounjaro reminder error:", err);
+      console.error("GLP-1 injection reminder error:", err);
     }
   }, { timezone: "Europe/London" });
 

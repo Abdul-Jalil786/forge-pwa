@@ -1146,6 +1146,40 @@ async function fixJayLegPressSledV1() {
   }
 }
 
+// Phase 57: seed the profile fields that de-hardcode the AI-coach prompts, using
+// the exact values previously baked into the system prompt text — so coaching is
+// identical on day one but now lives in state (editable). Guarded + non-destructive
+// (only fills fields that are unset).
+async function seedCoachDynamicFieldsV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.coachDynamicFieldsV1) return;
+    const pf: any = state.profile || (state.profile = {});
+    pf.personal = pf.personal || {};
+    // Year is what drives age; user corrects the exact date in-app if needed.
+    if (!pf.personal.dateOfBirth) pf.personal.dateOfBirth = "1974-01-01";
+    if (!Array.isArray(pf.healthConditions) || pf.healthConditions.length === 0) {
+      pf.healthConditions = [
+        { key: "lvh", label: "Left ventricular hypertrophy (LVH)", notes: "Cardiac — BP target <130/80; improving VO2 max is protective, not risky" },
+        { key: "fatty-liver", label: "Fatty liver (elevated ALT)", notes: "Keep alcohol minimal; ALT expected to fall as body fat drops" },
+        { key: "smoker", label: "Smoker", notes: "Skin more sensitive / slower recovery" },
+      ];
+    }
+    if (!pf.coachTargets) {
+      pf.coachTargets = { proteinPerMeal: 40, proteinFloorDaily: 150, waterRestMl: 3000, waterGymMl: 3500, deficitKcal: 500, trainingBonusUpper: 100, trainingBonusLower: 150 };
+    }
+    if (typeof pf.glp1InjectionDow !== "number") pf.glp1InjectionDow = 3; // Wednesday (current)
+    if (!pf.eatingWindow) pf.eatingWindow = { enabled: true, start: 12, end: 20 };
+    state.coachDynamicFieldsV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Coach dynamic fields seeded (dateOfBirth, healthConditions, coachTargets, glp1InjectionDow, eatingWindow)");
+  } catch (err) {
+    console.error("[migration] seedCoachDynamicFieldsV1 failed:", err);
+  }
+}
+
 // Phase 41g: advance Jay to retinol Phase 3 (every-2-days = every other day).
 // Mirrors data.js setSkinPhase(3). Re-frequencies retinol + cicaplast products
 // and stamps a fresh phaseStartDate so the 3-week tolerance clock starts today.
@@ -1594,6 +1628,7 @@ const server = app.listen(PORT, async () => {
   await fixAbdulShakeProteinV1();
   await fixAbdulPeasFibreRebalanceV1();
   await fixJayLegPressSledV1();
+  await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when

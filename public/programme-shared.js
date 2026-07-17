@@ -70,6 +70,18 @@ function exerciseName(id) {
 // ---- Schedule (session-type) logic ----------------------------------------
 // Pure: the training-start anchor is passed in, never read from a global.
 
+// Human-readable programme id -> { name, pattern }. Single source for the split
+// description (so the AI coach no longer hardcodes "Upper/Rest/Lower/Rest 4-day").
+// Names match public/data.js PROGRAMS (enforced by the parity test).
+var PROGRAMME_LABELS = {
+  'upper-lower-4d': { name: 'Upper / Lower 4-Day', pattern: 'Upper / Rest / Lower / Rest (repeating 4-day cycle)' },
+  'full-body-3d': { name: 'Full Body 3-Day', pattern: 'Mon / Wed / Fri full-body' },
+  'home-3d': { name: 'Home Full Body 3-Day', pattern: 'Mon / Wed / Fri full-body (dumbbells + bodyweight)' },
+};
+function programmeLabel(programId) {
+  return PROGRAMME_LABELS[programId] || PROGRAMME_LABELS['upper-lower-4d'];
+}
+
 var DEFAULT_TRAINING_START = '2026-05-08';
 
 // 4-day pattern: Day 0 = Upper, Day 1 = Rest, Day 2 = Lower, Day 3 = Rest.
@@ -111,6 +123,8 @@ var FORGE_PROGRAMME = {
   EXERCISE_NAMES: EXERCISE_NAMES,
   LEGACY_EXERCISE_NAMES: LEGACY_EXERCISE_NAMES,
   exerciseName: exerciseName,
+  PROGRAMME_LABELS: PROGRAMME_LABELS,
+  programmeLabel: programmeLabel,
   trainingDayInCycle: trainingDayInCycle,
   sessionTypeForDate: sessionTypeForDate,
   DEFAULT_TRAINING_START: DEFAULT_TRAINING_START,
