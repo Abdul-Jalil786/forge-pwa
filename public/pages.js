@@ -1218,6 +1218,8 @@ function renderTrack(){
     <div class="sec-label">Am I Getting Stronger?</div>
     ${renderStrengthTrend()}
 
+    ${renderLegPressSledDiag()}
+
     <div class="sec-label">Lifting Records</div>
     <div class="card">
       ${renderLiftingRecords()}
@@ -1527,6 +1529,34 @@ function renderStrengthTrend(){
     ${rows}
     <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.5;">"Up" counts heavier weight <em>and</em> more reps (via estimated 1-rep max). Compares your two most recent sessions of each lift.</div>
   </div>`;
+}
+
+// Owner-only diagnostic: surfaces the Leg Press +53kg sled migration result
+// (written server-side to STATE.legPressSledFixV1 / legPressSledReport), so the
+// outcome + exact counts are visible in-app instead of only in server logs.
+function renderLegPressSledDiag(){
+  if(typeof isOwner==='function' && !isOwner()) return '';
+  const applied=STATE.legPressSledFixV1, report=STATE.legPressSledReport;
+  if(applied && applied.applied){
+    return `<div class="card" style="margin-bottom:10px;border-color:rgba(76,175,80,.4);background:rgba(76,175,80,.06);">
+      <div style="font-size:11px;color:var(--green);font-weight:700;">✓ Leg Press sled fix applied (+${applied.sledKg}kg)</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px;line-height:1.6;">
+        ${applied.setsChanged} set${applied.setsChanged===1?'':'s'} across ${applied.datesChanged} date${applied.datesChanged===1?'':'s'} ·
+        max ${applied.maxBefore}→${applied.maxAfter}kg · min ${applied.minBefore}→${applied.minAfter}kg<br>
+        <span style="color:var(--text3);">applied ${applied.appliedAt?String(applied.appliedAt).slice(0,10):''}</span>
+      </div>
+    </div>`;
+  }
+  if(report && report.applied===false){
+    return `<div class="card" style="margin-bottom:10px;border-color:rgba(255,193,7,.4);background:rgba(255,193,7,.08);">
+      <div style="font-size:11px;color:#ffc107;font-weight:700;">⚠️ Leg Press sled fix NOT applied</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px;line-height:1.6;">
+        Reason: ${report.reason||'—'}<br>
+        Found max ${report.maxBefore==null?'none':report.maxBefore+'kg'} (expected ${report.expectedMaxBefore}kg) across ${report.candidateSets} set${report.candidateSets===1?'':'s'}, ${report.candidateDates} date${report.candidateDates===1?'':'s'}.
+      </div>
+    </div>`;
+  }
+  return '';
 }
 
 function renderLiftingRecords(){
