@@ -1322,25 +1322,32 @@ function promptSteps(){
 // Adjusted down by 0.5%/yr past 30 (accounts for sarcopenia).
 // Sources: ExRx machine standards averaged with StrengthLevel community data.
 // All values are approximate — machines vary, 1RM is estimated.
+// Strength-standard multipliers only. Exercise NAMES are NOT stored here — they
+// derive from the shared source (FORGE_PROGRAMME.exerciseName) at render time, so
+// there is exactly one place names live (fixes prior "Incline DB Press" drift).
 const STRENGTH_STD = {
   // [novice, intermediate, advanced, elite] × bodyweight
   // Phase 42d: female multipliers from StrengthLevel female/male ratios
   // (~55-65% upper body, ~70-80% lower body)
-  u1: { name:'Chest Press',          male:[0.50, 0.85, 1.20, 1.50], female:[0.30, 0.50, 0.70, 0.90] },
-  u2: { name:'Incline DB Press',     male:[0.30, 0.55, 0.80, 1.05], female:[0.20, 0.35, 0.50, 0.65] },
-  u3: { name:'Seated Row',           male:[0.50, 0.85, 1.20, 1.50], female:[0.30, 0.55, 0.75, 0.95] },
-  u4: { name:'Shoulder Press',       male:[0.35, 0.55, 0.80, 1.05], female:[0.20, 0.35, 0.50, 0.65] },
-  u5: { name:'Lat Pulldown',         male:[0.60, 0.95, 1.30, 1.60], female:[0.40, 0.60, 0.80, 1.00] },
-  u6: { name:'Bicep Curl',           male:[0.25, 0.40, 0.60, 0.80], female:[0.15, 0.25, 0.35, 0.50] },
-  u7: { name:'Tricep Pushdown',      male:[0.30, 0.50, 0.70, 0.90], female:[0.20, 0.30, 0.45, 0.60] },
-  u8: { name:'Face Pull',            male:[0.30, 0.50, 0.70, 0.90], female:[0.20, 0.30, 0.45, 0.60] },
-  l1: { name:'Leg Press',            male:[1.20, 1.75, 2.50, 3.50], female:[0.85, 1.25, 1.80, 2.50] },
-  l2: { name:'Romanian Deadlift',    male:[0.85, 1.50, 2.00, 2.50], female:[0.60, 1.05, 1.45, 1.80] },
-  l3: { name:'Leg Extension',        male:[0.50, 0.80, 1.10, 1.40], female:[0.35, 0.60, 0.80, 1.00] },
-  l4: { name:'Leg Curl',             male:[0.40, 0.70, 0.95, 1.20], female:[0.30, 0.50, 0.70, 0.90] },
-  l5: { name:'Hip Thrust',           male:[1.00, 1.50, 2.25, 3.00], female:[0.80, 1.20, 1.80, 2.40] },
-  l6: { name:'Calf Raise',           male:[1.00, 1.50, 2.00, 2.75], female:[0.75, 1.10, 1.50, 2.05] },
+  u1: { male:[0.50, 0.85, 1.20, 1.50], female:[0.30, 0.50, 0.70, 0.90] },
+  u2: { male:[0.30, 0.55, 0.80, 1.05], female:[0.20, 0.35, 0.50, 0.65] },
+  u3: { male:[0.50, 0.85, 1.20, 1.50], female:[0.30, 0.55, 0.75, 0.95] },
+  u4: { male:[0.35, 0.55, 0.80, 1.05], female:[0.20, 0.35, 0.50, 0.65] },
+  u5: { male:[0.60, 0.95, 1.30, 1.60], female:[0.40, 0.60, 0.80, 1.00] },
+  u6: { male:[0.25, 0.40, 0.60, 0.80], female:[0.15, 0.25, 0.35, 0.50] },
+  u7: { male:[0.30, 0.50, 0.70, 0.90], female:[0.20, 0.30, 0.45, 0.60] },
+  u8: { male:[0.30, 0.50, 0.70, 0.90], female:[0.20, 0.30, 0.45, 0.60] },
+  l1: { male:[1.20, 1.75, 2.50, 3.50], female:[0.85, 1.25, 1.80, 2.50] },
+  l2: { male:[0.85, 1.50, 2.00, 2.50], female:[0.60, 1.05, 1.45, 1.80] },
+  l3: { male:[0.50, 0.80, 1.10, 1.40], female:[0.35, 0.60, 0.80, 1.00] },
+  l4: { male:[0.40, 0.70, 0.95, 1.20], female:[0.30, 0.50, 0.70, 0.90] },
+  l5: { male:[1.00, 1.50, 2.25, 3.00], female:[0.80, 1.20, 1.80, 2.40] },
+  l6: { male:[1.00, 1.50, 2.00, 2.75], female:[0.75, 1.10, 1.50, 2.05] },
 };
+// Resolve an exercise display name from the shared single source (falls back to id).
+function _exDisplayName(exId){
+  return (typeof FORGE_PROGRAMME !== 'undefined' && FORGE_PROGRAMME.exerciseName(exId)) || exId;
+}
 
 const STRENGTH_TIERS = [
   {label:'Untrained',    color:'var(--text3)'},
@@ -1419,7 +1426,7 @@ function renderStrengthStandards(){
     if(est1RM === 0) return null;
     const cls = _classifyLift(est1RM, cw, lbm, ageFactor, exDef[sexKey] || exDef.male);
     if(!cls) return null;
-    return { exId, name: exDef.name, est1RM, ...cls };
+    return { exId, name: _exDisplayName(exId), est1RM, ...cls };
   }).filter(Boolean);
   rows.sort((a, b) => b.tier - a.tier);
 
