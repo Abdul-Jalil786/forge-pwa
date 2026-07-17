@@ -2296,6 +2296,8 @@ function renderBody(){
 
     ${renderHealthRecords()}
 
+    ${renderBoditraxCard()}
+
     <div class="sec-label">Measurements</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
       <div style="font-size:11px;color:var(--text2);">${latest?`Last logged ${fmtDate(latest.date)}`:'Not logged yet'}</div>
@@ -3157,6 +3159,69 @@ function renderCardioCard(date){
 // ============================================================
 // PHASE 41o — DEXA SCAN CARD (Track page)
 // ============================================================
+// ============================================================
+// PHASE 58 — BODITRAX CARD (Body page). Trusted BIA; source:'boditrax'.
+// ============================================================
+function renderBoditraxCard(){
+  const scans=(typeof getBoditraxLog==='function')?getBoditraxLog():[];
+  const latest=(typeof getLatestBoditrax==='function')?getLatestBoditrax():null;
+  if(!latest){
+    return `<div class="card" style="margin-bottom:10px;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Boditrax</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Log a Boditrax scan — your most trusted BIA. It ranks above Withings (and below DEXA) so it anchors your lean-mass trend instead of noisy daily readings.</div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openBoditraxEdit()">+ Add first scan</button>
+    </div>`;
+  }
+  const dateStr=fmtDate(latest.date)+(latest.time?` · ${_esc(latest.time)}`:'');
+  // Reliability-weighted lean trend across Boditrax scans (fat-free mass).
+  const leanOf=s=>s.ffm!=null?s.ffm:(s.weight!=null&&s.fat!=null?Math.round((s.weight-s.fat)*100)/100:null);
+  const sorted=[...scans].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const withLean=sorted.filter(s=>leanOf(s)!=null);
+  let trendLine='';
+  if(withLean.length>=2){
+    const f=withLean[0],l=withLean[withLean.length-1];
+    const d=(leanOf(l)-leanOf(f));
+    const days=Math.max(1,Math.round((new Date(l.date+'T12:00:00')-new Date(f.date+'T12:00:00'))/86400000));
+    const perWk=Math.round((d/(days/7))*100)/100;
+    const col=d>=-0.1?'var(--green)':d>-0.7?'#ffc107':'var(--orange)';
+    trendLine=`<div style="font-size:11px;color:var(--text2);padding-top:8px;margin-top:8px;border-top:1px solid var(--border);">
+      Lean (fat-free mass): <strong style="color:var(--text);">${leanOf(f)}kg</strong> → <strong style="color:${col};">${leanOf(l)}kg</strong>
+      <span style="color:${col};font-weight:600;">(${d>=0?'+':''}${Math.round(d*10)/10}kg · ${perWk>=0?'+':''}${perWk}kg/wk)</span>
+      <span style="color:var(--text3);"> over ${withLean.length} scans</span>
+    </div>`;
+  }
+  const cell=(label,val,unit,color)=>`<div><div style="font-size:9px;color:${color||'var(--text3)'};text-transform:uppercase;letter-spacing:.5px;font-weight:700;">${label}</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--text);">${val!=null?val:'—'}${val!=null&&unit?`<span style="font-size:10px;color:var(--text3);">${unit}</span>`:''}</div></div>`;
+  return `<div class="card" style="margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+      <div>
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Boditrax · Body composition</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${dateStr}</div>
+      </div>
+      ${latest.boditraxScore!=null?`<div style="text-align:right;"><div style="font-size:10px;color:var(--text3);">SCORE</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:var(--lime);">${latest.boditraxScore}</div></div>`:''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
+      ${cell('Weight',latest.weight,'kg')}
+      ${cell('Muscle',latest.muscle,'kg','var(--cyan)')}
+      ${cell('Fat',latest.fat,'kg','var(--orange)')}
+      ${cell('Visceral',latest.visceral,'','var(--red)')}
+    </div>
+    ${(latest.ffm!=null||latest.water!=null||latest.bmr!=null||latest.metabolicAge!=null||latest.proteinPct!=null)?`<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text2);padding:4px 0;">
+      ${latest.ffm!=null?`<span><strong style="color:var(--text);">FFM</strong> ${latest.ffm}kg</span>`:''}
+      ${latest.water!=null?`<span><strong style="color:var(--text);">Water</strong> ${latest.water}kg</span>`:''}
+      ${latest.bone!=null?`<span><strong style="color:var(--text);">Bone</strong> ${latest.bone}kg</span>`:''}
+      ${latest.bmr!=null?`<span><strong style="color:var(--text);">BMR</strong> ${latest.bmr}</span>`:''}
+      ${latest.metabolicAge!=null?`<span><strong style="color:var(--text);">Met age</strong> ${latest.metabolicAge}</span>`:''}
+      ${latest.proteinPct!=null?`<span><strong style="color:var(--text);">Protein</strong> ${latest.proteinPct}%</span>`:''}
+    </div>`:''}
+    ${trendLine}
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn btn-lime btn-sm" style="flex:1;" onclick="openBoditraxEdit()">+ Add scan</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="openBoditraxEdit('${_esc(latest.id)}')">Edit latest</button>
+      ${scans.length>1?`<button class="btn btn-ghost btn-sm" style="flex:1;" onclick="showBoditraxHistory()">History (${scans.length})</button>`:''}
+    </div>
+  </div>`;
+}
+
 function renderDexaCard(){
   const latest=(typeof getLatestDexaScan==='function')?getLatestDexaScan():null;
   if(!latest){

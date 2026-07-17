@@ -109,6 +109,7 @@ const PAGES = [
   { fn: "renderFood", id: "page-food" },
   { fn: "renderCoach", id: "page-coach" },
   { fn: "renderMore", id: "page-more" },
+  { fn: "renderBody", id: "page-body" },
 ];
 for (const pg of PAGES) {
   test(`${pg.fn} renders without throwing and populates ${pg.id}`, () => {
@@ -142,4 +143,39 @@ test("Coach Settings save/remove handlers are all defined", () => {
   ]) {
     assert.equal(typeof ctx[fn], "function", `${fn} not defined`);
   }
+});
+
+test("Body page renders the Boditrax card + handlers are defined", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  ctx.renderBody();
+  const html = els["page-body"]._html;
+  assert.ok(html.includes("Boditrax"), "Boditrax card missing from Body page");
+  assert.ok(/106\.1/.test(html), "seeded Boditrax weight not rendered");
+  for (const fn of ["openBoditraxEdit", "saveBoditraxScan", "deleteBoditraxFromModal", "showBoditraxHistory",
+    "getBoditraxLog", "addBoditraxEntry", "updateBoditraxEntry", "deleteBoditraxEntry"]) {
+    assert.equal(typeof ctx[fn], "function", `${fn} not defined`);
+  }
+});
+
+test("Boditrax CRUD round-trips through STATE with validation", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // valid add
+  const ok = ctx.addBoditraxEntry({ date: "2026-07-16", weight: 105.5, muscle: 73.5, fat: 28.2, visceral: 14, ffm: 77.3 });
+  assert.equal(ok.ok, true, JSON.stringify(ok.errors));
+  const log = ctx.getBoditraxLog();
+  assert.equal(log.length, 2, "entry not appended");
+  const added = log.find((e) => e.date === "2026-07-16");
+  assert.equal(added.source, "boditrax");
+  // invalid add (missing required visceral, out-of-range weight) is rejected
+  const bad = ctx.addBoditraxEntry({ date: "2026-07-17", weight: 999, muscle: 73 });
+  assert.equal(bad.ok, false);
+  assert.ok(bad.errors.visceral && bad.errors.weight);
+  assert.equal(ctx.getBoditraxLog().length, 2, "invalid entry must not persist");
+  // edit + delete
+  ctx.updateBoditraxEntry(added.id, { date: "2026-07-16", weight: 105.0, muscle: 73.5, fat: 28.0, visceral: 13 });
+  assert.equal(ctx.getBoditraxLog().find((e) => e.id === added.id).weight, 105.0);
+  ctx.deleteBoditraxEntry(added.id);
+  assert.equal(ctx.getBoditraxLog().length, 1, "delete failed");
 });
