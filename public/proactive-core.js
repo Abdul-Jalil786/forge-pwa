@@ -298,13 +298,6 @@ function validateBoditraxEntry(raw) {
 // ============================================================
 // Phase 2: trigger checks + governance (pure)
 // ============================================================
-// Daily blended lean series (source-prioritised) within a trailing window,
-// returned as [dayIndex, lean] regression points. Used by lbm_drop + correlations.
-function _lbmSeries(state, today, days) {
-  var start = _addDays(today, -(days - 1));
-  var series = blendedLeanSeries(state).filter(function (p) { return p.date >= start && p.date <= today; });
-  return series.map(function (p) { return [_dayIdx(p.date, start), p.lean]; });
-}
 function _sessionSatisfied(exLog, madeUp, date) {
   var day = exLog[date];
   if (day) {
