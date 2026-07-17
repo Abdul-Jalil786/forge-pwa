@@ -62,7 +62,7 @@ function makeContext() {
   return { ctx, els };
 }
 
-const FILES = ["targets.js", "programme-shared.js", "data.js", "workout.js", "pages.js", "app.js"];
+const FILES = ["targets.js", "programme-shared.js", "proactive-core.js", "data.js", "workout.js", "pages.js", "app.js"];
 function bootApp() {
   const { ctx, els } = makeContext();
   for (const f of FILES) {
@@ -89,7 +89,8 @@ const SEED = {
   weightLog: [{ date: "2026-07-10", weight: 105, source: "manual" }], bfLog: [{ date: "2026-07-10", bf: 30 }],
   foods: {}, exLog: {}, sleepLog: {}, recovery: {}, stepsLog: {}, calorieLog: {}, supplements: [], supplementLog: {},
   reminders: [], notifications: [], waterLog: {}, fastingLog: {}, mounjaroLog: {}, injuries: {}, exerciseNotes: {},
-  measLog: [], dexaScans: [], bodyComp: {}, bpLog: [], vo2maxLog: [], cardioLog: {}, skinCare: { products: [] },
+  measLog: [], dexaScans: [], boditraxLog: [{ id: "bdx1", source: "boditrax", date: "2026-07-14", weight: 106.1, muscle: 73.8, fat: 28.5, ffm: 77.6, visceral: 14 }],
+  bodyComp: {}, bpLog: [], vo2maxLog: [], cardioLog: {}, skinCare: { products: [] },
   skinCareLog: {}, stretchLog: {}, coachingReports: [], mealPlan: { meals: [] }, sessionFeel: {}, recoveryOverrides: {},
 };
 function seed(ctx) {

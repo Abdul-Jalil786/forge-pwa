@@ -179,6 +179,7 @@ let STATE = {
   vo2maxLog: {},
   cardioLog: {},
   bpLog: [],
+  boditraxLog: [],
   dexaScans: [],
   healthRecords: [],
   stretchLog: {},
@@ -1153,6 +1154,18 @@ function getSupplementAdherence(days){
 // PROGRESS HELPERS (Phase 22)
 // ============================================================
 function getCurrentLBM(){
+  // Prefer the most recent trusted scan (Boditrax/DEXA) within the last 30 days
+  // so "current lean" and the change-from-start caption reflect the device the
+  // user trusts — not a single noisy daily Withings reading. Otherwise fall back
+  // to the latest reading of any source.
+  const blended=(typeof PROACTIVE_CORE!=='undefined'&&PROACTIVE_CORE.blendedLeanSeries)?PROACTIVE_CORE.blendedLeanSeries(STATE):null;
+  if(blended&&blended.length){
+    const today=todayStr();
+    const within=(d)=>Math.abs((new Date(today+'T12:00:00')-new Date(d+'T12:00:00'))/86400000)<=30;
+    const recentReliable=blended.filter(p=>p.priority>=2&&within(p.date));
+    if(recentReliable.length)return recentReliable[recentReliable.length-1].lean;
+    return blended[blended.length-1].lean;
+  }
   const w=getCurrentWeight();
   const bf=getCurrentBf();
   if(!w||!bf)return null;
@@ -1170,6 +1183,11 @@ function getJourneyEntries(metric){
     return start?bl.filter(e=>e.date>=start):bl;
   }
   if(metric==='lbm'){
+    // Source-prioritised (DEXA > Boditrax > Withings): Boditrax/DEXA scans
+    // override their own dates; Withings daily BIA fills the gaps between them.
+    const blended=getBlendedLeanSeries();
+    if(blended)return blended.map(p=>({date:p.date,lbm:p.lean,source:p.source}));
+    // Fallback (engine not loaded): weight × (1 − bf/100).
     const wl=getJourneyEntries('weight');
     const bl=getBfLog();
     return wl.map(we=>{
@@ -1187,6 +1205,13 @@ function getJourneyEntries(metric){
 }
 
 function get14DayAvgRate(metric){
+  // Lean mass: report the reliability-weighted trend (Boditrax/DEXA anchor the
+  // slope; Withings daily is the fallback) rather than a raw last-14-points rate
+  // that noisy daily BIA would dominate.
+  if(metric==='lbm'&&typeof PROACTIVE_CORE!=='undefined'&&PROACTIVE_CORE.leanTrendRate){
+    const r=PROACTIVE_CORE.leanTrendRate(STATE,{until:todayStr()});
+    if(r&&r.perWeek!=null)return r.perWeek;
+  }
   const entries=getJourneyEntries(metric);
   if(entries.length<7)return 0;
   const last14=entries.slice(-14);
@@ -1215,10 +1240,35 @@ function smoothedBodyCompTrend(metric, phase = 'cut') {
     return d.toISOString().slice(0, 10);
   };
 
+  // Lean mass: judge status on the reliability-weighted TREND RATE (kg/week) so a
+  // trusted Boditrax/DEXA scan governs the colour and a sparse pair of scans 60
+  // days apart isn't misread as a 14-day crash. Withings-only users keep the
+  // prior behaviour via the same per-week thresholds.
+  if (metric === 'lbm' && typeof PROACTIVE_CORE !== 'undefined' && PROACTIVE_CORE.leanTrendRate) {
+    const r = PROACTIVE_CORE.leanTrendRate(STATE, { until: today });
+    if (r && r.perWeek != null && r.n >= 2) {
+      const rate = r.perWeek;                    // kg/week (negative = losing lean)
+      const provisional = r.n < 3;
+      const greenAbove = provisional ? -0.05 : -0.10;   // per-week (matches the old 14d ±)
+      const redAtOrBelow = provisional ? -0.30 : -0.28;
+      let status;
+      if (rate >= greenAbove) status = 'green';
+      else if (rate > redAtOrBelow) status = 'amber';
+      else status = 'red';
+      const curVal = r.last ? r.last.lean : null;
+      return {
+        status, delta: Math.round(rate * 2 * 100) / 100, // 14-day-equivalent for display continuity
+        currentAvg: curVal, prevAvg: (curVal != null ? Math.round((curVal - rate * 2) * 100) / 100 : null),
+        provisional, entriesCurrent: r.n, entriesPrior: r.n, windowDays: 14,
+        ratePerWeek: rate, source: r.source
+      };
+    }
+  }
+
   // Build entries: array of {date, value} for the metric
   let entries;
   if (metric === 'lbm') {
-    // weight × (1 - bf/100), aligned per-date using the same logic as getJourneyEntries('lbm')
+    // Fallback (engine unavailable): weight × (1 - bf/100), aligned per-date.
     const wl = getWeightLog();
     const bl = getBfLog();
     entries = wl.map(we => {
@@ -2300,6 +2350,61 @@ function deleteDexaScan(id){
   STATE.dexaScans=arr;
   updateLocalCache();
   saveFieldToServer('/api/state/dexa-scans',{dexaScans:arr});
+}
+
+// ============================================================
+// PHASE 58 — BODITRAX (trusted multi-frequency BIA; source:'boditrax')
+// ============================================================
+// The reliability hierarchy (DEXA > Boditrax > Withings) lives in the shared,
+// tested proactive-core engine; these helpers own storage + CRUD only.
+function getBoditraxLog(){const a=pGet('boditraxLog',[]);return Array.isArray(a)?a:[];}
+function getLatestBoditrax(){
+  const arr=getBoditraxLog();
+  if(!arr.length)return null;
+  return [...arr].sort((a,b)=>(a.date||'').localeCompare(b.date||''))[arr.length-1];
+}
+// Validate a raw entry via the shared engine (falls back gracefully if the core
+// isn't loaded). Returns {ok, errors, clean}.
+function validateBoditrax(raw){
+  if(typeof PROACTIVE_CORE!=='undefined'&&PROACTIVE_CORE.validateBoditraxEntry)return PROACTIVE_CORE.validateBoditraxEntry(raw);
+  const clean={source:'boditrax',date:String(raw.date||'').slice(0,10)};
+  return{ok:!!clean.date,errors:clean.date?{}:{date:'Date required'},clean};
+}
+function addBoditraxEntry(raw){
+  const v=validateBoditrax(raw);
+  if(!v.ok)return v;
+  const arr=getBoditraxLog();
+  const entry={id:'bdx_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),...v.clean,loggedAt:new Date().toISOString()};
+  arr.push(entry);
+  STATE.boditraxLog=arr;
+  updateLocalCache();
+  saveFieldToServer('/api/state/boditrax-log',{boditraxLog:arr});
+  return{...v,entry};
+}
+function updateBoditraxEntry(id,raw){
+  const v=validateBoditrax(raw);
+  if(!v.ok)return v;
+  const arr=getBoditraxLog();
+  const i=arr.findIndex(s=>s&&s.id===id);
+  if(i<0)return{ok:false,errors:{id:'not found'},clean:v.clean};
+  arr[i]={...arr[i],...v.clean,id,loggedAt:new Date().toISOString()};
+  STATE.boditraxLog=arr;
+  updateLocalCache();
+  saveFieldToServer('/api/state/boditrax-log',{boditraxLog:arr});
+  return{...v,entry:arr[i]};
+}
+function deleteBoditraxEntry(id){
+  const arr=getBoditraxLog().filter(s=>s&&s.id!==id);
+  STATE.boditraxLog=arr;
+  updateLocalCache();
+  saveFieldToServer('/api/state/boditrax-log',{boditraxLog:arr});
+}
+// Blended lean series ({date,lean,source}) via the shared engine, start-scoped.
+function getBlendedLeanSeries(){
+  if(typeof PROACTIVE_CORE==='undefined'||!PROACTIVE_CORE.blendedLeanSeries)return null;
+  const start=getActive()?.startDate;
+  const s=PROACTIVE_CORE.blendedLeanSeries(STATE);
+  return start?s.filter(p=>p.date>=start):s;
 }
 
 // Phase 55: Health Records — document wrappers (source text + provider/title) for
