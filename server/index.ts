@@ -1066,6 +1066,86 @@ async function fixAbdulPeasFibreRebalanceV1() {
   }
 }
 
+// Phase 57: correct historical Leg Press (l1) load. Sets were logged as PLATE
+// weight only, excluding the machine's 53kg sled. Add 53kg to the kg of every
+// logged l1 set across all dates, for the single owner account only
+// (jay@afjltd.co.uk — targeted by email, so no other user row is ever touched).
+// Guarded so it can NEVER double-apply (that would add 106kg). Only sets with a
+// finite numeric kg are changed; reps/effort/timestamps/other exercises are left
+// untouched. Two-pass: measure first, and REFUSE to mutate unless the current max
+// matches the expected plate max (sanity gate) — then apply and record a full
+// before/after report in state for verification.
+async function fixJayLegPressSledV1() {
+  const SLED = 53;
+  const EXPECTED_MAX_BEFORE = 270; // current max plate weight; becomes 323 after
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.legPressSledFixV1?.applied) return; // hard idempotency guard — never +106kg
+
+    const exLog = state.exLog || {};
+    // Pass 1 — measure only, no mutation.
+    let candidateSets = 0, minBefore = Infinity, maxBefore = -Infinity;
+    const dates: string[] = [];
+    for (const date of Object.keys(exLog)) {
+      const day = exLog[date];
+      const ex = day && typeof day === "object" ? day["l1"] : null;
+      if (!ex || !Array.isArray(ex.sets)) continue;
+      let touched = false;
+      for (const s of ex.sets) {
+        if (!s || typeof s !== "object") continue;
+        const kg = typeof s.kg === "number" ? s.kg : parseFloat(s.kg);
+        if (!Number.isFinite(kg)) continue; // only sets with a real kg value
+        minBefore = Math.min(minBefore, kg);
+        maxBefore = Math.max(maxBefore, kg);
+        candidateSets++; touched = true;
+      }
+      if (touched) dates.push(date);
+    }
+
+    // Safety gate: if the live data isn't what we expect, DO NOT mutate. Record a
+    // report and bail WITHOUT setting the applied flag, so it re-checks next boot.
+    if (candidateSets === 0 || maxBefore !== EXPECTED_MAX_BEFORE) {
+      state.legPressSledReport = {
+        applied: false,
+        reason: candidateSets === 0 ? "no l1 sets found" : "maxBefore mismatch — not applied",
+        candidateSets, candidateDates: dates.length,
+        minBefore: Number.isFinite(minBefore) ? minBefore : null,
+        maxBefore: Number.isFinite(maxBefore) ? maxBefore : null,
+        expectedMaxBefore: EXPECTED_MAX_BEFORE, checkedAt: new Date().toISOString(),
+      };
+      await prisma.user.update({ where: { id: user.id }, data: { state } });
+      console.warn(`[migration] Leg Press sled fix SKIPPED — expected max ${EXPECTED_MAX_BEFORE}, found ${Number.isFinite(maxBefore) ? maxBefore : "none"} across ${candidateSets} set(s). NO data changed.`);
+      return;
+    }
+
+    // Pass 2 — apply +53 to every l1 set with a finite kg (preserve stored type).
+    let setsChanged = 0;
+    for (const date of dates) {
+      for (const s of exLog[date]["l1"].sets) {
+        if (!s || typeof s !== "object") continue;
+        const kg = typeof s.kg === "number" ? s.kg : parseFloat(s.kg);
+        if (!Number.isFinite(kg)) continue;
+        const newKg = Math.round((kg + SLED) * 100) / 100;
+        s.kg = typeof s.kg === "number" ? newKg : String(newKg);
+        setsChanged++;
+      }
+    }
+    state.legPressSledFixV1 = {
+      applied: true, appliedAt: new Date().toISOString(), sledKg: SLED,
+      setsChanged, datesChanged: dates.length,
+      minBefore, maxBefore, minAfter: minBefore + SLED, maxAfter: maxBefore + SLED,
+      dates: dates.slice().sort(),
+    };
+    state.exLog = exLog;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] Leg Press sled fix APPLIED: +${SLED}kg to ${setsChanged} l1 set(s) across ${dates.length} date(s). kg ${minBefore}-${maxBefore} -> ${minBefore + SLED}-${maxBefore + SLED}`);
+  } catch (err) {
+    console.error("[migration] fixJayLegPressSledV1 failed:", err);
+  }
+}
+
 // Phase 41g: advance Jay to retinol Phase 3 (every-2-days = every other day).
 // Mirrors data.js setSkinPhase(3). Re-frequencies retinol + cicaplast products
 // and stamps a fresh phaseStartDate so the 3-week tolerance clock starts today.
@@ -1513,6 +1593,7 @@ const server = app.listen(PORT, async () => {
   await fixAbdulStartWeightV1();
   await fixAbdulShakeProteinV1();
   await fixAbdulPeasFibreRebalanceV1();
+  await fixJayLegPressSledV1();
   await switchAbdulToTretinoinV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
