@@ -1077,7 +1077,7 @@ async function fixAbdulPeasFibreRebalanceV1() {
 // before/after report in state for verification.
 async function fixJayLegPressSledV1() {
   const SLED = 53;
-  const EXPECTED_MAX_BEFORE = 270; // current max plate weight; becomes 323 after
+  const EXPECTED_MAX_BEFORE = 275; // current max plate weight (user-confirmed); becomes 328 after
   try {
     const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
     if (!user) return;
