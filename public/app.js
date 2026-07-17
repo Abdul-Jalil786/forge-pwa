@@ -685,9 +685,16 @@ function _renderHealthConditions(){
   </div>`).join('');
 }
 
+async function saveProactiveToggle(){
+  const on = (document.getElementById('cs-proactive') || {}).checked === true;
+  try { await _saveCoachConfig({ coachProactive: on }, on ? 'Proactive coach on ✓' : 'Proactive coach off'); _coachProfile().coachProactive = on; updateLocalCache(); }
+  catch (e) { showToast(e.message || 'Failed'); }
+}
+
 function loadCoachSettingsUI(){
   if (typeof isOwner === 'function' && !isOwner()) return;
   const pf = _coachProfile();
+  const prox = document.getElementById('cs-proactive'); if (prox) prox.checked = pf.coachProactive !== false;
   _renderHealthConditions();
   const ct = pf.coachTargets || {};
   const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };

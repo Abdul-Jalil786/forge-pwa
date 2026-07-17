@@ -457,6 +457,17 @@ router.put("/profile/coach-config", requireAuth, async (req: Request, res: Respo
       did = true;
     }
 
+    // Proactive coach kill switch (boolean).
+    if (body.coachProactive != null) {
+      const json = JSON.stringify(body.coachProactive === true);
+      await prisma.$executeRaw`
+        UPDATE "User" SET state = jsonb_set(
+          jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+          '{profile,coachProactive}', ${json}::jsonb, true
+        ), "updatedAt" = NOW() WHERE id = ${req.userId}`;
+      did = true;
+    }
+
     if (!did) { res.status(400).json({ error: "no valid fields" }); return; }
     res.json({ success: true });
   } catch (err) {

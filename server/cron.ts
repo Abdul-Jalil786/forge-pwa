@@ -5,7 +5,7 @@ import { syncOuraForAllUsers } from "./oura";
 import { syncWithingsForAllUsers } from "./withings";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, hoursSinceLastPlanRegen, recomputeMealPlanMacros } from "./ai-coach";
 import { sessionTypeForDate } from "./programme-shared";
-import { runNightlyCorrelations } from "./proactive";
+import { runNightlyCorrelations, runDailyScanner } from "./proactive";
 
 function ukToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -422,6 +422,15 @@ export function startCron() {
     console.log("Running nightly correlation compute...");
     try { await runNightlyCorrelations(); console.log("Nightly correlations complete"); }
     catch (err) { console.error("Nightly correlation error:", err); }
+  }, { timezone: "Europe/London" });
+
+  // Phase 57: proactive daily scanner (08:30 UK). Deterministic checks are free;
+  // an LLM (Haiku, budget-governed) runs only when a governed trigger fires, and
+  // may still SKIP. Silent on a normal day.
+  cron.schedule("30 8 * * *", async () => {
+    console.log("Running proactive daily scanner...");
+    try { const r = await runDailyScanner(); console.log(`Proactive scanner: ${r.fired} fired, ${r.nudged} nudged of ${r.scanned}`); }
+    catch (err) { console.error("Proactive scanner error:", err); }
   }, { timezone: "Europe/London" });
 
   // Phase 57: GLP-1 injection reminder — fires daily 14:00 UK but only pushes on

@@ -169,10 +169,124 @@ function formatCorrelations(c) {
   return L.join("\n");
 }
 
+// ============================================================
+// Phase 2: trigger checks + governance (pure)
+// ============================================================
+function _lbmSeries(state, today, days) {
+  var start = _addDays(today, -(days - 1));
+  var wl = (state.weightLog || []).filter(function (e) { return e.date >= start && e.date <= today; });
+  var bl = (state.bfLog || []).slice().sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+  var pts = [];
+  wl.forEach(function (e) {
+    var w = _num(e.weight); if (w == null) return;
+    var bf = null;
+    for (var i = 0; i < bl.length; i++) { if (bl[i].date <= e.date) { var b = _num(bl[i].bf); if (b != null) bf = b; } }
+    if (bf != null) pts.push([_dayIdx(e.date, start), w * (1 - bf / 100)]);
+  });
+  return pts;
+}
+function _sessionSatisfied(exLog, madeUp, date) {
+  var day = exLog[date];
+  if (day) {
+    if (day._session && day._session.skipped) return true;
+    for (var k in day) {
+      if (k.charAt(0) === "_") continue;
+      var ex = day[k];
+      if (ex && Array.isArray(ex.sets) && ex.sets.some(function (s) { return _num(s.kg) != null || _num(s.reps) != null || _num(s.seconds) != null; })) return true;
+    }
+  }
+  return !!madeUp[date];
+}
+
+// Deterministic trigger checks. opts: { today, exerciseReps, proteinFloor, phase,
+// scheduledDays[] }. Returns fired triggers [{ type, severity, detail, data }].
+function computeTriggers(state, opts) {
+  opts = opts || {};
+  var today = opts.today; if (!today) return [];
+  var fired = [];
+  function fire(type, severity, detail, data) { fired.push({ type: type, severity: severity, detail: detail, data: data || {} }); }
+
+  // 1. low_steps — yesterday < 50% of the 14d average (need >=7 days baseline)
+  var steps = state.stepsLog || {};
+  var yVal = _num(steps[_addDays(today, -1)]);
+  var sHist = [];
+  for (var i = 2; i <= 15; i++) { var v = _num(steps[_addDays(today, -i)]); if (v != null) sHist.push(v); }
+  if (yVal != null && sHist.length >= 7) { var savg = _mean(sHist); if (savg > 0 && yVal < 0.5 * savg) fire("low_steps", 2, "Steps yesterday " + yVal + " — under half your ~" + Math.round(savg) + " average", { yesterday: yVal, avg: Math.round(savg) }); }
+
+  // 2. poor_sleep — last night in bottom decile of 60d, or bedtime after 2am
+  var ln = sleepEntry(state, today);
+  if (ln && ln.hours != null) {
+    var hh = [];
+    for (var j = 1; j <= 60; j++) { var s = sleepEntry(state, _addDays(today, -j)); if (s && s.hours != null) hh.push(s.hours); }
+    var lateBed = ln.bedtime != null && ln.bedtime >= 2 && ln.bedtime <= 6;
+    var decile = false;
+    if (hh.length >= 20) { var sorted = hh.slice().sort(function (a, b) { return a - b; }); var p10 = sorted[Math.floor(sorted.length * 0.1)]; decile = ln.hours <= p10; }
+    if (decile || lateBed) fire("poor_sleep", 2, lateBed ? "Late bedtime last night" : "Last night " + ln.hours + "h — bottom 10% of your last 60 nights", { hours: ln.hours, lateBed: lateBed });
+  }
+
+  // 3. low_protein — under the floor two days running (both days must have food)
+  if (opts.proteinFloor) {
+    var intake = dailyIntake(state);
+    var a1 = intake[_addDays(today, -1)], a2 = intake[_addDays(today, -2)];
+    if (a1 && a2 && a1.kcal > 0 && a2.kcal > 0 && a1.protein < opts.proteinFloor && a2.protein < opts.proteinFloor) fire("low_protein", 3, "Protein under " + opts.proteinFloor + "g two days running (" + a2.protein + "g, " + a1.protein + "g)", { floor: opts.proteinFloor, days: [a2.protein, a1.protein] });
+  }
+
+  // 4. lift_stalled
+  var stalls = detectStalls(state, opts.exerciseReps || {});
+  if (stalls.length) fire("lift_stalled", 2, stalls.length + " lift(s) stalled: " + stalls.map(function (s) { return s.exId + " @ " + s.kg + "kg (" + s.sessions + " sessions)"; }).join(", "), { stalls: stalls });
+
+  // 5. weight_plateau — cut phase, 10d slope flat/positive
+  if (opts.phase === "cut") {
+    var wl = (state.weightLog || []).slice().sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+    var pts10 = wl.filter(function (e) { return e.date >= _addDays(today, -9) && e.date <= today; });
+    var sl10 = _weightSlopeEnding(wl, today, 10);
+    if (sl10 != null && pts10.length >= 6 && sl10 >= -0.01) fire("weight_plateau", 3, "Weight trend flat/up over 10 days on a cut (" + _round(sl10 * 7, 2) + "kg/week)", { slopePerWeek: _round(sl10 * 7, 2) });
+  }
+
+  // 6. lbm_drop — lean mass falling > 0.3kg/week over 14d
+  var lbm = _lbmSeries(state, today, 14);
+  if (lbm.length >= 8) { var ls = slope(lbm); if (ls != null && ls * 7 < -0.3) fire("lbm_drop", 4, "Lean mass dropping ~" + _round(ls * 7, 2) + "kg/week over 14 days", { perWeek: _round(ls * 7, 2) }); }
+
+  // 7. missed_sessions — 2+ consecutive missed scheduled sessions (make-ups/skips honoured)
+  if (Array.isArray(opts.scheduledDays) && opts.scheduledDays.length) {
+    var exLog = state.exLog || {}, madeUp = {};
+    for (var dk in exLog) { var se = exLog[dk] && exLog[dk]._session; if (se && se.forDate) madeUp[se.forDate] = true; }
+    var past = opts.scheduledDays.slice().sort().filter(function (d) { return d < today; });
+    var miss = 0;
+    for (var p = past.length - 1; p >= 0; p--) { if (!_sessionSatisfied(exLog, madeUp, past[p])) miss++; else break; }
+    if (miss >= 2) fire("missed_sessions", 3, miss + " scheduled sessions missed in a row", { count: miss });
+  }
+
+  // 8. deload_week — placeholder; only fires once the deload feature sets opts.deloadStarting.
+  if (opts.deloadStarting) fire("deload_week", 2, "Deload week starting", {});
+
+  return fired.sort(function (a, b) { return (b.severity || 0) - (a.severity || 0); });
+}
+
+// Governance: pick ONE trigger to act on (or null). Enforces max 1 selection/day,
+// max N delivered/week, and a per-type cooldown. history: [{type,date,delivered}].
+function selectNudge(history, fired, today, config) {
+  config = config || {};
+  var maxPerWeek = config.maxPerWeek || 3, cooldown = config.cooldownDays || 5;
+  if (!fired || !fired.length) return null;
+  history = history || [];
+  if (history.some(function (h) { return h.date === today; })) return null; // one selection/day
+  var weekStart = _addDays(today, -6);
+  if (history.filter(function (h) { return h.delivered && h.date >= weekStart; }).length >= maxPerWeek) return null;
+  var eligible = fired.filter(function (f) {
+    var last = history.filter(function (h) { return h.type === f.type; }).map(function (h) { return h.date; }).sort().pop();
+    return !last || _dayIdx(today, last) >= cooldown;
+  });
+  if (!eligible.length) return null;
+  eligible.sort(function (a, b) { return (b.severity || 0) - (a.severity || 0); });
+  return eligible[0];
+}
+
 var PROACTIVE_CORE = {
   MIN_N: MIN_N, MIN_CYCLES: MIN_CYCLES,
   pearson: pearson, slope: slope, dailyIntake: dailyIntake, sessionPerf: sessionPerf, detectStalls: detectStalls,
   computeCorrelations: computeCorrelations, formatCorrelations: formatCorrelations,
+  computeTriggers: computeTriggers, selectNudge: selectNudge,
 };
 if (typeof window !== "undefined") window.PROACTIVE_CORE = PROACTIVE_CORE;
 if (typeof module !== "undefined" && module.exports) module.exports = PROACTIVE_CORE;
