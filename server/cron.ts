@@ -5,6 +5,7 @@ import { syncOuraForAllUsers } from "./oura";
 import { syncWithingsForAllUsers } from "./withings";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, hoursSinceLastPlanRegen, recomputeMealPlanMacros } from "./ai-coach";
 import { sessionTypeForDate } from "./programme-shared";
+import { runNightlyCorrelations } from "./proactive";
 
 function ukToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -413,6 +414,14 @@ export function startCron() {
     } catch (err) {
       console.error("Weekly summary error:", err);
     }
+  }, { timezone: "Europe/London" });
+
+  // Phase 57: nightly deterministic correlation compute (03:00 UK, no LLM, free).
+  // Caches state.correlations for the weekly report + the daily proactive scanner.
+  cron.schedule("0 3 * * *", async () => {
+    console.log("Running nightly correlation compute...");
+    try { await runNightlyCorrelations(); console.log("Nightly correlations complete"); }
+    catch (err) { console.error("Nightly correlation error:", err); }
   }, { timezone: "Europe/London" });
 
   // Phase 57: GLP-1 injection reminder — fires daily 14:00 UK but only pushes on

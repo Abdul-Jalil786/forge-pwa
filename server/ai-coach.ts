@@ -3,6 +3,7 @@ import prisma from "./db";
 import { decrypt } from "./crypto-util";
 import { analyzeNutrition } from "./nutrition";
 import { exerciseName, sessionTypeForDate, programmeLabel } from "./programme-shared";
+import { formatCorrelations } from "./proactive";
 
 // Phase 57: age derived from date of birth (YYYY-MM-DD) so it never goes stale.
 // Preferred over a static profile.personal.age. Returns null if unparseable.
@@ -1102,6 +1103,13 @@ export function buildContext(state: any): string {
   // Phase 41: stretching / mobility compliance block (between Recovery and Skin Care)
   const stretchBlock = buildStretchContext(state);
   if (stretchBlock) lines.push(stretchBlock);
+
+  // Phase 57: computed correlations (deterministic, full-history) — the coach
+  // cites these instead of eyeballing 7-14d windows.
+  if (state.correlations) {
+    const corrBlock = formatCorrelations(state.correlations);
+    if (corrBlock) { lines.push(corrBlock); lines.push(""); }
+  }
 
   // Phase 44: recovery-gate calibration — gate firings vs choices vs outcomes
   const calibrationBlock = buildCalibrationContext(state);
