@@ -2760,6 +2760,93 @@ function renderMore(){
       <button class="btn btn-ghost btn-sm" style="width:100%;font-size:11px;" onclick="askCoachMaxLBM()">🧠 Compute my realistic max LBM (AI)</button>
     </div>
 
+    ${isOwner()?`
+    <div class="sec-label">Coach Settings</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:6px;">
+        The facts the AI Coach uses to tailor advice. Changes take effect on your <strong>next generated report or Ask Forge answer</strong>.
+      </div>
+
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:16px 0 4px;">Health Conditions</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:8px;">The coach applies a condition's rules only while it's listed here (cardiac → tighter BP target; fatty liver → no alcohol; smoker → slower skin recovery). Remove one and that rule stops next report.</div>
+      <div id="hc-list" style="margin-bottom:8px;"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:5px 10px;" onclick="addHealthConditionQuick('lvh','Left ventricular hypertrophy (LVH)','Cardiac — BP target &lt;130/80')">+ LVH</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:5px 10px;" onclick="addHealthConditionQuick('fatty-liver','Fatty liver (elevated ALT)','Keep alcohol minimal')">+ Fatty liver</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:5px 10px;" onclick="addHealthConditionQuick('smoker','Smoker','Skin more sensitive / slower recovery')">+ Smoker</button>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input id="hc-free" type="text" maxlength="120" placeholder="Add another condition…" style="flex:1;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+        <button class="btn btn-lime btn-sm" onclick="addHealthConditionFree()">Add</button>
+      </div>
+
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:18px 0 6px;border-top:1px solid var(--border);padding-top:14px;">Coach Targets</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;">Protein floor (g/day)</div>
+          <input id="ct-protfloor" type="number" min="100" max="350" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+          <div style="font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4;">Coach flags days below this.</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;">Per-meal protein (g)</div>
+          <input id="ct-permeal" type="number" min="20" max="80" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+          <div style="font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4;">Meals under this get an "add protein" nudge.</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;">Water — rest day (L)</div>
+          <input id="ct-water-rest" type="number" min="1" max="6" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+          <div style="font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4;">Flagged if 7-day avg is well under.</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;">Water — gym day (L)</div>
+          <input id="ct-water-gym" type="number" min="1" max="6" step="0.1" inputmode="decimal" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+          <div style="font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4;">Target on training days.</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;">Calorie deficit</div>
+          <input id="ct-deficit" type="number" min="0" max="1200" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+          <div style="font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4;">Daily kcal below maintenance the targets aim for.</div>
+        </div>
+      </div>
+      <button class="btn btn-lime btn-sm" style="width:100%;margin-top:10px;" onclick="saveCoachTargets()">Save Targets</button>
+
+      ${(STATE.profile&&Array.isArray(STATE.profile.medications)&&STATE.profile.medications.some(m=>/mounjaro|tirzepatide|ozempic|wegovy|semaglutide|glp-?1/i.test((m&&m.name)||'')))?`
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:18px 0 6px;border-top:1px solid var(--border);padding-top:14px;">Medication Schedule</div>
+      <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;">GLP-1 injection day</div>
+      <div style="display:flex;gap:8px;">
+        <select id="cs-injday" style="flex:1;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
+          ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((d,i)=>`<option value="${i}">${d}</option>`).join('')}
+        </select>
+        <button class="btn btn-lime btn-sm" onclick="saveInjectionDay()">Save</button>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4;">Coach expects lower appetite that day + the day after; injection reminder fires this day.</div>
+      `:''}
+
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:18px 0 6px;border-top:1px solid var(--border);padding-top:14px;">Eating Window</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input id="cs-ew-enabled" type="checkbox" onchange="_toggleEwInputs()" style="width:16px;height:16px;" /> Fasting window on
+        </label>
+      </div>
+      <div id="cs-ew-times" style="display:flex;gap:8px;align-items:center;">
+        <select id="cs-ew-start" style="flex:1;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">${[...Array(24)].map((_,h)=>`<option value="${h}">${String(h).padStart(2,'0')}:00</option>`).join('')}</select>
+        <span style="color:var(--text3);font-size:12px;">to</span>
+        <select id="cs-ew-end" style="flex:1;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">${[...Array(25)].slice(1).map((_,i)=>{const h=i+1;return `<option value="${h}">${String(h).padStart(2,'0')}:00</option>`;}).join('')}</select>
+        <button class="btn btn-lime btn-sm" onclick="saveEatingWindow()">Save</button>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4;">Coach judges fasting compliance against this window.</div>
+
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:18px 0 6px;border-top:1px solid var(--border);padding-top:14px;">Personal</div>
+      <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;">Date of birth</div>
+      <div style="display:flex;gap:8px;">
+        <input id="cs-dob" type="date" style="flex:1;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+        <button class="btn btn-lime btn-sm" onclick="saveCoachDob()">Save</button>
+      </div>
+      <div id="cs-dob-note" style="font-size:10px;color:var(--orange);margin-top:3px;line-height:1.4;"></div>
+      <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.4;">Ethnicity (used for the visceral-fat threshold — South Asian ≥7 vs ≥10) is set in <strong>Personal Profile</strong> above.</div>
+    </div>
+    `:''}
+
     <div class="sec-label">Medications</div>
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
@@ -2898,6 +2985,7 @@ function renderMore(){
   loadCoachKeyStatus();
   loadFoodPrefsUI();
   loadPersonalProfileUI();
+  if(typeof loadCoachSettingsUI==='function')loadCoachSettingsUI();
   renderMedsList();
   renderBloodMarkersList();
   loadSessionTimesUI();

@@ -390,42 +390,74 @@ router.put("/profile/personal", requireAuth, async (req: Request, res: Response)
 router.put("/profile/coach-config", requireAuth, async (req: Request, res: Response) => {
   try {
     const body: any = req.body || {};
-    const writes: Array<{ path: string; json: string }> = [];
+    let did = false;
+
+    // Health conditions — full-array replace (the list IS the whole value).
     if (body.healthConditions != null) {
       if (!Array.isArray(body.healthConditions) || body.healthConditions.length > 40) { res.status(400).json({ error: "healthConditions must be an array (max 40)" }); return; }
       const clean = body.healthConditions.map((c: any) => ({ key: String(c?.key || "").slice(0, 40), label: String(c?.label || c?.key || "").slice(0, 120), notes: c?.notes ? String(c.notes).slice(0, 300) : undefined }));
-      writes.push({ path: "{profile,healthConditions}", json: JSON.stringify(clean) });
+      const json = JSON.stringify(clean);
+      await prisma.$executeRaw`
+        UPDATE "User" SET state = jsonb_set(
+          jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+          '{profile,healthConditions}', ${json}::jsonb, true
+        ), "updatedAt" = NOW() WHERE id = ${req.userId}`;
+      did = true;
     }
+
+    // Coach targets — validated per-field ranges, MERGED into existing so a
+    // partial update never drops the other target keys.
     if (body.coachTargets != null) {
       if (typeof body.coachTargets !== "object") { res.status(400).json({ error: "coachTargets must be an object" }); return; }
+      const RANGES: Record<string, [number, number]> = {
+        proteinFloorDaily: [100, 350], proteinPerMeal: [20, 80],
+        waterRestMl: [1000, 6000], waterGymMl: [1000, 6000],
+        deficitKcal: [0, 1200], trainingBonusUpper: [0, 1000], trainingBonusLower: [0, 1000],
+      };
       const ct: any = {};
-      for (const k of ["proteinPerMeal", "proteinFloorDaily", "waterRestMl", "waterGymMl", "deficitKcal", "trainingBonusUpper", "trainingBonusLower"]) {
-        if (body.coachTargets[k] != null) { const n = Number(body.coachTargets[k]); if (!Number.isFinite(n) || n < 0 || n > 10000) { res.status(400).json({ error: `coachTargets.${k} out of range` }); return; } ct[k] = Math.round(n); }
+      for (const k of Object.keys(RANGES)) {
+        if (body.coachTargets[k] != null) {
+          const n = Number(body.coachTargets[k]); const [lo, hi] = RANGES[k];
+          if (!Number.isFinite(n) || n < lo || n > hi) { res.status(400).json({ error: `coachTargets.${k} must be ${lo}-${hi}` }); return; }
+          ct[k] = Math.round(n);
+        }
       }
-      writes.push({ path: "{profile,coachTargets}", json: JSON.stringify(ct) });
+      const json = JSON.stringify(ct);
+      await prisma.$executeRaw`
+        UPDATE "User" SET state = jsonb_set(
+          jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+          '{profile,coachTargets}', COALESCE(state->'profile'->'coachTargets', '{}'::jsonb) || ${json}::jsonb, true
+        ), "updatedAt" = NOW() WHERE id = ${req.userId}`;
+      did = true;
     }
+
+    // GLP-1 injection day — scalar replace (0-6).
     if (body.glp1InjectionDow != null) {
       const d = Number(body.glp1InjectionDow);
       if (!Number.isInteger(d) || d < 0 || d > 6) { res.status(400).json({ error: "glp1InjectionDow must be 0-6" }); return; }
-      writes.push({ path: "{profile,glp1InjectionDow}", json: JSON.stringify(d) });
+      const json = JSON.stringify(d);
+      await prisma.$executeRaw`
+        UPDATE "User" SET state = jsonb_set(
+          jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+          '{profile,glp1InjectionDow}', ${json}::jsonb, true
+        ), "updatedAt" = NOW() WHERE id = ${req.userId}`;
+      did = true;
     }
+
+    // Eating window — clamped, MERGED into existing.
     if (body.eatingWindow != null) {
       const e: any = body.eatingWindow;
       const ew = { enabled: e.enabled !== false, start: Math.max(0, Math.min(23, Math.round(Number(e.start) || 12))), end: Math.max(1, Math.min(24, Math.round(Number(e.end) || 20))) };
-      writes.push({ path: "{profile,eatingWindow}", json: JSON.stringify(ew) });
-    }
-    if (writes.length === 0) { res.status(400).json({ error: "no valid fields" }); return; }
-    for (const w of writes) {
+      const json = JSON.stringify(ew);
       await prisma.$executeRaw`
-        UPDATE "User"
-        SET state = jsonb_set(
+        UPDATE "User" SET state = jsonb_set(
           jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
-          ${w.path}::text[], ${w.json}::jsonb, true
-        ),
-        "updatedAt" = NOW()
-        WHERE id = ${req.userId}
-      `;
+          '{profile,eatingWindow}', COALESCE(state->'profile'->'eatingWindow', '{}'::jsonb) || ${json}::jsonb, true
+        ), "updatedAt" = NOW() WHERE id = ${req.userId}`;
+      did = true;
     }
+
+    if (!did) { res.status(400).json({ error: "no valid fields" }); return; }
     res.json({ success: true });
   } catch (err) {
     console.error("Put coach-config error:", err);
