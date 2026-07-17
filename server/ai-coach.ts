@@ -822,6 +822,21 @@ export function buildContext(state: any): string {
   else for (const m of meds) lines.push(`  - ${m.name}${m.dose ? ` ${m.dose}` : ""}${m.schedule ? ` · ${m.schedule}` : ""}${m.notes ? ` · ${m.notes}` : ""}`);
   lines.push("");
 
+  // Phase 57: health conditions — gate condition-specific coaching rules on
+  // what's actually present in state, instead of asserting fixed facts in the prompt.
+  const conditions = Array.isArray(profile.healthConditions) ? profile.healthConditions : [];
+  lines.push("HEALTH CONDITIONS (apply the matching coaching rules ONLY for conditions listed here):");
+  if (conditions.length === 0) lines.push("  (none recorded)");
+  else for (const c of conditions) lines.push(`  - ${c.label || c.key || c.name}${c.notes ? ` — ${c.notes}` : ""}`);
+  lines.push("");
+
+  // Phase 57: existing reminders — so the coach never suggests a duplicate.
+  const reminders = Array.isArray(state.reminders) ? state.reminders : [];
+  lines.push("EXISTING REMINDERS (already configured — do NOT suggest adding one that duplicates these):");
+  if (reminders.length === 0) lines.push("  (none configured)");
+  else for (const r of reminders) lines.push(`  - ${r.time || "?"}${Array.isArray(r.days) && r.days.length ? ` [dow ${r.days.join(",")}]` : ""}: ${r.text || r.label || "(no text)"}${r.enabled === false ? " (disabled)" : ""}`);
+  lines.push("");
+
   // Phase 29a: blood markers — clinical context for every coaching decision
   if (bloodMarkers.length > 0) {
     // Phase 55: panel-aware. Show ONLY the latest panel's markers (so multiple
@@ -1411,6 +1426,35 @@ SUGGESTION LIMITS:
 
 Be direct. Cite the actual numbers. The user wants a coach, not a chatbot.`;
 
+// Phase 57: stable dedup key = type + primary target (NOT exact text), so a
+// reworded repeat of a dismissed suggestion is still caught.
+function _suggestionKey(s: any): string {
+  const p = s?.payload || {};
+  switch (s?.type) {
+    case "training-swap":
+    case "injury-flag": return `${s.type}:${p.exerciseId || ""}`;
+    case "skincare": return `skincare:${p.productId || ""}`;
+    case "skincare-phase": return "skincare-phase:phase";
+    case "supplement-reminder": return `supplement-reminder:${p.supplementId || ""}`;
+    case "reminders": return `reminders:${p.reminder && p.reminder.text ? String(p.reminder.text).toLowerCase().slice(0, 40) : (p.action || "")}`;
+    case "macros": return "macros:targets";
+    case "nutrition-adjust": return "nutrition-adjust:carbs";
+    case "fasting-note": return "fasting-note:fasting";
+    case "note": return `note:${String(s.label || "").toLowerCase().slice(0, 40)}`;
+    default: return `${s?.type || "?"}:`;
+  }
+}
+// Keys of suggestions the user DISMISSED in the last 4 reports.
+function _dismissedSuggestionKeys(state: any): Set<string> {
+  const out = new Set<string>();
+  const reports = Array.isArray(state.coachingReports) ? state.coachingReports.slice(0, 4) : [];
+  for (const r of reports) for (const s of (r?.suggestions || [])) {
+    if (s && s.dismissed) out.add(_suggestionKey(s));
+  }
+  return out;
+}
+const MAX_MODEL_SUGGESTIONS = 5; // hard cap on model-emitted suggestions; the deterministic nutrition-adjust card is EXEMPT (always shown when confident).
+
 interface Suggestion {
   id: string;
   type: "macros" | "reminders" | "note" | "skincare" | "skincare-phase" | "training-swap" | "injury-flag" | "fasting-note" | "supplement-reminder" | "nutrition-adjust";
@@ -1480,7 +1524,7 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
             items: {
               type: "object",
               properties: {
-                type: { type: "string", enum: ["macros", "reminders", "note", "skincare", "skincare-phase", "training-swap", "injury-flag", "fasting-note", "supplement-reminder"] },
+                type: { type: "string", enum: ["macros", "reminders", "note", "skincare", "skincare-phase", "training-swap", "injury-flag", "fasting-note", "supplement-reminder"] }, // "skincare" added to match the apply handler; "nutrition-adjust" is intentionally NOT here — it's appended deterministically in code, never emitted by the model.
                 label: { type: "string", description: "One-line summary shown on the Apply button row" },
                 rationale: { type: "string", description: "1-2 sentence justification referencing the data" },
                 payload: { type: "object", description: "Type-specific change payload, see system prompt" },
@@ -1504,7 +1548,7 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
   const input = toolBlock.input as { title: string; content: string; suggestions: any[] };
 
   const now = Date.now();
-  const suggestions: Suggestion[] = (input.suggestions || []).map((s, i) => ({
+  let suggestions: Suggestion[] = (input.suggestions || []).map((s, i) => ({
     id: `sug_${now}_${i}`,
     type: s.type,
     label: String(s.label || ""),
@@ -1513,6 +1557,14 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
     applied: false,
     dismissed: false,
   }));
+
+  // Phase 57: code-level guards (belt-and-suspenders on the prompt rules):
+  // (a) drop any suggestion whose type+target matches one dismissed in the last
+  //     4 reports (reworded repeats included); (b) hard-cap model suggestions at 5.
+  const dismissedKeys = _dismissedSuggestionKeys(state);
+  suggestions = suggestions
+    .filter((s) => !dismissedKeys.has(_suggestionKey(s)))
+    .slice(0, MAX_MODEL_SUGGESTIONS);
 
   // Phase 48: append the deterministic carb-adjust suggestion so the Apply card
   // always appears when confident — never depends on the AI emitting it.
