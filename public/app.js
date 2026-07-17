@@ -654,7 +654,8 @@ async function savePersonalProfile(){
     });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Save failed'); }
     if (!STATE.profile) STATE.profile = {};
-    STATE.profile.personal = { ...body, updatedAt: new Date().toISOString() };
+    // Merge (not replace) so fields not in this form — e.g. dateOfBirth — survive.
+    STATE.profile.personal = { ...(STATE.profile.personal || {}), ...body, updatedAt: new Date().toISOString() };
     updateLocalCache();
     showToast('Personal profile saved ✓');
   } catch (e) {
