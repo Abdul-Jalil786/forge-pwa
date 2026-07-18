@@ -177,6 +177,52 @@ test("Weekly GLP-1 supplement is due on the configured injection day, not Wednes
   assert.equal(vm.runInContext(`getMissedCriticalSupplements("2026-07-18").length`, ctx), 0, "and Saturday no longer due");
 });
 
+test("Day Detail backfill renders all four trackers for a past day + wires handlers", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`
+    STATE.supplements=[{id:'supp-creatine',name:'Creatine',dose:'5g',critical:true,frequency:'daily'}];
+    STATE.supplementLog={};
+    STATE.profile.glp1InjectionDow=3;                       // Wednesday
+    STATE.profile.medications=[{id:'m1',name:'Mounjaro 5mg'}];
+    STATE.mounjaroLog={};
+    STATE.skinCare={products:[{id:'p1',name:'SPF 50',type:'spf',slot:'am',frequency:'daily',startedDate:'2026-05-01'}]};
+    STATE.skinCareLog={};
+    STATE.waterLog={};
+  `, ctx);
+  // 2026-07-15 is a Wednesday → the Mounjaro injection-day section shows too
+  const h = vm.runInContext("_ddBackfill('2026-07-15', false, false)", ctx);
+  assert.ok(/Supplements — backfill/.test(h) && /ddToggleSupp\('2026-07-15','supp-creatine'/.test(h), "supplements");
+  assert.ok(/Mounjaro — backfill/.test(h) && /ddToggleMounjaro\('2026-07-15'\)/.test(h), "mounjaro");
+  assert.ok(/Skin care — backfill/.test(h) && /ddToggleSkin\('2026-07-15'/.test(h), "skin care");
+  assert.ok(/Water — backfill/.test(h) && /ddAddWater\('2026-07-15',500\)/.test(h), "water");
+  // never render for a future date
+  assert.equal(vm.runInContext("_ddBackfill('2999-01-01', true, false)", ctx), "", "no backfill for future dates");
+  for (const fn of ["ddToggleSupp","ddToggleMounjaro","ddToggleMjSideEffect","ddToggleSkin","ddAddWater","ddAddWaterCustom","ddUndoWater"]) {
+    assert.equal(typeof ctx[fn], "function", `${fn} defined`);
+  }
+});
+
+test("Day Detail backfill handlers persist to the date-keyed logs (past day)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`
+    STATE.supplements=[{id:'s1',name:'Vit D',frequency:'daily'}]; STATE.supplementLog={};
+    STATE.waterLog={}; STATE.mounjaroLog={};
+    STATE.profile.medications=[{id:'m',name:'Mounjaro'}]; STATE.profile.glp1InjectionDow=3;
+  `, ctx);
+  ctx.ddToggleSupp("2026-07-11", "s1", true);
+  assert.equal(vm.runInContext("getSupplementLog('2026-07-11').s1", ctx), true, "supplement backfilled to that date");
+  ctx.ddAddWater("2026-07-11", 500);
+  ctx.ddAddWater("2026-07-11", 250);
+  assert.equal(vm.runInContext("getWaterTotal('2026-07-11')", ctx), 750, "water accumulates on that date");
+  ctx.ddUndoWater("2026-07-11");
+  assert.equal(vm.runInContext("getWaterTotal('2026-07-11')", ctx), 500, "undo removes the last entry");
+  ctx.ddToggleMounjaro("2026-07-15"); // a Wednesday
+  assert.equal(vm.runInContext("(getMounjaroLog('2026-07-15')||{}).injected", ctx), true, "Mounjaro injection backfilled on a past day");
+  assert.equal(vm.runInContext("(getMounjaroLog('2026-07-15')||{}).injectionTime", ctx), null, "past-day backfill records no spurious 'now' time");
+});
+
 test("Body page renders the Boditrax card + handlers are defined", () => {
   const { ctx, els } = bootApp();
   seed(ctx);

@@ -3002,6 +3002,46 @@ function openWaterBackfill(date){
   showToast(`+${ml}ml logged for ${date}`);
 }
 
+// ---- Phase 59: inline Day-Detail backfill handlers (re-render the day) ----
+function _ddRefresh(date){ if(typeof renderDayDetail==='function')renderDayDetail(date); }
+function ddToggleSupp(date,id,taken){
+  if(typeof setSupplementTaken==='function')setSupplementTaken(date,id,taken);
+  _ddRefresh(date);
+}
+function ddToggleMounjaro(date){
+  const cur=(typeof getMounjaroLog==='function'&&getMounjaroLog(date))||{};
+  if(cur.injected)setMounjaroLog(date,{injected:false,injectionTime:null});
+  else setMounjaroLog(date,{injected:true,injectionTime:(date===todayStr()?fmtNow():(cur.injectionTime||null))});
+  _ddRefresh(date);
+}
+function ddToggleMjSideEffect(date,effect){
+  const cur=(typeof getMounjaroLog==='function'&&getMounjaroLog(date))||{};
+  const set=new Set(cur.sideEffects||[]);
+  set.has(effect)?set.delete(effect):set.add(effect);
+  setMounjaroLog(date,{sideEffects:[...set]});
+  _ddRefresh(date);
+}
+function ddToggleSkin(date,itemId,done){
+  if(typeof setSkinItemDone==='function')setSkinItemDone(date,itemId,done);
+  _ddRefresh(date);
+}
+function ddAddWater(date,ml){
+  if(typeof addWaterEntry==='function')addWaterEntry(date,ml,'backfill');
+  _ddRefresh(date);
+}
+function ddAddWaterCustom(date){
+  const v=prompt(`Add water for ${_fmtDateUK(date)} (ml):`,'');
+  if(v==null)return;
+  const ml=parseInt(v,10);
+  if(!ml||ml<=0||ml>5000){showToast('Enter 1–5000ml');return;}
+  if(typeof addWaterEntry==='function')addWaterEntry(date,ml,'backfill');
+  _ddRefresh(date);
+}
+function ddUndoWater(date){
+  if(typeof removeLastWaterEntry==='function')removeLastWaterEntry(date);
+  _ddRefresh(date);
+}
+
 // ---- TOAST ----
 function showToast(msg){
   const t=document.getElementById('toast');
