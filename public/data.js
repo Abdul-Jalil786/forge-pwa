@@ -1872,7 +1872,7 @@ function getMissedCriticalSupplements(date){
   const dow=new Date(date+'T12:00:00').getDay();
   return getSupplements().filter(s=>{
     if(!s.critical)return false;
-    if(s.frequency==='weekly-wednesday'&&dow!==3)return false;
+    if(s.frequency==='weekly-wednesday'&&dow!==_injectionDow())return false;
     return log[s.id]!==true;
   });
 }

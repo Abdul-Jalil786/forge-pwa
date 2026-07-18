@@ -846,6 +846,9 @@ export function buildContext(state: any): string {
   // `state.supplements` and counts only supplements actually due that day.
   const supps = state.supplements || [];
   const suppLog = state.supplementLog || {};
+  // Legacy "weekly-wednesday" tag now tracks the user's configured GLP-1
+  // injection day (profile.glp1InjectionDow; default Wednesday=3 when unset).
+  const injDow = typeof state.profile?.glp1InjectionDow === "number" ? state.profile.glp1InjectionDow : 3;
   const suppAdherence: any[] = [];
   const suppPerId: Record<string, { name: string; taken: number; total: number; critical: boolean }> = {};
   for (const s of (supps as any[])) {
@@ -857,8 +860,8 @@ export function buildContext(state: any): string {
     const dow = new Date(d + "T12:00:00").getDay();
     let taken = 0, dueToday = 0;
     for (const s of (supps as any[])) {
-      // Skip weekly-Wednesday supplements when it isn't Wednesday
-      if (s.frequency === "weekly-wednesday" && dow !== 3) continue;
+      // Skip the weekly GLP-1 supplement except on the configured injection day
+      if (s.frequency === "weekly-wednesday" && dow !== injDow) continue;
       dueToday++;
       suppPerId[s.id].total++;
       if (day[s.id] === true) {

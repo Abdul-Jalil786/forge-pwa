@@ -159,6 +159,24 @@ test("Mounjaro injection-day gate follows profile.glp1InjectionDow (not hardcode
   assert.ok(!/isMounjaroDay\(\)\{return new Date\(\)\.getDay\(\)===3/.test(src), "isMounjaroDay must not hardcode Wednesday");
 });
 
+test("Weekly GLP-1 supplement is due on the configured injection day, not Wednesday", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // A critical weekly-wednesday (GLP-1) supplement, untaken.
+  vm.runInContext(`STATE.supplements = [{ id: "supp-mounjaro", name: "Mounjaro", critical: true, frequency: "weekly-wednesday" }];
+    STATE.supplementLog = {};`, ctx);
+  // Injection day = Saturday (6). 2026-07-18 is a Saturday; 2026-07-15 is a Wednesday.
+  vm.runInContext("STATE.profile.glp1InjectionDow = 6;", ctx);
+  const dueSat = vm.runInContext(`getMissedCriticalSupplements("2026-07-18").length`, ctx);
+  const dueWed = vm.runInContext(`getMissedCriticalSupplements("2026-07-15").length`, ctx);
+  assert.equal(dueSat, 1, "GLP-1 supplement must be due on the configured Saturday");
+  assert.equal(dueWed, 0, "GLP-1 supplement must NOT be due on Wednesday when the day is Saturday");
+  // Change the day → the supplement follows.
+  vm.runInContext("STATE.profile.glp1InjectionDow = 3;", ctx);
+  assert.equal(vm.runInContext(`getMissedCriticalSupplements("2026-07-15").length`, ctx), 1, "moving the day to Wednesday makes Wednesday due");
+  assert.equal(vm.runInContext(`getMissedCriticalSupplements("2026-07-18").length`, ctx), 0, "and Saturday no longer due");
+});
+
 test("Body page renders the Boditrax card + handlers are defined", () => {
   const { ctx, els } = bootApp();
   seed(ctx);

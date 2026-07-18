@@ -2952,7 +2952,7 @@ function openSupplementBackfill(date){
   if(!supps.length){showToast('No supplements configured');return;}
   const log=(typeof getSupplementLog==='function')?getSupplementLog(date):{};
   const dow=new Date(date+'T12:00:00').getDay();
-  const due=supps.filter(s=>!(s.frequency==='weekly-wednesday'&&dow!==3));
+  const due=supps.filter(s=>!(s.frequency==='weekly-wednesday'&&dow!==_injectionDow()));
   const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
   const html=`<div style="font-size:11px;color:var(--text2);margin-bottom:10px;">${_fmtDateUK(date)} — tick what you actually took</div>`+
     due.map(s=>{
