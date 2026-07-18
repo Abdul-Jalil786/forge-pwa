@@ -145,6 +145,38 @@ test("Coach Settings save/remove handlers are all defined", () => {
   }
 });
 
+test("Mounjaro injection-day gate follows profile.glp1InjectionDow (not hardcoded Wed)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const set = (dow) => vm.runInContext(`STATE.profile.glp1InjectionDow = ${dow}; _injectionDow();`, ctx);
+  assert.equal(set(6), 6, "Saturday (6) must be honoured");
+  assert.equal(set(0), 0, "Sunday (0) must be honoured");
+  // unset → defaults to Wednesday (3) for pre-Phase-40 users
+  assert.equal(vm.runInContext("delete STATE.profile.glp1InjectionDow; _injectionDow();", ctx), 3);
+  // isMounjaroDay / isPostInjectionDay must route through the configured day, not a literal
+  const src = fs.readFileSync(path.join(__dirname, "..", "public", "data.js"), "utf8");
+  assert.ok(/function isMounjaroDay\(\)\{return new Date\(\)\.getDay\(\)===_injectionDow\(\)/.test(src), "isMounjaroDay must use _injectionDow()");
+  assert.ok(!/isMounjaroDay\(\)\{return new Date\(\)\.getDay\(\)===3/.test(src), "isMounjaroDay must not hardcode Wednesday");
+});
+
+test("Weekly GLP-1 supplement is due on the configured injection day, not Wednesday", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // A critical weekly-wednesday (GLP-1) supplement, untaken.
+  vm.runInContext(`STATE.supplements = [{ id: "supp-mounjaro", name: "Mounjaro", critical: true, frequency: "weekly-wednesday" }];
+    STATE.supplementLog = {};`, ctx);
+  // Injection day = Saturday (6). 2026-07-18 is a Saturday; 2026-07-15 is a Wednesday.
+  vm.runInContext("STATE.profile.glp1InjectionDow = 6;", ctx);
+  const dueSat = vm.runInContext(`getMissedCriticalSupplements("2026-07-18").length`, ctx);
+  const dueWed = vm.runInContext(`getMissedCriticalSupplements("2026-07-15").length`, ctx);
+  assert.equal(dueSat, 1, "GLP-1 supplement must be due on the configured Saturday");
+  assert.equal(dueWed, 0, "GLP-1 supplement must NOT be due on Wednesday when the day is Saturday");
+  // Change the day → the supplement follows.
+  vm.runInContext("STATE.profile.glp1InjectionDow = 3;", ctx);
+  assert.equal(vm.runInContext(`getMissedCriticalSupplements("2026-07-15").length`, ctx), 1, "moving the day to Wednesday makes Wednesday due");
+  assert.equal(vm.runInContext(`getMissedCriticalSupplements("2026-07-18").length`, ctx), 0, "and Saturday no longer due");
+});
+
 test("Body page renders the Boditrax card + handlers are defined", () => {
   const { ctx, els } = bootApp();
   seed(ctx);

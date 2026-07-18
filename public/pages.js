@@ -387,8 +387,8 @@ function renderSupplementsToday(){
   const today=todayStr();
   const log=getSupplementLog(today);
   const dow=new Date().getDay();
-  // hide weekly supplements that aren't due today
-  const due=supps.filter(s=>!(s.frequency==='weekly-wednesday'&&dow!==3));
+  // hide the weekly GLP-1 supplement except on the configured injection day
+  const due=supps.filter(s=>!(s.frequency==='weekly-wednesday'&&dow!==_injectionDow()));
   const taken=due.filter(s=>log[s.id]===true).length;
   const adh=getSupplementAdherence(7);
   const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';

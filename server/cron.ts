@@ -510,7 +510,9 @@ export function startCron() {
         const critical = Array.isArray(supps) ? supps.filter((s: any) => s?.critical) : [];
         if (critical.length) {
           const dow = new Date(yesterday + "T12:00:00").getDay();
-          const dueCritical = critical.filter((s: any) => !(s.frequency === "weekly-wednesday" && dow !== 3));
+          // Legacy "weekly-wednesday" tag = the user's configured injection day.
+          const injDow = typeof state.profile?.glp1InjectionDow === "number" ? state.profile.glp1InjectionDow : 3;
+          const dueCritical = critical.filter((s: any) => !(s.frequency === "weekly-wednesday" && dow !== injDow));
           const log = (state.supplementLog || {})[yesterday] || {};
           const missedSupps = dueCritical.filter((s: any) => log[s.id] !== true);
           if (missedSupps.length) {

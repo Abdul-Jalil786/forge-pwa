@@ -229,12 +229,12 @@ function setSkinItemDone(date,itemId,done){
   if(!log[date])log[date]={};
   log[date][itemId]=done;
   STATE.skinCareLog=log;
-  // Recompute the day's compliance fraction + stamp Mounjaro (Wednesday) flag
+  // Recompute the day's compliance fraction + stamp Mounjaro injection-day flag
   const {am,pm}=getSkinVisibleItems(date);
   const items=[...am,...pm];
   const dn=items.filter(it=>log[date][it.itemId]===true).length;
   log[date]._compliance=items.length?Math.round((dn/items.length)*100)/100:0;
-  log[date]._mounjaro_day=new Date(date+'T12:00:00').getDay()===3;
+  log[date]._mounjaro_day=new Date(date+'T12:00:00').getDay()===_injectionDow();
   updateLocalCache();
   saveFieldToServer(`/api/state/skin-care-log/${date}`,{value:log[date]});
 }
@@ -278,7 +278,7 @@ function getSkinPhase(){
   return SKIN_PHASES.find(p=>p.n===n)||SKIN_PHASES[0];
 }
 // Phase 42e: Mounjaro UI only shows for users actually ON it (meds or supplements),
-// mirroring the cron gate. Wednesday = injection day.
+// mirroring the cron gate.
 function _userOnMounjaro(){
   const rx=/mounjaro|tirzepatide/i;
   const meds=(STATE.profile&&STATE.profile.medications)||[];
@@ -286,7 +286,13 @@ function _userOnMounjaro(){
   return (Array.isArray(meds)&&meds.some(m=>rx.test((m&&m.name)||'')))
     ||supps.some(s=>rx.test((s&&s.name)||'')||(s&&s.frequency)==='weekly-wednesday');
 }
-function isMounjaroDay(){return new Date().getDay()===3&&_userOnMounjaro();} // Wednesday
+// Configured injection day-of-week (Sun=0…Sat=6) from Coach Settings; falls back
+// to Wednesday (3) when the user hasn't set one, preserving pre-Phase-40 behaviour.
+function _injectionDow(){
+  const d=STATE.profile&&STATE.profile.glp1InjectionDow;
+  return (typeof d==='number'&&d>=0&&d<=6)?d:3;
+}
+function isMounjaroDay(){return new Date().getDay()===_injectionDow()&&_userOnMounjaro();}
 function isRetinolNight(date){
   return getSkinProducts().some(p=>p.type==='retinol'&&skinDueOn(p,date));
 }
@@ -1802,7 +1808,7 @@ function getFastingStreak(){
 }
 
 // ---- S3: Mounjaro mode ----
-function isPostInjectionDay(){return new Date().getDay()===4&&_userOnMounjaro();} // Thursday
+function isPostInjectionDay(){return new Date().getDay()===(_injectionDow()+1)%7&&_userOnMounjaro();} // day after injection
 const MOUNJARO_PRIORITY_FOODS=[
   {name:'Protein shake',protein:20,cals:85,note:'easy on the stomach'},
   {name:'Greek yoghurt 200g',protein:20,cals:120,note:'cold, soothing'},
@@ -1866,7 +1872,7 @@ function getMissedCriticalSupplements(date){
   const dow=new Date(date+'T12:00:00').getDay();
   return getSupplements().filter(s=>{
     if(!s.critical)return false;
-    if(s.frequency==='weekly-wednesday'&&dow!==3)return false;
+    if(s.frequency==='weekly-wednesday'&&dow!==_injectionDow())return false;
     return log[s.id]!==true;
   });
 }
