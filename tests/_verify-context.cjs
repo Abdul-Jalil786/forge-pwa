@@ -28,6 +28,10 @@ const state = {
     weight: 113.8, bodyFatPct: 29.9, fatMass: 34.0, leanMass: 76.8,
     vatCm2: 197, tScore: 0.4, almi: 10.8,
   }],
+  boditraxLog: [
+    { id: "b1", source: "boditrax", date: "2026-05-16", weight: 114.4, muscle: 75.7, fat: 34.8, ffm: 79.6, visceral: 17, bmr: 2384 },
+    { id: "b2", source: "boditrax", date: "2026-07-15", weight: 106.1, muscle: 73.8, fat: 28.5, ffm: 77.6, visceral: 14, bmr: 2298 },
+  ],
   measLog: [
     { date: "2026-05-12", waist: 118, chest: 122, neck: 43 },
     { date: "2026-06-08", waist: 114.5, chest: 121, neck: 42.5, larm: 38, rarm: 38.5 },
@@ -55,6 +59,10 @@ const checks = [
   ["History weekly buckets", hist.includes("FULL HISTORY AGGREGATES (since plan start 2026-05-11)") && hist.includes("wk1:")],
   ["History lift first vs current", hist.includes("u1: 80kg (2026-05-12) → 90kg (2026-06-05)")],
   ["History calibration stats", hist.includes("Recovery gate firings: 1 (trained through 1, eased 0, avg score when training through 104%)")],
+  ["Boditrax block header", ctx.includes("BODITRAX SCANS (source: boditrax")],
+  ["Boditrax scan line labelled by source", ctx.includes("2026-05-16:") && ctx.includes("fat-free mass 79.6kg") && ctx.includes("visceral 17")],
+  ["Boditrax lean delta", ctx.includes("Boditrax lean (fat-free mass): 79.6kg (2026-05-16) → 77.6kg (2026-07-15)")],
+  ["Reliability-weighted lean trend cites trusted source", ctx.includes("RELIABILITY-WEIGHTED LEAN TREND") && /from (dexa\/)?boditrax/.test(ctx)],
 ];
 
 let fail = 0;

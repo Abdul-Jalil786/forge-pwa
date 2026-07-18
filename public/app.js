@@ -2273,6 +2273,73 @@ function showDexaHistory(){
 }
 
 // ============================================================
+// PHASE 58 — BODITRAX LOGGING (trusted BIA; source:'boditrax')
+// ============================================================
+const BDX_NUM_FIELDS=['weight','muscle','fat','visceral','water','bone','ffm','cellular','bmr','metabolicAge','physique','legMuscle','boditraxScore','proteinPct'];
+function openBoditraxEdit(id){
+  const existing=id?getBoditraxLog().find(s=>s&&s.id===id):null;
+  const set=(elId,v)=>{const el=document.getElementById(elId);if(el)el.value=v==null?'':v;};
+  document.getElementById('bdx-title').textContent=existing?'Edit Boditrax Scan':'Add Boditrax Scan';
+  document.getElementById('bdx-id').value=id||'';
+  set('bdx-date',existing?existing.date:todayStr());
+  set('bdx-time',existing?existing.time:(typeof fmtNow==='function'?fmtNow():''));
+  BDX_NUM_FIELDS.forEach(f=>set('bdx-'+f,existing?existing[f]:''));
+  const err=document.getElementById('bdx-error');if(err){err.style.display='none';err.textContent='';}
+  document.getElementById('bdx-delete-btn').style.display=id?'block':'none';
+  openModal('modal-boditrax');
+}
+function saveBoditraxScan(){
+  const id=document.getElementById('bdx-id').value;
+  const val=elId=>{const el=document.getElementById(elId);const v=el?el.value:'';return v===''?null:v;};
+  const raw={date:document.getElementById('bdx-date').value||'',time:document.getElementById('bdx-time').value||''};
+  BDX_NUM_FIELDS.forEach(f=>{raw[f]=val('bdx-'+f);});
+  const res=id?updateBoditraxEntry(id,raw):addBoditraxEntry(raw);
+  if(res&&res.ok===false){
+    const err=document.getElementById('bdx-error');
+    const msgs=Object.values(res.errors||{'':'Check the values'});
+    if(err){err.textContent='⚠ '+msgs.join(' · ');err.style.display='block';}
+    return;
+  }
+  closeModal('modal-boditrax');
+  showToast(id?'Boditrax scan updated ✓':'Boditrax scan saved ✓');
+  if(typeof renderBody==='function')renderBody();
+  if(typeof renderTrack==='function')renderTrack();
+}
+function deleteBoditraxFromModal(){
+  const id=document.getElementById('bdx-id').value;
+  if(!id)return;
+  if(!confirm('Delete this Boditrax scan? This cannot be undone.'))return;
+  deleteBoditraxEntry(id);
+  closeModal('modal-boditrax');
+  showToast('Boditrax scan deleted');
+  if(typeof renderBody==='function')renderBody();
+  if(typeof renderTrack==='function')renderTrack();
+}
+function showBoditraxHistory(){
+  const scans=getBoditraxLog();
+  if(scans.length<2){showToast('Only one scan logged');return;}
+  const leanOf=s=>s.ffm!=null?s.ffm:(s.weight!=null&&s.fat!=null?Math.round((s.weight-s.fat)*100)/100:null);
+  const sorted=[...scans].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const html=sorted.map(s=>{
+    const lean=leanOf(s);
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="closeModal('modal-info');setTimeout(()=>openBoditraxEdit('${_esc(s.id)}'),120);">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <div style="font-size:13px;font-weight:600;">${fmtDate(s.date)}${s.time?` · ${_esc(s.time)}`:''}</div>
+        <div style="font-size:11px;color:var(--text3);">tap to edit</div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;">
+        ${s.weight!=null?`<span>Wt ${s.weight}kg</span>`:''}
+        ${s.muscle!=null?`<span style="color:var(--cyan);">Musc ${s.muscle}kg</span>`:''}
+        ${s.fat!=null?`<span style="color:var(--orange);">Fat ${s.fat}kg</span>`:''}
+        ${lean!=null?`<span>Lean ${lean}kg</span>`:''}
+        ${s.visceral!=null?`<span style="color:var(--red);">Visc ${s.visceral}</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  if(typeof _showInfoModal==='function')_showInfoModal('Boditrax History',html);
+}
+
+// ============================================================
 // PHASE 41l — BLOOD PRESSURE LOGGING
 // ============================================================
 function openBPEdit(){

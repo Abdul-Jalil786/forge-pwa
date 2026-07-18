@@ -170,21 +170,134 @@ function formatCorrelations(c) {
 }
 
 // ============================================================
+// Phase 58: Boditrax + source-hierarchy lean blending (pure)
+// ============================================================
+// Reliability hierarchy for lean mass / body composition: DEXA (gold standard) >
+// Boditrax (multi-frequency BIA the user trusts) > Withings / manual daily BIA.
+// Higher-priority readings ANCHOR the trend; lower-priority sources only fill the
+// gaps between them. This is the single source of truth consumed by the frontend
+// Track page, the correlation engine, and the daily lbm_drop trigger.
+var LEAN_SOURCE_PRIORITY = { dexa: 3, boditrax: 2, withings: 1, manual: 1 };
+
+// Lean (fat-free mass) from a Boditrax record: prefer the reported FFM, else
+// derive it from weight − fat mass.
+function _leanFromBoditrax(b) {
+  if (!b) return null;
+  var ffm = _num(b.ffm); if (ffm != null) return ffm;
+  var w = _num(b.weight), f = _num(b.fat);
+  if (w != null && f != null) return _round(w - f, 2);
+  return null;
+}
+
+// Per-date lean series with each day resolved to its highest-priority source.
+// Returns [{date, lean, source, priority}] sorted ascending. When two sources
+// report the same date, the more reliable one wins. opts.reliableOnly keeps only
+// Boditrax/DEXA points (priority >= 2).
+function blendedLeanSeries(state, opts) {
+  opts = opts || {};
+  var byDate = {};
+  function put(date, lean, source) {
+    if (!date || lean == null) return;
+    var pr = LEAN_SOURCE_PRIORITY[source] || 1;
+    var cur = byDate[date];
+    if (!cur || pr > cur.priority) byDate[date] = { date: date, lean: _round(lean, 2), source: source, priority: pr };
+  }
+  // Withings / manual daily BIA: weight × (1 − bf/100), bf aligned nearest-prior.
+  var wl = (state.weightLog || []).slice().sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+  var bl = (state.bfLog || []).slice().sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+  wl.forEach(function (we) {
+    var w = _num(we.weight); if (w == null) return;
+    var bf = null;
+    for (var i = 0; i < bl.length; i++) { if (bl[i].date <= we.date) { var b = _num(bl[i].bf); if (b != null) bf = b; } }
+    if (bf != null) put(we.date, w * (1 - bf / 100), we.source === "withings" ? "withings" : "manual");
+  });
+  // Boditrax scans (fat-free mass).
+  (state.boditraxLog || []).forEach(function (b) { if (b && b.date) put(b.date, _leanFromBoditrax(b), "boditrax"); });
+  // DEXA scans (gold standard).
+  (state.dexaScans || []).forEach(function (d) { if (d && d.date) { var l = _num(d.leanMass); if (l != null) put(d.date, l, "dexa"); } });
+
+  var series = Object.keys(byDate).map(function (d) { return byDate[d]; }).sort(function (a, b) { return a.date.localeCompare(b.date); });
+  if (opts.reliableOnly) series = series.filter(function (p) { return p.priority >= 2; });
+  return series;
+}
+
+// Lean-mass trend as a least-squares slope in kg/week, weighted toward the most
+// reliable available source. When >= 2 reliable (Boditrax/DEXA) readings exist,
+// the slope is regressed over the last up-to-4 of them ONLY — daily Withings
+// noise is excluded, so a device the user trusts governs the trend. With no
+// reliable anchors it falls back to the Withings daily series over ~14 days.
+// opts.until bounds the "as of" date. Returns { perWeek, source, n, points }.
+function leanTrendRate(state, opts) {
+  opts = opts || {};
+  var until = opts.until;
+  var all = blendedLeanSeries(state).filter(function (p) { return !until || p.date <= until; });
+  if (all.length < 2) return { perWeek: null, source: null, n: all.length, points: all.slice() };
+  var reliable = all.filter(function (p) { return p.priority >= 2; });
+  var use, source;
+  if (reliable.length >= 2) {
+    use = reliable.slice(-4); // last up-to-4 reliable scans anchor the trend
+    source = use.some(function (p) { return p.priority === 3; }) ? "dexa/boditrax" : "boditrax";
+  } else {
+    var end = until || all[all.length - 1].date;
+    var since = _addDays(end, -13);
+    use = all.filter(function (p) { return p.date >= since; });
+    if (use.length < 2) use = all.slice(-2);
+    source = "withings";
+  }
+  var base = use[0].date;
+  var s = slope(use.map(function (p) { return [_dayIdx(p.date, base), p.lean]; }));
+  return { perWeek: s == null ? null : _round(s * 7, 2), source: source, n: use.length, points: use, first: use[0], last: use[use.length - 1] };
+}
+
+// Field spec for a Boditrax scan: [min, max, required]. Shared by the frontend
+// form, the server route, and the tests so ranges never drift apart.
+var BODITRAX_FIELDS = {
+  weight:        [30, 300, true],
+  muscle:        [5, 200, true],
+  fat:           [0, 200, true],
+  visceral:      [1, 60, true],
+  water:         [5, 150, false],
+  bone:          [0.3, 15, false],
+  ffm:           [10, 250, false],
+  cellular:      [0, 20, false],
+  bmr:           [500, 5000, false],
+  metabolicAge:  [5, 120, false],
+  physique:      [1, 9, false],
+  legMuscle:     [0, 150, false],
+  boditraxScore: [0, 1000, false],
+  proteinPct:    [5, 40, false],
+};
+
+// Validate + clean a raw Boditrax entry. Returns { ok, errors:{field:msg},
+// clean:{...} }. Required fields must be present + in range; optional fields must
+// be in range IF supplied (blank/omitted → null). Pure — no I/O, no DOM.
+function validateBoditraxEntry(raw) {
+  raw = raw || {};
+  var errors = {}, clean = { source: "boditrax" };
+  var date = String(raw.date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) errors.date = "Date is required (YYYY-MM-DD)";
+  else clean.date = date;
+  var time = String(raw.time || "").slice(0, 5);
+  clean.time = /^\d{2}:\d{2}$/.test(time) ? time : null;
+  for (var f in BODITRAX_FIELDS) {
+    var spec = BODITRAX_FIELDS[f], lo = spec[0], hi = spec[1], req = spec[2];
+    var v = raw[f];
+    if (v == null || v === "") {
+      if (req) errors[f] = f + " is required";
+      clean[f] = null;
+      continue;
+    }
+    var n = _num(v);
+    if (n == null) errors[f] = f + " must be a number";
+    else if (n < lo || n > hi) errors[f] = f + " must be between " + lo + " and " + hi;
+    else clean[f] = n;
+  }
+  return { ok: Object.keys(errors).length === 0, errors: errors, clean: clean };
+}
+
+// ============================================================
 // Phase 2: trigger checks + governance (pure)
 // ============================================================
-function _lbmSeries(state, today, days) {
-  var start = _addDays(today, -(days - 1));
-  var wl = (state.weightLog || []).filter(function (e) { return e.date >= start && e.date <= today; });
-  var bl = (state.bfLog || []).slice().sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
-  var pts = [];
-  wl.forEach(function (e) {
-    var w = _num(e.weight); if (w == null) return;
-    var bf = null;
-    for (var i = 0; i < bl.length; i++) { if (bl[i].date <= e.date) { var b = _num(bl[i].bf); if (b != null) bf = b; } }
-    if (bf != null) pts.push([_dayIdx(e.date, start), w * (1 - bf / 100)]);
-  });
-  return pts;
-}
 function _sessionSatisfied(exLog, madeUp, date) {
   var day = exLog[date];
   if (day) {
@@ -243,9 +356,14 @@ function computeTriggers(state, opts) {
     if (sl10 != null && pts10.length >= 6 && sl10 >= -0.01) fire("weight_plateau", 3, "Weight trend flat/up over 10 days on a cut (" + _round(sl10 * 7, 2) + "kg/week)", { slopePerWeek: _round(sl10 * 7, 2) });
   }
 
-  // 6. lbm_drop — lean mass falling > 0.3kg/week over 14d
-  var lbm = _lbmSeries(state, today, 14);
-  if (lbm.length >= 8) { var ls = slope(lbm); if (ls != null && ls * 7 < -0.3) fire("lbm_drop", 4, "Lean mass dropping ~" + _round(ls * 7, 2) + "kg/week over 14 days", { perWeek: _round(ls * 7, 2) }); }
+  // 6. lbm_drop — lean mass falling > 0.3kg/week, anchored to the most reliable
+  // source (Boditrax/DEXA over Withings) so daily BIA noise can't raise a false
+  // alarm the trusted device contradicts.
+  var lr = leanTrendRate(state, { until: today });
+  // Sparse Boditrax/DEXA scans anchor with as few as 2 points; the noisy Withings
+  // daily fallback still needs a dense window (>= 8 points) before it may alarm.
+  var lbmEnough = lr.source === "withings" ? lr.n >= 8 : lr.n >= 2;
+  if (lr.perWeek != null && lbmEnough && lr.perWeek < -0.3) fire("lbm_drop", 4, "Lean mass dropping ~" + lr.perWeek + "kg/week (" + lr.source + ")", { perWeek: lr.perWeek, source: lr.source });
 
   // 7. missed_sessions — 2+ consecutive missed scheduled sessions (make-ups/skips honoured)
   if (Array.isArray(opts.scheduledDays) && opts.scheduledDays.length) {
@@ -293,6 +411,8 @@ var PROACTIVE_CORE = {
   pearson: pearson, slope: slope, dailyIntake: dailyIntake, sessionPerf: sessionPerf, detectStalls: detectStalls,
   computeCorrelations: computeCorrelations, formatCorrelations: formatCorrelations,
   computeTriggers: computeTriggers, selectNudge: selectNudge, isFirstSundayOfMonth: isFirstSundayOfMonth,
+  blendedLeanSeries: blendedLeanSeries, leanTrendRate: leanTrendRate, LEAN_SOURCE_PRIORITY: LEAN_SOURCE_PRIORITY,
+  validateBoditraxEntry: validateBoditraxEntry, BODITRAX_FIELDS: BODITRAX_FIELDS,
 };
 if (typeof window !== "undefined") window.PROACTIVE_CORE = PROACTIVE_CORE;
 if (typeof module !== "undefined" && module.exports) module.exports = PROACTIVE_CORE;

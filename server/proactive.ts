@@ -24,6 +24,8 @@ interface ProactiveCore {
   detectStalls(state: any, reps: any): Array<{ exId: string; sessions: number; kg: number }>;
   computeTriggers(state: any, opts: any): Array<{ type: string; severity: number; detail: string; data: any }>;
   selectNudge(history: any[], fired: any[], today: string, config: any): { type: string; severity: number; detail: string; data: any } | null;
+  blendedLeanSeries(state: any, opts?: any): Array<{ date: string; lean: number; source: string; priority: number }>;
+  leanTrendRate(state: any, opts?: any): { perWeek: number | null; source: string | null; n: number; points: any[]; first?: any; last?: any };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -46,6 +48,15 @@ export function computeCorrelationsForUser(state: any): CorrelationResult {
 
 export function formatCorrelations(c: any): string {
   return core.formatCorrelations(c);
+}
+
+// Phase 58: source-hierarchy lean blending (DEXA > Boditrax > Withings), shared
+// with the frontend + tests. Re-exported so ai-coach reads one implementation.
+export function blendedLeanSeries(state: any, opts?: any) {
+  return core.blendedLeanSeries(state, opts);
+}
+export function leanTrendRate(state: any, opts?: any) {
+  return core.leanTrendRate(state, opts);
 }
 
 // Re-export the pure first-Sunday check for the cron monthly deep-dive (keeps
