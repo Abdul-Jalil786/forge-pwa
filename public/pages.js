@@ -1631,6 +1631,79 @@ function closeDayDetail(){
   if(el)el.classList.remove('open');
 }
 
+// Phase 59: unified backfill inside Day Detail — tap any past day and log the
+// supplements / Mounjaro injection / skin-care / water you forgot, the same way
+// meals already backfill. Rows write through the date-aware setters and re-render
+// the day. Nothing renders for future dates.
+function _ddBackfill(date,isFuture,isToday){
+  if(isFuture)return '';
+  const chk='<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="var(--bg)" stroke-width="2" fill="none"/></svg>';
+  const suffix=isToday?'':' — backfill';
+  const row=(on,label,sub,onclick,warn)=>`<div onclick="${onclick}" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border);cursor:pointer;min-height:42px;">
+    <div style="width:20px;height:20px;border-radius:4px;border:2px solid ${on?'var(--lime)':(warn?'var(--orange)':'var(--border)')};background:${on?'var(--lime)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?chk:''}</div>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:${on?'var(--text)':'var(--text2)'};">${label}</div>${sub?`<div style="font-size:11px;color:var(--text3);">${sub}</div>`:''}</div>
+  </div>`;
+  let h='';
+
+  // Supplements (modern state.supplements / supplementLog)
+  const supps=(typeof getSupplements==='function')?getSupplements():[];
+  if(supps.length){
+    const slog=getSupplementLog(date);
+    const dow=new Date(date+'T12:00:00').getDay();
+    const due=supps.filter(s=>!(s.frequency==='weekly-wednesday'&&dow!==_injectionDow()));
+    if(due.length){
+      h+=`<div class="sec-label">Supplements${suffix}</div><div class="card" style="margin-bottom:10px;">
+        <div style="font-size:11px;color:var(--text2);">Tap what you took on this day.</div>`;
+      h+=due.map(s=>{const on=slog[s.id]===true;return row(on,`${_esc(s.name)}${s.critical&&!on?' <span style="color:var(--orange);font-size:11px;">⚠️</span>':''}`,_esc(s.dose||''),`ddToggleSupp('${date}','${_esc(s.id)}',${!on})`,s.critical);}).join('');
+      h+=`</div>`;
+    }
+  }
+
+  // Mounjaro — shown on the configured injection day for this date, or if already logged
+  if(typeof _userOnMounjaro==='function'&&_userOnMounjaro()){
+    const dow=new Date(date+'T12:00:00').getDay();
+    const mlog=getMounjaroLog(date)||{};
+    if(dow===_injectionDow()||mlog.injected){
+      const injected=!!mlog.injected;
+      const sel=new Set(mlog.sideEffects||[]);
+      h+=`<div class="sec-label">Mounjaro${suffix}</div><div class="card" style="margin-bottom:10px;border-color:#ffc107;">`;
+      h+=row(injected,'💉 Mounjaro injected',injected?(mlog.injectionTime?`Logged at ${mlog.injectionTime}`:'injected'):'tap to mark injected this day',`ddToggleMounjaro('${date}')`);
+      if(injected){
+        h+=`<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:10px 0 6px;">Side effects (tap all that apply)</div><div style="display:flex;flex-wrap:wrap;gap:6px;">`;
+        h+=['Nausea','Acid reflux','Fatigue','Headache','Vomiting'].map(e=>`<button onclick="ddToggleMjSideEffect('${date}','${e}')" style="font-size:11px;padding:6px 12px;border-radius:14px;cursor:pointer;border:1px solid ${sel.has(e)?'var(--orange)':'var(--border)'};background:${sel.has(e)?'rgba(255,85,0,.15)':'transparent'};color:${sel.has(e)?'var(--orange)':'var(--text2)'};">${e}</button>`).join('');
+        h+=`</div>`;
+      }
+      h+=`</div>`;
+    }
+  }
+
+  // Skin care (owner-only) — the visible AM/PM items due that day
+  if(typeof isOwner==='function'&&isOwner()&&typeof getSkinVisibleItems==='function'){
+    const v=getSkinVisibleItems(date);const items=[...(v.am||[]),...(v.pm||[])];
+    if(items.length){
+      const klog=getSkinCareLog(date);
+      h+=`<div class="sec-label">Skin care${suffix}</div><div class="card" style="margin-bottom:10px;">`;
+      h+=items.map(it=>{const on=klog[it.itemId]===true;return row(on,`${_esc(it.product.name)} <span style="font-size:10px;color:var(--text3);text-transform:uppercase;">${_esc(it.slot)}</span>`,'',`ddToggleSkin('${date}','${_esc(it.itemId)}',${!on})`);}).join('');
+      h+=`</div>`;
+    }
+  }
+
+  // Water — additive backfill with quick amounts + undo
+  if(typeof getWaterTotal==='function'){
+    const total=getWaterTotal(date);
+    h+=`<div class="sec-label">Water${suffix}</div><div class="card" style="margin-bottom:10px;">
+      <div style="font-size:15px;font-weight:700;margin-bottom:8px;">${total} <span style="font-size:11px;color:var(--text3);">ml logged</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${[250,500,750].map(ml=>`<button onclick="ddAddWater('${date}',${ml})" class="btn btn-ghost btn-sm" style="font-size:12px;">+${ml}</button>`).join('')}
+        <button onclick="ddAddWaterCustom('${date}')" class="btn btn-ghost btn-sm" style="font-size:12px;">+ Custom</button>
+        ${total>0?`<button onclick="ddUndoWater('${date}')" class="btn btn-ghost btn-sm" style="font-size:12px;color:var(--red);">Undo last</button>`:''}
+      </div>
+    </div>`;
+  }
+
+  return h;
+}
+
 function renderDayDetail(date){
   const dateObj=new Date(date+'T12:00:00');
   const dateLabel=dateObj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
@@ -1649,8 +1722,6 @@ function renderDayDetail(date){
   const foods=(pGet('foods',{})[date]||[]).slice().sort((a,b)=>String(a.time||'').localeCompare(String(b.time||'')));
   const meas=getMeasLog().find(e=>e.date===date);
   const swims=getSwimLog()[date]||[];
-  const supps=getSupps();
-  const suppDoneAll=getSuppDone();
   const bodyComp=pGet('bodyComp',{})[date];
 
   const foodTotals={
@@ -1840,21 +1911,8 @@ function renderDayDetail(date){
       </div>`;
   }
 
-  // SUPPLEMENTS
-  if(supps.length>0){
-    const taken=supps.map((s,i)=>({...s,done:!!suppDoneAll[`${date}_${i}`]}));
-    const someTaken=taken.some(s=>s.done);
-    if(someTaken||isToday){
-      html+=`<div class="sec-label">Supplements & Meds</div>
-        <div class="card" style="margin-bottom:10px;">
-          ${taken.map(s=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">
-            <div style="font-size:14px;">${s.done?'✅':'⬜'}</div>
-            <div style="flex:1;font-size:13px;font-weight:${s.done?'600':'400'};color:${s.done?'var(--text)':'var(--text3)'};">${s.name}</div>
-            <div style="font-size:11px;color:var(--text2);">${s.dose||''}</div>
-          </div>`).join('')}
-        </div>`;
-    }
-  }
+  // SUPPLEMENTS · MOUNJARO · SKIN CARE · WATER — tap to log/backfill for this day
+  html+=_ddBackfill(date,isFuture,isToday);
 
   // SWIM
   if(swims.length>0){
