@@ -145,6 +145,20 @@ test("Coach Settings save/remove handlers are all defined", () => {
   }
 });
 
+test("Mounjaro injection-day gate follows profile.glp1InjectionDow (not hardcoded Wed)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const set = (dow) => vm.runInContext(`STATE.profile.glp1InjectionDow = ${dow}; _injectionDow();`, ctx);
+  assert.equal(set(6), 6, "Saturday (6) must be honoured");
+  assert.equal(set(0), 0, "Sunday (0) must be honoured");
+  // unset → defaults to Wednesday (3) for pre-Phase-40 users
+  assert.equal(vm.runInContext("delete STATE.profile.glp1InjectionDow; _injectionDow();", ctx), 3);
+  // isMounjaroDay / isPostInjectionDay must route through the configured day, not a literal
+  const src = fs.readFileSync(path.join(__dirname, "..", "public", "data.js"), "utf8");
+  assert.ok(/function isMounjaroDay\(\)\{return new Date\(\)\.getDay\(\)===_injectionDow\(\)/.test(src), "isMounjaroDay must use _injectionDow()");
+  assert.ok(!/isMounjaroDay\(\)\{return new Date\(\)\.getDay\(\)===3/.test(src), "isMounjaroDay must not hardcode Wednesday");
+});
+
 test("Body page renders the Boditrax card + handlers are defined", () => {
   const { ctx, els } = bootApp();
   seed(ctx);
