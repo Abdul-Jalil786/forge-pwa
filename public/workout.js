@@ -104,7 +104,7 @@ function renderWorkout(){
       <div class="pb"><div class="pb-fill" style="width:${pct}%"></div></div>
     </div>
     <div class="sec-label">Exercises (tap to view/edit)</div>
-    <div id="exList">${w.exercises.map(ex=>buildExItem(ex,dayLog,prev,isFuture)).join('')}</div>`;
+    <div id="exList">${w.exercises.map(ex=>buildExItem(ex,dayLog,prev,isFuture,date)).join('')}</div>`;
 
   // Phase 41: mobility section under the exercise list (today only)
   if(isToday&&typeof renderStretchCards==='function')html+=renderStretchCards();
@@ -259,7 +259,7 @@ function buildSessionReport(date,session){
   </div>`;
 }
 
-function buildExItem(ex,dayLog,prevSession,readonly){
+function buildExItem(ex,dayLog,prevSession,readonly,refDate){
   const data=dayLog[ex.id]||{};
   const done=!!data.done;
   const timed=isTimeBased(ex);
@@ -270,9 +270,18 @@ function buildExItem(ex,dayLog,prevSession,readonly){
 
   // Phase 50: last-session summary + strength level, now shown ALWAYS-VISIBLE
   // under the plan line (was previously only inside the expanded body).
+  // History is keyed on the EXERCISE ID, not the session type: the same-type
+  // prevSession is preferred, but if it doesn't contain this lift (e.g. after a
+  // programme switch the old 'upper' sessions no longer match 'upperA'), fall
+  // back to the most recent session of ANY type that logged it — so months of
+  // real history never render as "no history yet".
+  let histSession=(prevSession&&prevSession.log[ex.id]&&(prevSession.log[ex.id].sets||[]).length)?prevSession:null;
+  if(!histSession&&typeof getLastExercisePerformance==='function'){
+    histSession=getLastExercisePerformance(ex.id, refDate||(typeof todayStr==='function'?todayStr():'9999-12-31'));
+  }
   let lastSummary='';
-  if(prevSession){
-    const prevEx=prevSession.log[ex.id];
+  if(histSession){
+    const prevEx=histSession.log[ex.id];
     if(prevEx?.sets?.length){
       if(typeof isCarry==='function'&&isCarry(ex)){ // Phase 53: "L 38s/R 35s" per set
         lastSummary=prevEx.sets.filter(s=>s.leftSeconds!=null||s.rightSeconds!=null).map(s=>`L${s.leftSeconds||0}s/R${s.rightSeconds||0}s`).join(' · ');
@@ -284,7 +293,7 @@ function buildExItem(ex,dayLog,prevSession,readonly){
     }
   }
   const levelChip=_exLevelChip(ex.id);
-  const daysAgo=prevSession?_daysAgoLabel(prevSession.date):'';
+  const daysAgo=histSession?_daysAgoLabel(histSession.date):'';
   let lastLine='';
   if(lastSummary||levelChip){
     const left=lastSummary
@@ -953,6 +962,22 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
     const _xfer=getLastExercisePerformance(exId,(opts&&opts.forDate)||(typeof todayStr==='function'?todayStr():'9999-12-31'));
     if(_hasEx(_xfer))prevSession=_xfer;
   }
+  // Progression REFERENCES are per-exercise, keyed on the id across ALL session
+  // types. The same-type prevSessions (from getPreviousSessions) go blank after a
+  // programme switch, which would blind stall-detection and the deload-base
+  // lookup to months of real history. Replace them with every session that
+  // logged THIS exercise (any type), most recent first — this is a SUPERSET of
+  // the same-type sessions that contain the lift, and it's exercise-pure so
+  // detectStall never breaks early on a session that simply omitted this lift.
+  // Session-type filtering stays only where it's genuinely session-scoped (the
+  // recap card, make-up logic).
+  if(typeof getExercisePreviousSessions==='function'){
+    const _exHist=getExercisePreviousSessions(exId,(opts&&opts.forDate)||(typeof todayStr==='function'?todayStr():'9999-12-31'),6);
+    if(_exHist.length){
+      opts=Object.assign({},opts,{prevSessions:_exHist});
+      if(!_hasEx(prevSession))prevSession=_exHist[0];
+    }
+  }
 
   // Phase 60: scheduled-deload overlay (5-day split). HIGHEST precedence —
   // overrides double-progression AND reactive stall-deload. Deload-week sessions
@@ -1298,12 +1323,17 @@ function renderWmSet(){
     : '';
   // Phase 47: per-exercise panel on the first set — what you did last time + a
   // static form cue. Deterministic, no AI. Later sets get the rest-screen autoreg.
-  const lastForEx=(prev&&prev.log[ex.id]&&Array.isArray(prev.log[ex.id].sets))
-    ? prev.log[ex.id].sets.filter(s=>s.kg&&s.reps).map(s=>`${s.kg}×${s.reps}`).join(', ')
+  // History is id-keyed: prefer the same-type session, else the most recent
+  // session of ANY type that logged this lift, so it survives a programme switch.
+  const lastForExSess=(prev&&prev.log[ex.id]&&Array.isArray(prev.log[ex.id].sets)&&prev.log[ex.id].sets.some(s=>s.kg&&s.reps))
+    ? prev
+    : ((typeof getLastExercisePerformance==='function')?getLastExercisePerformance(ex.id,date):null);
+  const lastForEx=(lastForExSess&&lastForExSess.log[ex.id]&&Array.isArray(lastForExSess.log[ex.id].sets))
+    ? lastForExSess.log[ex.id].sets.filter(s=>s.kg&&s.reps).map(s=>`${s.kg}×${s.reps}`).join(', ')
     : null;
   const formCue=(typeof FORM_CUES!=='undefined')?FORM_CUES[ex.id]:null;
   const panelBlock=(wm.setIdx===0)?`
-    ${lastForEx?`<div style="font-size:12px;color:var(--text2);background:rgba(61,155,255,.06);border-radius:8px;padding:8px 11px;margin-bottom:8px;"><span style="color:var(--text3);">Last time:</span> ${lastForEx}${prev.date?` · ${prev.date}`:''}</div>`:''}
+    ${lastForEx?`<div style="font-size:12px;color:var(--text2);background:rgba(61,155,255,.06);border-radius:8px;padding:8px 11px;margin-bottom:8px;"><span style="color:var(--text3);">Last time:</span> ${lastForEx}${lastForExSess.date?` · ${lastForExSess.date}`:''}</div>`:''}
     ${formCue?`<div style="font-size:12px;color:var(--text2);background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 11px;margin-bottom:8px;line-height:1.5;"><span style="color:var(--lime);font-weight:700;">Form:</span> ${formCue}</div>`:''}`:'';
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
