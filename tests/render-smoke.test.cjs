@@ -198,6 +198,19 @@ test("5-day post-deload: progression references the last NON-deload weight, not 
   assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
 });
 
+test("week strip supports next/prev-week navigation + shows the new 5-day badges", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20'; viewDate='2026-07-25';`, ctx);
+  const html = vm.runInContext("renderWeekStrip()", ctx);
+  assert.ok(/shiftViewWeek\(-1\)/.test(html) && /shiftViewWeek\(1\)/.test(html), "prev + next week controls present");
+  assert.ok(/>UA</.test(html), "Mon 20 Jul shows Upper A badge");
+  assert.ok(/>LA</.test(html), "Tue shows Lower A");
+  assert.ok(/>Z2</.test(html), "Sat shows the Zone 2 badge (was '•' before)");
+  assert.equal(typeof ctx.shiftViewWeek, "function", "shiftViewWeek defined");
+  assert.equal(typeof ctx.goToThisWeek, "function", "goToThisWeek defined");
+});
+
 test("shared-id history carries over across the programme switch (leg press l1)", () => {
   const { ctx } = bootApp();
   seed(ctx);

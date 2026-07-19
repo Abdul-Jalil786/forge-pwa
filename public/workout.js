@@ -112,14 +112,23 @@ function renderWorkout(){
   el.innerHTML=html;
 }
 
+// Shift the viewed week forward/back by whole weeks (keeps the same weekday
+// selected) so you can look ahead at next week's plan or back at history.
+function shiftViewWeek(delta){
+  const cur=new Date(getViewDate()+'T12:00:00');
+  cur.setDate(cur.getDate()+delta*7);
+  setViewDate(_ukDate(cur));
+}
+function goToThisWeek(){ setViewDate(todayStr()); }
+
 function renderWeekStrip(){
-  const todayD=new Date();
   const days=[];
-  // Current week Monday-Sunday based on today
-  const todayDow=todayD.getDay(); // 0=Sun
-  const monOffset=todayDow===0?-6:1-todayDow;
-  const monday=new Date(todayD);
-  monday.setDate(todayD.getDate()+monOffset);
+  // Monday–Sunday of the VIEWED week (so ‹ › navigation can move to other weeks).
+  const anchor=new Date(getViewDate()+'T12:00:00');
+  const aDow=anchor.getDay(); // 0=Sun
+  const monOffset=aDow===0?-6:1-aDow;
+  const monday=new Date(anchor);
+  monday.setDate(anchor.getDate()+monOffset);
   for(let i=0;i<7;i++){
     const d=new Date(monday);d.setDate(monday.getDate()+i);
     days.push(d);
@@ -129,7 +138,22 @@ function renderWeekStrip(){
   const viewing=getViewDate();
   const today=todayStr();
 
-  let html='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:6px;">';
+  // Header: ‹ prev · week label (+ "This week" reset) · next ›
+  const mondayKey=_ukDate(monday);
+  const todayMon=(()=>{const t=new Date(today+'T12:00:00');const dow=t.getDay();t.setDate(t.getDate()+(dow===0?-6:1-dow));return _ukDate(t);})();
+  const weekDelta=Math.round((new Date(mondayKey+'T12:00:00')-new Date(todayMon+'T12:00:00'))/(7*86400000));
+  const weekLabel=weekDelta===0?'This week':weekDelta===1?'Next week':weekDelta===-1?'Last week':(weekDelta>0?`In ${weekDelta} weeks`:`${-weekDelta} weeks ago`);
+  const sunKey=_ukDate(days[6]);
+  const rangeLabel=`${monday.toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${days[6].toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`;
+  let html=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <button onclick="shiftViewWeek(-1)" aria-label="Previous week" style="background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text2);width:34px;height:34px;cursor:pointer;font-size:16px;">‹</button>
+    <div style="text-align:center;cursor:pointer;" onclick="goToThisWeek()">
+      <div style="font-size:12px;font-weight:700;color:${weekDelta===0?'var(--lime)':'var(--text)'};">${weekLabel}</div>
+      <div style="font-size:10px;color:var(--text3);">${rangeLabel}${weekDelta!==0?' · tap for today':''}</div>
+    </div>
+    <button onclick="shiftViewWeek(1)" aria-label="Next week" style="background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text2);width:34px;height:34px;cursor:pointer;font-size:16px;">›</button>
+  </div>`;
+  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:6px;">';
   days.forEach((d,i)=>{
     const key=_ukDate(d);
     const session=getSessionTypeForDate(key);
@@ -145,7 +169,7 @@ function renderWeekStrip(){
     else if(isPast&&session&&!completed){bg='rgba(255,59,59,.08)';color='var(--red)';}
     else if(!isPast&&!isToday){color='var(--text3)';}
 
-    const badge=session?({upper:'U',lower:'L',full:'F',home:'H'}[session]||'•'):'·';
+    const badge=session?({upper:'U',lower:'L',full:'F',home:'H',upperA:'UA',lowerA:'LA',upperB:'UB',lowerB:'LB',zone2:'Z2'}[session]||'•'):'·';
     html+=`<button onclick="setViewDate('${key}')" style="background:${bg};border:${border};border-radius:10px;padding:6px 0;color:${color};cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:'Archivo',sans-serif;">
       <div style="font-size:10px;font-weight:700;letter-spacing:.5px;">${initials[i]}</div>
       <div style="font-family:'Archivo Black',sans-serif;font-size:13px;line-height:1;">${badge}</div>
