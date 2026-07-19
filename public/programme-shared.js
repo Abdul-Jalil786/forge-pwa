@@ -39,9 +39,9 @@ var EXERCISE_NAMES = {
   // Cardio (Zone 2, upper-lower-5d-fixed)
   cardio_z2: 'Zone 2 Walk',
   // Shoulder rehab / physio (owner-configurable, category:'rehab')
-  reh_1: 'Rehab 1',
-  reh_2: 'Rehab 2',
-  reh_3: 'Rehab 3',
+  reh_1: 'Band External Rotation',
+  reh_2: 'Band Pull-Apart',
+  reh_3: 'Banded Shoulder Flexion Raise',
   // Lower
   l1: 'Leg Press',
   l2: 'Romanian Deadlift',
