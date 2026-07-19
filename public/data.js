@@ -966,6 +966,22 @@ function getPreviousSessions(beforeDate, sessionType, limit){
   return out;
 }
 
+// Phase 60: exercise-centric history — the most recent session of ANY type that
+// has logged data for a given exercise id. Used as a fallback so progression
+// references carry over when the SAME id moves between session types (e.g. Leg
+// Press l1 from the old 'lower' day into the new lowerA/lowerB) — the same-type
+// lookup finds nothing on a brand-new programme, this finds the real last weight.
+function getLastExercisePerformance(exId, beforeDate){
+  const exLog=getExLog();
+  const dates=Object.keys(exLog).filter(d=>d<beforeDate).sort().reverse();
+  for(const date of dates){
+    const dayLog=exLog[date];
+    const ex=dayLog&&dayLog[exId];
+    if(ex&&Array.isArray(ex.sets)&&ex.sets.some(s=>s.kg||s.reps||s.seconds))return {date,log:dayLog};
+  }
+  return null;
+}
+
 // Was a session completed on a date? (4+ exercises marked done)
 function wasSessionCompleted(date){
   const log=getExLog()[date]||{};

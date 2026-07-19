@@ -198,6 +198,26 @@ test("5-day post-deload: progression references the last NON-deload weight, not 
   assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
 });
 
+test("shared-id history carries over across the programme switch (leg press l1)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';
+    // Historical LOWER-day session (old programme) with Leg Press at 275kg
+    // (the +53 sled-corrected value). No 'lowerA' session exists yet.
+    STATE.exLog={ '2026-07-10': { l1: { sets: [{ kg: 275, reps: 8, effort: 'solid' }] } } };`, ctx);
+  // Prescribing l1 for a new lowerA session (Tue 21 Jul) — same-type history is
+  // empty, so the cross-type fallback must find the 275kg leg press.
+  const sug = vm.runInContext(
+    `suggestWeight('l1', getPreviousSessionData('2026-07-21','lowerA'), undefined, { exObj: WORKOUTS.lowerA.exercises.find(e=>e.id==='l1'), prevSessions: getPreviousSessions('2026-07-21','lowerA',5), forDate:'2026-07-21' })`, ctx);
+  assert.ok(sug && sug.kg != null, "must carry over history, not show FIND WEIGHT");
+  assert.equal(sug.kg, 275, "references the 275kg leg press from the old lower day");
+  // With NO history anywhere → genuinely no reference (FIND WEIGHT).
+  vm.runInContext("STATE.exLog={};", ctx);
+  const none = vm.runInContext(
+    `suggestWeight('l1', null, undefined, { exObj: WORKOUTS.lowerA.exercises.find(e=>e.id==='l1'), prevSessions: [], forDate:'2026-07-21' })`, ctx);
+  assert.ok(!none || none.kg == null, "no history → no fabricated weight");
+});
+
 test("5-day switch-day (Sun 19 Jul): rest + no make-up of the pre-switch programme", () => {
   const { ctx } = bootApp();
   seed(ctx);

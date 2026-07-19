@@ -922,6 +922,13 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
   if(!_hasEx(prevSession)&&opts&&Array.isArray(opts.prevSessions)){
     prevSession=opts.prevSessions.find(_hasEx)||prevSession;
   }
+  // Phase 60: cross-type carryover. If no SAME-type session has this exercise
+  // (e.g. a shared id moved into a new programme's session), fall back to the
+  // most recent session of ANY type that logged it — so history carries over.
+  if(!_hasEx(prevSession)&&typeof getLastExercisePerformance==='function'){
+    const _xfer=getLastExercisePerformance(exId,(opts&&opts.forDate)||(typeof todayStr==='function'?todayStr():'9999-12-31'));
+    if(_hasEx(_xfer))prevSession=_xfer;
+  }
 
   // Phase 60: scheduled-deload overlay (5-day split). HIGHEST precedence —
   // overrides double-progression AND reactive stall-deload. Deload-week sessions
