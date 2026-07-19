@@ -127,3 +127,24 @@ test("scanner routes its LLM call through the shared aiBudget accounting", () =>
   const cs = fs.readFileSync(path.join(__dirname, "..", "server", "coach-settings.ts"), "utf8");
   assert.ok(cs.includes("chargeAiBudget"), "the Express middleware must use the same shared charger");
 });
+
+// Phase 60: scheduled deload-week-starting trigger (fed by proactive.ts from the
+// shared deloadWeekInfo — today isDeload && yesterday not).
+test("deload_week trigger fires only when a deload week is starting", () => {
+  const s = normalState();
+  assert.ok(has(core.computeTriggers(s, { ...OPTS, deloadStarting: true }), "deload_week"), "fires on the first deload day");
+  assert.ok(!has(core.computeTriggers(s, { ...OPTS, deloadStarting: false }), "deload_week"), "silent when not starting");
+});
+
+test("deloadWeekInfo drives 'deload starting' = first day of the deload week", () => {
+  const shared = require("../public/programme-shared.js");
+  const S = "2026-07-20";
+  const isStart = (date) => {
+    const t = shared.deloadWeekInfo(S, date);
+    const y = shared.deloadWeekInfo(S, new Date(new Date(date + "T12:00:00").getTime() - 86400000).toISOString().slice(0, 10));
+    return !!(t && t.isDeload && (!y || !y.isDeload));
+  };
+  assert.equal(isStart("2026-08-17"), true, "Mon 17 Aug = deload week starts");
+  assert.equal(isStart("2026-08-18"), false, "Tue 18 Aug = mid-deload, not starting");
+  assert.equal(isStart("2026-08-10"), false, "a normal week never 'starts' a deload");
+});

@@ -141,11 +141,20 @@ export async function runDailyScanner(): Promise<{ scanned: number; fired: numbe
       const programId = state.profile?.programId || "upper-lower-4d";
       const scheduledDays: string[] = [];
       for (let i = 1; i <= 10; i++) { const d = _addDaysUK(today, -i); if (shared.sessionTypeForDate(programId, d, state.profile?.programmeStartDate || state.trainingStartDate)) scheduledDays.push(d); }
+      // Phase 60: deload-week-starting — fire on the FIRST day of a scheduled
+      // deload week (today is deload, yesterday was not).
+      let deloadStarting = false;
+      const pStart = state.profile?.programmeStartDate;
+      if (programId === "upper-lower-5d-fixed" && pStart) {
+        const todayDl = shared.deloadWeekInfo(pStart, today);
+        const yDl = shared.deloadWeekInfo(pStart, _addDaysUK(today, -1));
+        deloadStarting = !!(todayDl && todayDl.isDeload && (!yDl || !yDl.isDeload));
+      }
       const fired = core.computeTriggers(state, {
         today, exerciseReps: shared.EXERCISE_REPS,
         proteinFloor: state.profile?.coachTargets?.proteinFloorDaily,
         phase: state.profile?.personal?.phase || state.profile?.phase,
-        scheduledDays,
+        scheduledDays, deloadStarting,
       });
       const history = Array.isArray(state.proactiveNudges) ? state.proactiveNudges : [];
       const chosen = core.selectNudge(history, fired, today, { maxPerWeek: 3, cooldownDays: 5 });

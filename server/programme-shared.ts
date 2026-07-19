@@ -16,6 +16,7 @@ interface ProgrammeShared {
   programmeLabel(programId: string): ProgrammeLabel;
   trainingDayInCycle(dateStr: string, startDate?: string): number;
   sessionTypeForDate(programId: string, dateStr: string, startDate?: string): string | null;
+  deloadWeekInfo(programmeStartDate: string | null | undefined, dateStr: string): { weekInCycle: number; isDeload: boolean } | null;
   DEFAULT_TRAINING_START: string;
 }
 
@@ -42,4 +43,9 @@ export function sessionTypeForDate(
 // Human-readable { name, pattern } for a programme id (falls back to the default).
 export function programmeLabel(programId: string): ProgrammeLabel {
   return shared.programmeLabel(programId || "upper-lower-4d");
+}
+
+// Scheduled-deload week info (every 5th week, per-user programmeStartDate anchor).
+export function deloadWeekInfo(programmeStartDate: string | null | undefined, dateStr: string) {
+  return shared.deloadWeekInfo(programmeStartDate, dateStr);
 }
