@@ -128,7 +128,7 @@ test("More page renders the Coach Settings section + key controls", () => {
   const html = els["page-more"]._html;
   for (const needle of [
     "Coach Settings", "Health Conditions", "Coach Targets",
-    "ct-protfloor", "ct-permeal", "ct-deficit", "ct-water-rest",
+    "ct-protfloor", "ct-permeal", "ct-deficit", "ct-water-rest", "ct-steps",
     "cs-dob", "hc-free", "cs-injday", "cs-ew-start", "cs-ew-end",
   ]) {
     assert.ok(html.includes(needle), `Coach Settings missing control/label: ${needle}`);
@@ -196,6 +196,52 @@ test("5-day post-deload: progression references the last NON-deload weight, not 
     `suggestWeight('u4', ${JSON.stringify(deload)}, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), prevSessions:[${JSON.stringify(deload)}, ${JSON.stringify(real)}], forDate:'2026-08-24' })`, ctx);
   assert.equal(sug.dir, "up", "progresses up off the real week");
   assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
+});
+
+test("Weekly Report Card is a thin wrapper over the shared engine (no drift)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // Seed a week of data so the card computes real values.
+  vm.runInContext(`
+    STATE.planStartDate='2026-05-08';
+    STATE.profile.coachTargets={proteinFloorDaily:200, stepsDaily:10000};
+    (function(){
+      var days=getLast7();
+      STATE.stepsLog={}; STATE.foods={}; STATE.sleepLog={}; STATE.weightLog=[];
+      days.forEach(function(d,i){
+        STATE.stepsLog[d]= i<5?12000:3000;
+        STATE.foods[d]=[{cals:2000,protein: i<5?210:150}];
+        STATE.sleepLog[d]={hours:7.2, bedtime:23};
+        STATE.weightLog.push({date:d, weight:105 - i*0.1, source:'withings'});
+      });
+    })();
+  `, ctx);
+  const card = vm.runInContext("getWeeklyReport()", ctx);
+  // Independently recompute via the shared engine with the SAME opts the wrapper builds.
+  const direct = vm.runInContext(`(function(){
+    var ct=STATE.profile.coachTargets;
+    var scheduled=[];
+    getLast7().forEach(function(d){var t=getSessionTypeForDate(d); if(t){scheduled.push({date:d,type:t,exerciseIds:sessionExercises(t).map(function(e){return e.id;})});}});
+    return PROACTIVE_CORE.weeklyReport(STATE,{today:todayStr(),stepsTarget:ct.stepsDaily,proteinFloor:ct.proteinFloorDaily,scheduled:scheduled});
+  })()`, ctx);
+  const { isBaseline, ...cardCore } = card;
+  // Normalise (-0 → 0 etc.) — proves identical serialised values = no drift.
+  assert.equal(JSON.stringify(cardCore), JSON.stringify(direct), "card must equal the shared-engine result exactly");
+  assert.equal(card.steps.target, 10000, "steps target from coachTargets.stepsDaily");
+  assert.equal(card.protein.floor, 200, "protein floor from coachTargets.proteinFloorDaily (no ×0.9)");
+  assert.equal(card.protein.hit, 5);
+  assert.equal(card.grades.sleep, "A");
+});
+
+test("Coach page renders the rebuilt card (weighted caption + letter grades)", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.planStartDate='2026-05-08'; STATE.profile.coachTargets={proteinFloorDaily:200,stepsDaily:10000};
+    STATE.sleepLog={}; getLast7().forEach(function(d){STATE.sleepLog[d]={hours:7.2,bedtime:23};});`, ctx);
+  ctx.renderCoach();
+  const html = els["page-coach"]._html;
+  assert.ok(/Weighted: protein 30% · training 30% · steps 20% · sleep 20%/.test(html), "weights caption shown");
+  assert.ok(/nights logged/.test(html), "sleep shows nights-logged");
 });
 
 test("week strip supports next/prev-week navigation + shows the new 5-day badges", () => {

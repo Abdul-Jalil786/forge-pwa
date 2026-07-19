@@ -700,6 +700,7 @@ function loadCoachSettingsUI(){
   const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
   set('ct-protfloor', ct.proteinFloorDaily);
   set('ct-permeal', ct.proteinPerMeal);
+  set('ct-steps', ct.stepsDaily != null ? ct.stepsDaily : 10000);
   if (ct.waterRestMl != null) set('ct-water-rest', Math.round(ct.waterRestMl / 100) / 10);
   if (ct.waterGymMl != null) set('ct-water-gym', Math.round(ct.waterGymMl / 100) / 10);
   set('ct-deficit', ct.deficitKcal);
@@ -749,18 +750,20 @@ async function removeHealthCondition(key){
 
 async function saveCoachTargets(){
   const num = id => { const v = parseFloat((document.getElementById(id) || {}).value); return isNaN(v) ? null : v; };
-  const protfloor = num('ct-protfloor'), permeal = num('ct-permeal'), wrest = num('ct-water-rest'), wgym = num('ct-water-gym'), deficit = num('ct-deficit');
+  const protfloor = num('ct-protfloor'), permeal = num('ct-permeal'), wrest = num('ct-water-rest'), wgym = num('ct-water-gym'), deficit = num('ct-deficit'), steps = num('ct-steps');
   const checks = [
     [protfloor, 100, 350, 'Protein floor must be 100-350g'],
     [permeal, 20, 80, 'Per-meal protein must be 20-80g'],
     [wrest, 1, 6, 'Rest-day water must be 1-6L'],
     [wgym, 1, 6, 'Gym-day water must be 1-6L'],
     [deficit, 0, 1200, 'Calorie deficit must be 0-1200'],
+    [steps, 3000, 40000, 'Daily step target must be 3000-40000'],
   ];
   for (const [v, lo, hi, msg] of checks) { if (v != null && (v < lo || v > hi)) { showToast(msg); return; } }
   const ct = {};
   if (protfloor != null) ct.proteinFloorDaily = Math.round(protfloor);
   if (permeal != null) ct.proteinPerMeal = Math.round(permeal);
+  if (steps != null) ct.stepsDaily = Math.round(steps);
   if (wrest != null) ct.waterRestMl = Math.round(wrest * 1000);
   if (wgym != null) ct.waterGymMl = Math.round(wgym * 1000);
   if (deficit != null) ct.deficitKcal = Math.round(deficit);

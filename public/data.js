@@ -1597,40 +1597,32 @@ function calcStreak(type){
 // ============================================================
 // WEEKLY REPORT CARD
 // ============================================================
+// Phase 61: the Weekly Report Card is now a THIN WRAPPER over the shared metrics
+// engine (proactive-core.weeklyReport) — the SAME functions the AI coach context
+// reads. No parallel maths here: this just gathers the user's targets (coach
+// targets), the schedule-aware session list (programme + rehab filter) and the
+// window, then delegates. Returns the engine result + isBaseline.
 function getWeeklyReport(){
   const p=getActive(); if(!p)return null;
-  const days=getLast7();
-  const stepsLog=getStepsLog();
-  const foodLog=pGet('foods',{});
-  const exLog=getExLog();
-  const sleepLog=getSleepLog();
-
-  const stepsHit=days.filter(d=>(stepsLog[d]||0)>=10000).length;
-  const proteinDays=days.filter(d=>{
-    const foods=foodLog[d]||[];
-    return foods.reduce((s,f)=>s+(f.protein||0),0)>=p.proteinTarget*0.9;
-  }).length;
-  const gymDays=days.filter(d=>{
-    const el=exLog[d]||{};
-    return Object.values(el).filter(e=>e.done).length>=4;
-  }).length;
-  const avgSleep=getAvgSleep(7);
-  const wl=getWeightLog();
-  const weekWeights=wl.filter(e=>days.includes(e.date));
-  const weightChange=weekWeights.length>=2?weekWeights[weekWeights.length-1].weight-weekWeights[0].weight:null;
-
-  const scores={
-    steps:Math.round((stepsHit/7)*100),
-    protein:Math.round((proteinDays/7)*100),
-    gym:Math.round((gymDays/4)*100),
-    sleep:avgSleep>=7?100:avgSleep>=6?70:40,
-  };
-  const overall=Math.round((scores.steps+scores.protein+scores.gym+scores.sleep)/4);
-
+  if(typeof PROACTIVE_CORE==='undefined'||!PROACTIVE_CORE.weeklyReport)return null;
+  const today=todayStr();
+  const ct=(STATE.profile&&STATE.profile.coachTargets)||{};
+  const stepsTarget=ct.stepsDaily!=null?ct.stepsDaily:PROACTIVE_CORE.STEPS_DEFAULT_TARGET;
+  const proteinFloor=ct.proteinFloorDaily!=null?ct.proteinFloorDaily:null;
+  // Scheduled sessions in the last-7 window (schedule-aware; rehab-filtered so the
+  // completion denominator matches what the user actually trains).
+  const scheduled=[];
+  getLast7().forEach(d=>{
+    const type=(typeof getSessionTypeForDate==='function')?getSessionTypeForDate(d):null;
+    if(type){
+      const ids=(typeof sessionExercises==='function')?sessionExercises(type).map(e=>e.id):[];
+      scheduled.push({date:d,type,exerciseIds:ids});
+    }
+  });
+  const r=PROACTIVE_CORE.weeklyReport(STATE,{today,stepsTarget,proteinFloor,scheduled});
   const planStart=STATE.planStartDate?new Date(STATE.planStartDate+'T00:00:00'):null;
   const isBaseline=!planStart||(Date.now()-planStart.getTime())<7*24*60*60*1000;
-
-  return{stepsHit,proteinDays,gymDays,avgSleep,weightChange,scores,overall,isBaseline};
+  return {...r,isBaseline};
 }
 
 // Phase 20 migration: convert time-based exercise sets from {kg,reps} to {seconds}

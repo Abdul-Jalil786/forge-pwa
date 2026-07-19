@@ -8,6 +8,13 @@
 // same UMD pattern as programme-shared.js. All "today"/"asOf" values are passed
 // in so tests are deterministic.
 
+// IIFE-scoped so the internal helpers (_addDays, _num, _round, …) are PRIVATE and
+// never collide with same-named globals in data.js/pages.js/workout.js when this
+// file is loaded as a browser <script> alongside them. Only PROACTIVE_CORE is
+// exported. (Before this, data.js's global `_addDays` — which returns a Date —
+// shadowed this file's string-returning one in the browser, silently breaking
+// every date-windowed computation here. require()/tests were unaffected.)
+(function () {
 var MIN_N = 14;          // pair-correlations below this are "insufficient data"
 var MIN_CYCLES = 3;      // GLP-1 injection cycles below this are insufficient
 
@@ -544,5 +551,8 @@ var PROACTIVE_CORE = {
   sleepMetric: sleepMetric, weightMetric: weightMetric, trainingMetric: trainingMetric,
   scoreToGrade: scoreToGrade, GRADE_THRESHOLDS: GRADE_THRESHOLDS, SCORE_WEIGHTS: SCORE_WEIGHTS, STEPS_DEFAULT_TARGET: STEPS_DEFAULT_TARGET,
 };
-if (typeof window !== "undefined") window.PROACTIVE_CORE = PROACTIVE_CORE;
 if (typeof module !== "undefined" && module.exports) module.exports = PROACTIVE_CORE;
+// globalThis === window in the browser, === the vm sandbox global in tests, so a
+// bare `PROACTIVE_CORE` resolves everywhere (the IIFE keeps only THIS name global).
+if (typeof globalThis !== "undefined") globalThis.PROACTIVE_CORE = PROACTIVE_CORE;
+})();
