@@ -71,6 +71,11 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     // Oura type values: "long_sleep" = main overnight, "sleep" = main sleep, "late_nap" = nap, "rest" = quiet rest, "deleted" = ignored
     const durationByDay: Record<string, number> = {};
     const stagesByDay: Record<string, { rem: number; deep: number; light: number; awake: number }> = {};
+    // Phase 61: bedtime hour (local clock, e.g. 23.5 = 11:30pm) of the MAIN sleep
+    // per day — feeds the report card's sleep-timing grade. The time portion of
+    // Oura's bedtime_start ISO is already in the user's local zone.
+    const bedtimeByDay: Record<string, number> = {};
+    const bedtimeDurByDay: Record<string, number> = {};
     for (const e of sleepDetail.data || []) {
       if (e.type === "deleted") continue;
       const seconds = e.total_sleep_duration || 0;
@@ -78,6 +83,10 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       if (seconds < 10800) continue;
       const day = e.day;
       durationByDay[day] = (durationByDay[day] || 0) + seconds;
+      if (e.bedtime_start && seconds > (bedtimeDurByDay[day] || 0)) {
+        const bm = String(e.bedtime_start).match(/T(\d{2}):(\d{2})/);
+        if (bm) { bedtimeByDay[day] = parseInt(bm[1], 10) + parseInt(bm[2], 10) / 60; bedtimeDurByDay[day] = seconds; }
+      }
       // Phase 29: capture sleep stages
       if (!stagesByDay[day]) stagesByDay[day] = { rem: 0, deep: 0, light: 0, awake: 0 };
       stagesByDay[day].rem   += e.rem_sleep_duration   || 0;
@@ -106,7 +115,7 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
           lightMin: Math.round(s.light / 60),
           awakeMin: Math.round(s.awake / 60),
         } : undefined;
-        sleepLog[day] = { hours, quality: scoreByDay[day] ? mapSleepQuality(scoreByDay[day]) : 3, source: "oura", ...(stages || {}) };
+        sleepLog[day] = { hours, quality: scoreByDay[day] ? mapSleepQuality(scoreByDay[day]) : 3, source: "oura", ...(stages || {}), ...(bedtimeByDay[day] != null ? { bedtime: Math.round(bedtimeByDay[day] * 100) / 100 } : {}) };
         updated++;
       }
       // No-data branch removed — never delete existing entries on a sync that doesn't return that day.

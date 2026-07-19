@@ -17,6 +17,7 @@ interface ProgrammeShared {
   trainingDayInCycle(dateStr: string, startDate?: string): number;
   sessionTypeForDate(programId: string, dateStr: string, startDate?: string): string | null;
   deloadWeekInfo(programmeStartDate: string | null | undefined, dateStr: string): { weekInCycle: number; isDeload: boolean } | null;
+  SESSION_EXERCISE_IDS: Record<string, string[]>;
   DEFAULT_TRAINING_START: string;
 }
 
@@ -24,6 +25,7 @@ interface ProgrammeShared {
 const shared: ProgrammeShared = require(path.join(process.cwd(), "public", "programme-shared.js"));
 
 export const EXERCISE_NAMES = shared.EXERCISE_NAMES;
+export const SESSION_EXERCISE_IDS = shared.SESSION_EXERCISE_IDS;
 
 // Display name for an exercise id (current or legacy); falls back to the raw id
 // so a caller never renders an empty string.

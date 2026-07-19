@@ -2,8 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { decrypt } from "./crypto-util";
 import { analyzeNutrition } from "./nutrition";
-import { exerciseName, sessionTypeForDate, programmeLabel, deloadWeekInfo } from "./programme-shared";
-import { formatCorrelations, blendedLeanSeries, leanTrendRate } from "./proactive";
+import { exerciseName, sessionTypeForDate, programmeLabel, deloadWeekInfo, SESSION_EXERCISE_IDS } from "./programme-shared";
+import { formatCorrelations, blendedLeanSeries, leanTrendRate, weeklyReport } from "./proactive";
 
 // Phase 57: age derived from date of birth (YYYY-MM-DD) so it never goes stale.
 // Preferred over a static profile.personal.age. Returns null if unparseable.
@@ -679,6 +679,38 @@ function buildBoditraxContext(state: any): string {
   return lines.join("\n");
 }
 
+// Phase 61: Weekly Scorecard — the EXACT same computed values shown on the user's
+// Coach card (shared weeklyReport engine), so the coach never contradicts the card.
+function buildScorecard(state: any): string {
+  try {
+    const ct = state.profile?.coachTargets || {};
+    const programId = state.profile?.programId || "upper-lower-4d";
+    const anchor = state.profile?.programmeStartDate || state.trainingStartDate;
+    const showRehab = state.profile?.showRehab !== false;
+    const scheduled: Array<{ date: string; type: string; exerciseIds: string[] }> = [];
+    for (let i = 6; i >= 0; i--) {
+      const day = daysAgoUK(i);
+      const type = sessionTypeForDate(programId, day, anchor);
+      if (type) {
+        let ids = (SESSION_EXERCISE_IDS as any)[type] || [];
+        if (!showRehab) ids = ids.filter((x: string) => x.indexOf("reh_") !== 0);
+        scheduled.push({ date: day, type, exerciseIds: ids });
+      }
+    }
+    const sw = weeklyReport(state, { today: ukToday(), stepsTarget: ct.stepsDaily, proteinFloor: ct.proteinFloorDaily, scheduled });
+    const L = [`WEEKLY SCORECARD (identical to the user's Coach card — rolling 7 days ${sw.window.from} → ${sw.window.to}; weights protein30/training30/steps20/sleep20):`];
+    L.push(`  Overall: ${sw.overall == null ? "—" : sw.overall}/100`);
+    L.push(`  Steps: ${sw.steps.hasTarget ? `${sw.steps.hit}/${sw.steps.total} days ≥ ${sw.steps.target}` : "no target set"} → ${sw.grades.steps}`);
+    L.push(`  Protein: ${sw.protein.hasTarget ? `${sw.protein.hit}/${sw.protein.total} days ≥ ${sw.protein.floor}g floor` : "no floor set"} → ${sw.grades.protein}`);
+    L.push(`  Training: ${sw.training.completed}/${sw.training.scheduled} scheduled sessions completed → ${sw.grades.training}`);
+    const bed = sw.sleep.hasTiming ? `, bedtime avg ${sw.sleep.avgBedtimeClock}` : " (bedtime not tracked)";
+    L.push(`  Sleep: ${sw.sleep.avgHours != null ? `${sw.sleep.avgHours}h avg${bed}, ${sw.sleep.nightsLogged}/${sw.sleep.total} nights` : "no data"} → ${sw.grades.sleep}`);
+    if (sw.weight.hasTrend) L.push(`  Weight trend: ${sw.weight.perWeek > 0 ? "+" : ""}${sw.weight.perWeek}kg/week (7-day slope, ${sw.weight.n} readings)`);
+    L.push("");
+    return L.join("\n");
+  } catch { return ""; }
+}
+
 // Phase 45: tape measurements — hydration-immune trend data. Always emits
 // (even when empty/stale) so the coach knows to nudge the user.
 function buildTapeContext(state: any): string {
@@ -990,6 +1022,10 @@ export function buildContext(state: any): string {
     lines.push(`  Deficit basis: ${ct.deficitKcal != null ? `~${ct.deficitKcal} kcal/day below maintenance` : "per dynamic targets"}${ct.trainingBonusUpper != null ? ` (+${ct.trainingBonusUpper} kcal upper / +${ct.trainingBonusLower} kcal lower training day)` : ""}`);
     lines.push("");
   }
+
+  // Phase 61: weekly scorecard — same computed values as the user's Coach card.
+  const scorecard = buildScorecard(state);
+  if (scorecard) lines.push(scorecard);
 
   lines.push("WEIGHT (last 14d):");
   if (wl.length === 0) lines.push("  (no entries)");

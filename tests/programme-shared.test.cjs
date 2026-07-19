@@ -184,3 +184,25 @@ test("deloadWeekInfo: null before the anchor or with no anchor", () => {
   assert.equal(shared.deloadWeekInfo(null, "2026-08-17"), null, "no anchor");
   assert.equal(shared.deloadWeekInfo("2026-07-20", null), null, "no date");
 });
+
+// --- Phase 61: SESSION_EXERCISE_IDS must match WORKOUTS session composition ---
+test("SESSION_EXERCISE_IDS matches each WORKOUTS session's exercise ids exactly", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "public", "data.js"), "utf8");
+  const start = src.indexOf("const WORKOUTS = {");
+  const block = src.slice(start, src.indexOf("\n};", start));
+  // Parse each "sessionKey: { ... exercises:[ ... ] }" → ids
+  const re = /(\w+):\s*\{[\s\S]*?exercises:\s*\[([\s\S]*?)\]/g;
+  const parsed = {};
+  let m;
+  while ((m = re.exec(block)) !== null) {
+    const ids = [];
+    let im; const idRe = /id:\s*'([^']+)'/g;
+    while ((im = idRe.exec(m[2])) !== null) ids.push(im[1]);
+    parsed[m[1]] = ids;
+  }
+  const keys = Object.keys(shared.SESSION_EXERCISE_IDS);
+  assert.deepEqual(new Set(Object.keys(parsed)), new Set(keys), "session keys must match WORKOUTS");
+  for (const k of keys) {
+    assert.deepEqual(shared.SESSION_EXERCISE_IDS[k], parsed[k], `ids drift for session ${k}`);
+  }
+});

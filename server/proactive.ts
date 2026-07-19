@@ -26,6 +26,7 @@ interface ProactiveCore {
   selectNudge(history: any[], fired: any[], today: string, config: any): { type: string; severity: number; detail: string; data: any } | null;
   blendedLeanSeries(state: any, opts?: any): Array<{ date: string; lean: number; source: string; priority: number }>;
   leanTrendRate(state: any, opts?: any): { perWeek: number | null; source: string | null; n: number; points: any[]; first?: any; last?: any };
+  weeklyReport(state: any, opts: any): any;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -57,6 +58,12 @@ export function blendedLeanSeries(state: any, opts?: any) {
 }
 export function leanTrendRate(state: any, opts?: any) {
   return core.leanTrendRate(state, opts);
+}
+
+// Phase 61: weekly-report metrics — the SAME engine the Coach card uses, so the
+// card and coach context can never drift.
+export function weeklyReport(state: any, opts: any) {
+  return core.weeklyReport(state, opts);
 }
 
 // Re-export the pure first-Sunday check for the cron monthly deep-dive (keeps
