@@ -1197,6 +1197,17 @@ function getMealSupplements(meal){
 }
 
 function getSupplementLog(date){return(pGet('supplementLog',{})[date])||{};}
+// Phase 61: is a supplement DUE on a given date? Weekly GLP-1 items
+// (frequency 'weekly-wednesday') are due only on the configured injection day;
+// everything else is daily. Used so the grid + adherence don't count non-due
+// days as misses (a weekly item isn't "missed" 6 days a week).
+function isSupplementDue(supp,date){
+  if(!supp)return false;
+  if(supp.frequency==='weekly-wednesday'){
+    return new Date(date+'T12:00:00').getDay()===_injectionDow();
+  }
+  return true;
+}
 let _suppLogSaveTimer=null;
 function setSupplementTaken(date,suppId,taken){
   const log=pGet('supplementLog',{});
@@ -1244,6 +1255,7 @@ function deleteSupplement(id){
 function getSupplementAdherence(days){
   const supps=getSupplements();
   const log=pGet('supplementLog',{});
+  const today=todayStr();
   const byDay=[];
   const byId={};
   supps.forEach(s=>{byId[s.id]={taken:0,total:0,pct:0};});
@@ -1251,13 +1263,16 @@ function getSupplementAdherence(days){
     const d=new Date();d.setDate(d.getDate()-i);
     const date=_ukDate(d);
     const dayLog=log[date]||{};
-    let taken=0;
+    let taken=0,due=0;
     supps.forEach(s=>{
+      if(!isSupplementDue(s,date))return;             // not due that day → not counted
       const t=dayLog[s.id]===true;
+      if(date===today&&!t)return;                      // today, not yet ticked → pending, not a miss
+      due++;
       if(t)taken++;
       if(byId[s.id]){byId[s.id].total++;if(t)byId[s.id].taken++;}
     });
-    byDay.push({date,taken,total:supps.length,pct:supps.length?Math.round((taken/supps.length)*100):0});
+    byDay.push({date,taken,total:due,pct:due?Math.round((taken/due)*100):0});
   }
   let totalTaken=0,totalPossible=0;
   Object.values(byId).forEach(v=>{totalTaken+=v.taken;totalPossible+=v.total;v.pct=v.total?Math.round((v.taken/v.total)*100):0;});

@@ -198,6 +198,26 @@ test("5-day post-deload: progression references the last NON-deload weight, not 
   assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
 });
 
+test("supplements grid: weekly Mounjaro due only on injection day; today pending not missed", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`
+    STATE.profile.glp1InjectionDow=3; // Wednesday
+    STATE.supplements=[{id:'creatine',name:'Creatine',frequency:'daily'},{id:'mnj',name:'Mounjaro',frequency:'weekly-wednesday'}];
+    STATE.supplementLog={'2026-07-15':{mnj:true}}; // ticked on the Wednesday in this week
+  `, ctx);
+  assert.equal(vm.runInContext("isSupplementDue(STATE.supplements[1],'2026-07-15')", ctx), true, "Mounjaro due Wed");
+  assert.equal(vm.runInContext("isSupplementDue(STATE.supplements[1],'2026-07-16')", ctx), false, "Mounjaro NOT due Thu");
+  const adh = vm.runInContext("getSupplementAdherence(7)", ctx);
+  assert.equal(adh.byId.mnj.total, 1, "only the 1 due day (Wed) is in the denominator");
+  assert.equal(adh.byId.mnj.taken, 1);
+  assert.equal(adh.byId.mnj.pct, 100, "Mounjaro 1/1 = 100%");
+  assert.equal(adh.byId.creatine.total, 6, "today's untaken (pending) creatine excluded; 6 past due days");
+  const html = vm.runInContext("renderSupplementsCoach()", ctx);
+  assert.ok(/title="pending"/.test(html), "today renders as pending");
+  assert.ok(/title="na"/.test(html), "Mounjaro non-due days render n/a, not missed");
+});
+
 test("Weekly Report Card is a thin wrapper over the shared engine (no drift)", () => {
   const { ctx } = bootApp();
   seed(ctx);

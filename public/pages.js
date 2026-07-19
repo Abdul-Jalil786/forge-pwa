@@ -2432,10 +2432,14 @@ function renderSupplementsCoach(){
   const last7=[];
   for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);last7.push(_ukDate(d));}
   const dayLabels=last7.map(d=>{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-GB',{weekday:'narrow'});});
+  const today=todayStr();
   const heatmap=supps.map(s=>{
     const cells=last7.map(d=>{
-      const dayLog=log[d]||{};
-      return dayLog[s.id]===true?'taken':'missed';
+      if(typeof isSupplementDue==='function'&&!isSupplementDue(s,d))return 'na'; // not due that day
+      const taken=(log[d]||{})[s.id]===true;
+      if(taken)return 'taken';
+      if(d===today)return 'pending';   // today, not yet ticked — neutral, not a miss
+      return 'missed';
     });
     return {name:s.name,cells};
   });
@@ -2448,7 +2452,13 @@ function renderSupplementsCoach(){
         <div></div>${dayLabels.map(d=>`<div style="text-align:center;font-size:9px;color:var(--text3);font-weight:700;">${d}</div>`).join('')}
         ${heatmap.map(row=>`
           <div style="font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${row.name}</div>
-          ${row.cells.map(c=>`<div style="width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;background:${c==='taken'?'var(--lime)':'var(--s2)'};color:${c==='taken'?'var(--bg)':'var(--text3)'};">${c==='taken'?'&#10003;':'·'}</div>`).join('')}
+          ${row.cells.map(c=>{
+            const st=c==='taken'?{bg:'var(--lime)',fg:'var(--bg)',ch:'&#10003;'}
+              :c==='pending'?{bg:'transparent',fg:'var(--text3)',ch:'○',bd:'1px dashed var(--border2)'}
+              :c==='na'?{bg:'transparent',fg:'var(--text3)',ch:'–',op:'.35'}
+              :{bg:'rgba(255,59,59,.12)',fg:'var(--red)',ch:'·'}; // missed
+            return `<div title="${c}" style="width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;background:${st.bg};color:${st.fg};${st.bd?`border:${st.bd};`:''}${st.op?`opacity:${st.op};`:''}">${st.ch}</div>`;
+          }).join('')}
         `).join('')}
       </div>
     </div>
