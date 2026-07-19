@@ -198,6 +198,30 @@ test("5-day post-deload: progression references the last NON-deload weight, not 
   assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
 });
 
+test("5-day switch-day (Sun 19 Jul): rest + no make-up of the pre-switch programme", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20'; STATE.exLog={};`, ctx);
+  // Sun 19 Jul: old 4-day cycle would show Upper; new programme → rest (gated).
+  assert.equal(vm.runInContext("getSessionTypeForDate('2026-07-19')", ctx), null, "switch-day = rest");
+  // Yesterday (Sat 18) is also pre-start → gated null → getMissedSession offers nothing.
+  assert.equal(vm.runInContext("getMissedSession('2026-07-19')", ctx), null, "no make-up on the switch day");
+  // From Mon 20 Jul the split runs.
+  assert.equal(vm.runInContext("getSessionTypeForDate('2026-07-20')", ctx), "upperA", "Mon = UPPER_A");
+  assert.equal(vm.runInContext("getSessionTypeForDate('2026-07-25')", ctx), "zone2", "Sat = ZONE2");
+});
+
+test("migration seedFiveDaySplitV1 switches BOTH users with correct rehab flags", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "server", "index.ts"), "utf8");
+  assert.ok(src.includes("async function seedFiveDaySplitV1"), "migration missing");
+  assert.ok(src.includes("await seedFiveDaySplitV1()"), "migration not wired into the chain");
+  assert.ok(/jay@afjltd\.co\.uk[\s\S]*showRehab: true/.test(src), "Jay: rehab on");
+  assert.ok(/mohammed\.naveed@birmingham\.gov\.uk[\s\S]*showRehab: false/.test(src), "Naveed: rehab off");
+  assert.ok(src.includes('programmeStartDate = "2026-07-20"'), "programmeStartDate = Mon 20 Jul");
+  assert.ok(src.includes('programId = "upper-lower-5d-fixed"'), "programId set");
+  assert.ok(src.includes("fiveDaySplitV1"), "one-shot guard");
+});
+
 test("rehab exercises are per-user: shown by default, hidden when profile.showRehab===false", () => {
   const { ctx } = bootApp();
   seed(ctx);

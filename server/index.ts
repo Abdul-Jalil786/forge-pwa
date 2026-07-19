@@ -1409,6 +1409,39 @@ async function seedAbdulBoditraxV1() {
   }
 }
 
+// Phase 60: switch Jay + Naveed to the fixed 5-day split. Per user, guarded by
+// state.fiveDaySplitV1 (one-shot). Sets programId + programmeStartDate (Mon 20
+// Jul 2026 — today, Sun 19 Jul, is simply a rest day; the programmeStartDate gate
+// means no pre-switch day is retro-scheduled or offered as a make-up) + the new
+// per-day session times. Rehab (Jay's physio) is ON for Jay, OFF for Naveed.
+// trainingStartDate is left untouched so logged history + anchors are preserved.
+async function seedFiveDaySplitV1() {
+  const targets = [
+    { email: "jay@afjltd.co.uk", showRehab: true },
+    { email: "mohammed.naveed@birmingham.gov.uk", showRehab: false },
+  ];
+  // Mon/Tue/Thu/Fri 16:00 · Sat 14:30 · Wed/Sun rest (keys "0".."6", 0=Sun).
+  const sessionTimes = { "0": null, "1": "16:00", "2": "16:00", "3": null, "4": "16:00", "5": "16:00", "6": "14:30" };
+  for (const t of targets) {
+    try {
+      const user = await prisma.user.findUnique({ where: { email: t.email } });
+      if (!user) { console.log(`[migration] 5-day split: no account for ${t.email} (skipped)`); continue; }
+      const state: any = user.state || {};
+      if (state.fiveDaySplitV1) continue;
+      if (!state.profile) state.profile = {};
+      state.profile.programId = "upper-lower-5d-fixed";
+      state.profile.programmeStartDate = "2026-07-20";
+      state.profile.showRehab = t.showRehab;
+      state.profile.sessionTimes = sessionTimes;
+      state.fiveDaySplitV1 = true;
+      await prisma.user.update({ where: { id: user.id }, data: { state } });
+      console.log(`[migration] 5-day split applied for ${t.email} (rehab ${t.showRehab ? "on" : "off"})`);
+    } catch (err) {
+      console.error(`[migration] seedFiveDaySplitV1 failed for ${t.email}:`, err);
+    }
+  }
+}
+
 // Phase 41n: swap breakfast eggs from "4 whole boiled" to "3 whole boiled +
 // 4 egg whites" (what Jay actually eats). Adds 9g protein, saves 5g fat,
 // virtually the same calories. Meal totals updated to reflect the swap.
@@ -1659,6 +1692,7 @@ const server = app.listen(PORT, async () => {
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();
   await seedAbdulBoditraxV1();
+  await seedFiveDaySplitV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
   // ~a week has elapsed with no report, never a spurious mid-week one.
