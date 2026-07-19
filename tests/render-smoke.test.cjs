@@ -198,6 +198,33 @@ test("5-day post-deload: progression references the last NON-deload weight, not 
   assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
 });
 
+test("skincare: 3-step tretinoin frequency ladder (retinol journey retired)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`
+    STATE.skinCare={products:[{id:'skn-retinol',name:'Tretinoin 0.025%',type:'retinol',concentration:'0.025%',slot:'pm',frequency:'every-2-days',frequencyStartedAt:'2026-06-01'}],phase:1,phaseStartDate:'2026-06-01'};
+    STATE.skinCareLog={};
+  `, ctx);
+  assert.equal(vm.runInContext("SKIN_PHASES.length", ctx), 3, "3-step ladder");
+  assert.equal(vm.runInContext("JSON.stringify(SKIN_PHASES.map(p=>p.freq))", ctx), JSON.stringify(["every-2-days", "5x-week", "daily"]));
+  const r = vm.runInContext("getSkinPhaseReadiness()", ctx);
+  assert.equal(r.phaseNum, 1);
+  assert.equal(r.nextFrequency, "5x-week", "next step = 5 nights/week");
+  const html = vm.runInContext("renderRetinolJourney()", ctx);
+  assert.ok(/Tretinoin 0\.025%/.test(html), "card titled with the product");
+  assert.ok(/Step 1 — Every other night · current/.test(html), "current step framed as frequency");
+  assert.ok(!/Phase 6|Discuss with coach|graduate/i.test(html), "no retinol-graduation framing");
+});
+
+test("skincare readiness needs 4 weeks/step (tretinoin is stronger than retinol)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.skinCare={products:[{id:'r',type:'retinol',frequency:'every-2-days',frequencyStartedAt:'2026-07-05'}],phase:1,phaseStartDate:'2026-07-05'};STATE.skinCareLog={};`, ctx);
+  const r = vm.runInContext("getSkinPhaseReadiness()", ctx);
+  assert.equal(r.ready, false, "2 weeks in → not ready");
+  assert.ok(/4 weeks/.test(r.reason), "cites the 4-week minimum");
+});
+
 test("supplements grid: weekly Mounjaro due only on injection day; today pending not missed", () => {
   const { ctx } = bootApp();
   seed(ctx);
