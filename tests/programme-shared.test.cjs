@@ -166,3 +166,21 @@ test("upper-lower-5d-fixed repeats weekly after the start", () => {
   assert.equal(shared.sessionTypeForDate("upper-lower-5d-fixed", "2026-07-27", START), "upperA", "next Mon");
   assert.equal(shared.sessionTypeForDate("upper-lower-5d-fixed", "2026-08-01", START), "zone2", "a later Sat");
 });
+
+// --- Phase 60: scheduled deload maths (every 5th week, per-user anchor) ---
+test("deloadWeekInfo: week index 4 (the 5th week) is the deload, cycling every 5", () => {
+  const S = "2026-07-20"; // programmeStartDate (Monday)
+  assert.deepEqual(shared.deloadWeekInfo(S, "2026-07-20"), { weekInCycle: 0, isDeload: false }, "wk1 start");
+  assert.equal(shared.deloadWeekInfo(S, "2026-08-16").weekInCycle, 3, "wk4 (Aug 10-16) = index 3");
+  assert.equal(shared.deloadWeekInfo(S, "2026-08-16").isDeload, false);
+  // Week of 17-23 Aug = index 4 = deload (the verify target)
+  assert.deepEqual(shared.deloadWeekInfo(S, "2026-08-17"), { weekInCycle: 4, isDeload: true }, "deload week start");
+  assert.deepEqual(shared.deloadWeekInfo(S, "2026-08-23"), { weekInCycle: 4, isDeload: true }, "deload week end");
+  assert.deepEqual(shared.deloadWeekInfo(S, "2026-08-24"), { weekInCycle: 0, isDeload: false }, "cycle resets after deload");
+});
+
+test("deloadWeekInfo: null before the anchor or with no anchor", () => {
+  assert.equal(shared.deloadWeekInfo("2026-07-20", "2026-07-19"), null, "before start");
+  assert.equal(shared.deloadWeekInfo(null, "2026-08-17"), null, "no anchor");
+  assert.equal(shared.deloadWeekInfo("2026-07-20", null), null, "no date");
+});

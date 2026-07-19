@@ -156,8 +156,24 @@ function sessionTypeForDate(programId, dateStr, startDate) {
   }
 }
 
+// Scheduled deload: every 5th week of the programme cycle, anchored to the
+// user's own programmeStartDate. weekInCycle = floor(daysSince(start)/7) % 5;
+// week index 4 (the 5th week) is the deload. Returns { weekInCycle, isDeload },
+// or null when there is no start date or the date precedes it. Pure — the anchor
+// is passed in, never read from a global, so client + server + tests agree.
+function deloadWeekInfo(programmeStartDate, dateStr) {
+  if (!programmeStartDate || !dateStr || dateStr < programmeStartDate) return null;
+  var start = new Date(programmeStartDate + 'T12:00:00');
+  var target = new Date(dateStr + 'T12:00:00');
+  var days = Math.floor((target - start) / 86400000);
+  if (days < 0) return null;
+  var weekInCycle = ((Math.floor(days / 7) % 5) + 5) % 5;
+  return { weekInCycle: weekInCycle, isDeload: weekInCycle === 4 };
+}
+
 var FORGE_PROGRAMME = {
   EXERCISE_NAMES: EXERCISE_NAMES,
+  deloadWeekInfo: deloadWeekInfo,
   LEGACY_EXERCISE_NAMES: LEGACY_EXERCISE_NAMES,
   EXERCISE_REPS: EXERCISE_REPS,
   exerciseName: exerciseName,

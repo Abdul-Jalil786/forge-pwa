@@ -682,6 +682,30 @@ function _roundToPlate(kg){
   return Math.round(kg * 4) / 4;
 }
 
+// Phase 60: scheduled deload (upper-lower-5d-fixed only) — every 5th week,
+// anchored to the user's own programmeStartDate. Reads STATE for the active
+// programme; returns {weekInCycle,isDeload} or null (so it's a total no-op for
+// every other programme). Pure maths live in programme-shared.deloadWeekInfo.
+function _scheduledDeload(dateStr){
+  if(typeof STATE==='undefined'||!STATE.profile)return null;
+  if(STATE.profile.programId!=='upper-lower-5d-fixed')return null;
+  if(typeof FORGE_PROGRAMME==='undefined'||!FORGE_PROGRAMME.deloadWeekInfo)return null;
+  return FORGE_PROGRAMME.deloadWeekInfo(STATE.profile.programmeStartDate,dateStr);
+}
+function _isDeloadDate(dateStr){ const d=_scheduledDeload(dateStr); return !!(d&&d.isDeload); }
+function isDeloadWeekToday(){ return _isDeloadDate(typeof todayStr==='function'?todayStr():null); }
+// Rehab + cardio are exempt from load progression AND scheduled deload.
+function _isRehabOrCardio(exObj){ return !!(exObj&&(exObj.category==='rehab'||exObj.cardio||exObj.size==='cardio')); }
+// Most-frequent (modal) working weight an exercise was logged at in one session.
+function _modalKgOf(session,exId){
+  const sets=((session&&session.log&&session.log[exId]&&session.log[exId].sets)||[]).filter(s=>s.kg&&s.reps);
+  if(!sets.length)return null;
+  const c={}; for(const s of sets){const k=String(parseFloat(s.kg));c[k]=(c[k]||0)+1;}
+  const e=Object.entries(c).map(([k,n])=>({kg:parseFloat(k),count:n}));
+  e.sort((a,b)=>b.count-a.count||b.kg-a.kg);
+  return e[0].kg;
+}
+
 // Phase 47: set-to-set autoregulation. Pure arithmetic — NO AI (you can't wait
 // for a network call mid-rest, and it's an exact rule, not a judgement). Reads
 // the set you JUST did (reps + effort) vs the rep range and tells you what to
@@ -873,7 +897,10 @@ function suggestWeight(exId, prevSession, setIdx, opts){
 }
 
 function _suggestWeightCore(exId, prevSession, setIdx, opts){
-  const exObj=getAllExercises().find(e=>e.id===exId);
+  // Phase 60: prefer the CURRENT session's template exercise (opts.exObj) so the
+  // rep range / size / increments come from the programme being trained today —
+  // the same id (e.g. Shoulder Press) has different ranges across templates.
+  const exObj=((opts&&opts.exObj&&opts.exObj.id===exId)?opts.exObj:null)||getAllExercises().find(e=>e.id===exId);
   if(!exObj)return null;
   const timed=isTimeBased(exObj);
 
@@ -887,6 +914,32 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
   const _hasEx=(s)=>s&&s.log&&s.log[exId]&&(s.log[exId].sets||[]).some(x=>x.kg&&x.reps);
   if(!_hasEx(prevSession)&&opts&&Array.isArray(opts.prevSessions)){
     prevSession=opts.prevSessions.find(_hasEx)||prevSession;
+  }
+
+  // Phase 60: scheduled-deload overlay (5-day split). HIGHEST precedence —
+  // overrides double-progression AND reactive stall-deload. Deload-week sessions
+  // are excluded from the progression reference, so the week AFTER a deload
+  // builds off the last real (non-deload) working weight, not the 60% load.
+  const _forDate=(opts&&opts.forDate)||(typeof todayStr==='function'?todayStr():null);
+  const _dlToday=_forDate?_scheduledDeload(_forDate):null;
+  const _fiveDay=!!(typeof STATE!=='undefined'&&STATE.profile&&STATE.profile.programId==='upper-lower-5d-fixed');
+  const _cands=[]; if(prevSession&&prevSession.date)_cands.push(prevSession);
+  if(opts&&Array.isArray(opts.prevSessions))for(const s of opts.prevSessions){ if(s&&s.date&&!_cands.some(c=>c.date===s.date))_cands.push(s); }
+  const _nonDeload=_fiveDay?_cands.filter(s=>!_isDeloadDate(s.date)):_cands;
+  if(_dlToday&&_dlToday.isDeload&&!_isRehabOrCardio(exObj)){
+    const _base=_nonDeload.find(s=>_modalKgOf(s,exId)!=null)||_cands.find(s=>_modalKgOf(s,exId)!=null);
+    const _baseKg=_base?_modalKgOf(_base,exId):null;
+    if(_baseKg!=null){
+      const _rm=String(exObj.reps).match(/(\d+)/);
+      const _lo=_rm?parseInt(_rm[1]):8;
+      const _dk=_roundToPlate(_baseKg*0.60);
+      return { kg:_dk, reps:_lo, dir:'down', deload:true, scheduledDeload:true, setsOverride:2,
+        reason:`Deload week — 60% of ${_baseKg}kg, 2 light sets. Move well, leave reps in the tank.` };
+    }
+  }
+  // Not a deload week today: never reference a deload (60%) session for progression.
+  if(_fiveDay&&(!_dlToday||!_dlToday.isDeload)&&prevSession&&prevSession.date&&_isDeloadDate(prevSession.date)&&_nonDeload.length){
+    prevSession=_nonDeload[0];
   }
 
   if(!prevSession||!prevSession.log[exId])return null;
@@ -926,9 +979,10 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
     return { kg:lastKg, reps:lastReps, reason:`Hold — low recovery (${opts.recoveryReason}). Focus on form.`, dir:null, recovery:'low' };
   }
 
-  // Check 2: stall detection (needs multi-session data)
+  // Check 2: stall detection (needs multi-session data). On the 5-day split,
+  // deload weeks are excluded so a planned 60% week never counts as a "stall".
   if(opts?.prevSessions){
-    const stall = detectStall(exId, exObj, opts.prevSessions);
+    const stall = detectStall(exId, exObj, _fiveDay?(_nonDeload.length?_nonDeload:opts.prevSessions):opts.prevSessions);
     if(stall){
       // Phase 44: holdKg exposes the stalled weight so the UI can offer
       // "hold instead" — the deload math itself is unchanged.
@@ -971,6 +1025,20 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
 }
 
 function suggestTime(exId,exObj,prevSession,setIdx,opts){
+  // Phase 60: Zone 2 cardio works in MINUTES — nudge toward the target, hard-cap
+  // at capMin, never a weight progression. Duration still stored in `seconds` so
+  // it reuses the timed set infra; `minutes` + cardio flag drive the display.
+  if(exObj&&exObj.cardio){
+    const cm=String(exObj.reps).match(/(\d+)[–-](\d+)/);
+    const loMin=cm?parseInt(cm[1]):40, hiMin=cm?parseInt(cm[2]):45;
+    const cap=exObj.capMin||hiMin;
+    const cs=((prevSession&&prevSession.log[exId]&&prevSession.log[exId].sets)||[]).filter(s=>s.seconds||s.minutes);
+    if(!cs.length)return{seconds:loMin*60,minutes:loMin,reason:`Walk ${loMin}–${hiMin} min at an easy, conversational (Zone 2) pace`,dir:null,timed:true,cardio:true};
+    const lastMin=cs[0].minutes?parseInt(cs[0].minutes):Math.round(parseInt(cs[0].seconds)/60);
+    if(lastMin>=cap)return{seconds:cap*60,minutes:cap,reason:`Hold ${cap} min — at your Zone 2 target`,dir:null,timed:true,cardio:true};
+    const nextMin=Math.min(cap,lastMin+5);
+    return{seconds:nextMin*60,minutes:nextMin,reason:`Aim ${nextMin} min (build to ${cap})`,dir:'up',timed:true,cardio:true};
+  }
   // Parse prescribed range from reps string like "30–45s"
   const rm=String(exObj.reps).match(/(\d+)[–-](\d+)/);
   const lower=rm?parseInt(rm[1]):30;
@@ -1027,7 +1095,7 @@ function renderWmOutline(){
 
   // Phase 33: build prescriptions array for AI brief
   const prescriptions = w.exercises.map(ex => {
-    const sug = suggestWeight(ex.id, prev, undefined, opts);
+    const sug = suggestWeight(ex.id, prev, undefined, {...opts, exObj:ex});
     return {
       exId: ex.id,
       name: ex.name,
@@ -1063,7 +1131,7 @@ function renderWmOutline(){
     <div class="wm-h">Today's Plan</div>
     <div style="margin-bottom:24px;" id="wm-exercise-list">
       ${w.exercises.map((ex,i)=>{
-        const sug=suggestWeight(ex.id,prev,undefined,opts);
+        const sug=suggestWeight(ex.id,prev,undefined,{...opts, exObj:ex});
         const timed=isTimeBased(ex);
         const arrow=sug?.dir==='up'?'<span class="wm-arrow-up">↑</span>':sug?.dir==='down'?'<span class="wm-arrow-down">↓</span>':'';
         const wt=sug?(timed?`@ ${fmtSec(sug.seconds)} ${arrow}`:`@ ${sug.kg}kg ${arrow}`):(timed?'':'<span style="font-size:9px;color:var(--blue);font-weight:700;letter-spacing:1px;">FIND WEIGHT</span>');
@@ -1171,7 +1239,7 @@ function renderWmSet(){
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
   const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
-  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
+  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions,exObj:ex});
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const startKg=existingSet?.kg||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx)?wm.autoReg.kg:null)||sug?.kg||'';
   const repMatch=String(ex.reps).match(/(\d+)[–-](\d+)/);
@@ -1253,7 +1321,7 @@ function renderWmSetTimed(){
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
   const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
-  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
+  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions,exObj:ex});
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const alreadyDone=existingSet?.done&&existingSet?.seconds;
 
@@ -1735,7 +1803,7 @@ function renderWmTransition(){
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
   const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
-  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
+  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions,exObj:ex});
   const timed=isTimeBased(ex);
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const startKg=existingSet?.kg||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx)?wm.autoReg.kg:null)||sug?.kg||'';

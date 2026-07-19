@@ -145,6 +145,59 @@ test("Coach Settings save/remove handlers are all defined", () => {
   }
 });
 
+test("5-day progression uses the CURRENT template's rep range (per-template exObj)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';`, ctx);
+  // Shoulder Press (u4) is 6–8 in the old 'upper' template but 10–12 in upperA.
+  // Last session: 40kg × 9 reps, solid. Under 10–12 that's below top → HOLD/climb
+  // reps; under 6–8 (the global-dedupe default) 9≥8 → it would add weight.
+  const prev = { date: "2026-07-20", log: { u4: { sets: [{ kg: 40, reps: 9, effort: "solid" }] } } };
+  vm.runInContext(`globalThis._prev = ${JSON.stringify(prev)};`, ctx);
+  const withTemplate = vm.runInContext(
+    `suggestWeight('u4', _prev, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), prevSessions:[_prev], forDate:'2026-07-27' })`, ctx);
+  assert.equal(withTemplate.dir, null, "upperA 10–12: 9 reps is below top → hold + climb reps");
+  const withoutTemplate = vm.runInContext(
+    `suggestWeight('u4', _prev, undefined, { prevSessions:[_prev], forDate:'2026-07-27' })`, ctx);
+  assert.equal(withoutTemplate.dir, "up", "global default 6–8: 9≥8 → adds weight (proves the template range matters)");
+});
+
+test("5-day scheduled deload: 60% of last non-deload weight, 2 sets, flagged", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';`, ctx);
+  // A real working session at 40kg on a NON-deload week (Jul 27).
+  const prev = { date: "2026-07-27", log: { u4: { sets: [{ kg: 40, reps: 11, effort: "solid" }, { kg: 40, reps: 10, effort: "solid" }] } } };
+  vm.runInContext(`globalThis._d = ${JSON.stringify(prev)};`, ctx);
+  // forDate 2026-08-17 = week index 4 = deload.
+  const sug = vm.runInContext(
+    `suggestWeight('u4', _d, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), prevSessions:[_d], forDate:'2026-08-17' })`, ctx);
+  assert.equal(sug.scheduledDeload, true, "flagged as scheduled deload");
+  assert.equal(sug.deload, true);
+  assert.equal(sug.setsOverride, 2, "set count overridden to 2");
+  assert.equal(sug.kg, 24, "60% of 40kg = 24kg");
+  // Rehab is exempt from deload (no scheduledDeload overlay)
+  const rehabPrev = { date: "2026-07-27", log: { reh_1: { sets: [{ kg: 5, reps: 15 }] } } };
+  const rehSug = vm.runInContext(
+    `suggestWeight('reh_1', ${JSON.stringify(rehabPrev)}, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='reh_1'), prevSessions:[${JSON.stringify(rehabPrev)}], forDate:'2026-08-17' })`, ctx);
+  assert.ok(!rehSug || !rehSug.scheduledDeload, "rehab exempt from scheduled deload");
+});
+
+test("5-day post-deload: progression references the last NON-deload weight, not the 60% week", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';`, ctx);
+  // Most recent session was the deload week (24kg on Aug 17); before it, real 40kg.
+  const deload = { date: "2026-08-17", log: { u4: { sets: [{ kg: 24, reps: 10 }, { kg: 24, reps: 10 }] } } };
+  const real = { date: "2026-08-10", log: { u4: { sets: [{ kg: 40, reps: 12, effort: "solid" }, { kg: 40, reps: 12, effort: "solid" }] } } };
+  // forDate Aug 24 = week 0 (normal). Reference must be the 40kg session, so a
+  // top-of-range (12) solid week progresses UP from 40, not from 24.
+  const sug = vm.runInContext(
+    `suggestWeight('u4', ${JSON.stringify(deload)}, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), prevSessions:[${JSON.stringify(deload)}, ${JSON.stringify(real)}], forDate:'2026-08-24' })`, ctx);
+  assert.equal(sug.dir, "up", "progresses up off the real week");
+  assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
+});
+
 test("Mounjaro injection-day gate follows profile.glp1InjectionDow (not hardcoded Wed)", () => {
   const { ctx } = bootApp();
   seed(ctx);
