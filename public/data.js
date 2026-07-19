@@ -73,6 +73,71 @@ const WORKOUTS = {
       {id:'u9',name:'Plank',sets:2,reps:'30–45s',rest:45,muscle:'Core',metric:'time',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
       {id:'core_dead_bug',name:'Dead Bug',sets:2,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
     ]
+  },
+  // Phase 60: fixed 5-day split (upper-lower-5d-fixed). Reuses existing exercise
+  // IDs so logged history carries across from the old 4-day programme. New IDs:
+  // cardio_z2 (Zone 2 walk, timed) and reh_1/2/3 (shoulder rehab, category:'rehab').
+  upperA: {
+    name:'UPPER A', type:'upperA',
+    muscles:'Shoulders · Chest · Back · Lats',
+    duration:'50–60',
+    exercises:[
+      {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'u1',name:'Chest Press',sets:3,reps:'8–10',rest:90,muscle:'Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=chest+press+form'},
+      {id:'u3',name:'Seated Row',sets:3,reps:'8–10',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
+      {id:'u5',name:'Lat Pulldown',sets:3,reps:'10–12',rest:90,muscle:'Lats',size:'medium',yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
+      {id:'h5',name:'Lateral Raise',sets:2,reps:'12–15',rest:60,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
+      {id:'reh_1',name:'Rehab 1',sets:2,reps:'12–15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=shoulder+rehab+exercise'},
+      {id:'reh_2',name:'Rehab 2',sets:2,reps:'12–15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=shoulder+rehab+exercise'},
+      {id:'reh_3',name:'Rehab 3',sets:2,reps:'12–15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=shoulder+rehab+exercise'},
+    ]
+  },
+  lowerA: {
+    name:'LOWER A', type:'lowerA',
+    muscles:'Quads · Hamstrings · Calves · Core',
+    duration:'50–60',
+    exercises:[
+      {id:'h1',name:'Goblet Squat',sets:3,reps:'10–12',rest:90,muscle:'Quads',size:'medium',yt:'https://www.youtube.com/results?search_query=goblet+squat+form'},
+      {id:'l1',name:'Leg Press',sets:4,reps:'8–10',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
+      {id:'l2',name:'Romanian Deadlift',sets:3,reps:'8',rest:120,muscle:'Hamstrings',size:'large',yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
+      {id:'l6',name:'Calf Raise',sets:3,reps:'12–15',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
+      {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
+    ]
+  },
+  upperB: {
+    name:'UPPER B', type:'upperB',
+    muscles:'Chest · Back · Shoulders · Arms · Core',
+    duration:'50–60',
+    exercises:[
+      {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Upper Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
+      {id:'h3',name:'One-Arm Dumbbell Row',sets:3,reps:'10 each side',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=one+arm+dumbbell+row+form'},
+      {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'u8',name:'Face Pull',sets:3,reps:'15',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
+      {id:'u6',name:'Bicep Curl',sets:2,reps:'12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
+      {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
+      {id:'reh_1',name:'Rehab 1',sets:2,reps:'12–15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=shoulder+rehab+exercise'},
+      {id:'reh_2',name:'Rehab 2',sets:2,reps:'12–15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=shoulder+rehab+exercise'},
+      {id:'reh_3',name:'Rehab 3',sets:2,reps:'12–15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=shoulder+rehab+exercise'},
+    ]
+  },
+  lowerB: {
+    name:'LOWER B', type:'lowerB',
+    muscles:'Glutes · Quads · Hamstrings · Core',
+    duration:'50–60',
+    exercises:[
+      {id:'l5',name:'Hip Thrust',sets:4,reps:'8–10',rest:90,muscle:'Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
+      {id:'l1',name:'Leg Press',sets:3,reps:'10–12',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
+      {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
+      {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'40s/side',metric:'carry',targetSeconds:40,rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
+    ]
+  },
+  zone2: {
+    name:'ZONE 2 CARDIO', type:'zone2',
+    muscles:'Aerobic base · Recovery',
+    duration:'40–45',
+    exercises:[
+      {id:'cardio_z2',name:'Zone 2 Walk',sets:1,reps:'40–45 min',rest:0,muscle:'Cardio',size:'cardio',metric:'time',cardio:true,unit:'min',capMin:45,yt:'https://www.youtube.com/results?search_query=zone+2+cardio+walking'},
+    ]
   }
 };
 
@@ -111,6 +176,16 @@ const PROGRAMS = {
     desc:'Alternating Upper / Rest / Lower / Rest cycle',
     getSessionType(dateStr){
       return FORGE_PROGRAMME.sessionTypeForDate('upper-lower-4d', dateStr, STATE.trainingStartDate);
+    },
+  },
+  // Phase 60: fixed-weekday 5-day split. Anchored to profile.programmeStartDate
+  // (NOT trainingStartDate) so it can start on a specific Monday without touching
+  // the historical training anchor; dates before programmeStartDate are unscheduled.
+  'upper-lower-5d-fixed': {
+    id:'upper-lower-5d-fixed', name:'Upper / Lower 5-Day (fixed)',
+    desc:'Mon Upper A · Tue Lower A · Wed rest · Thu Upper B · Fri Lower B · Sat Zone 2 · Sun rest',
+    getSessionType(dateStr){
+      return FORGE_PROGRAMME.sessionTypeForDate('upper-lower-5d-fixed', dateStr, (STATE.profile&&STATE.profile.programmeStartDate)||STATE.trainingStartDate);
     },
   },
   'full-body-3d': {

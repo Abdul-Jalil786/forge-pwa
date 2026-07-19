@@ -133,3 +133,36 @@ test("PROGRAMME_LABELS names match data.js PROGRAMS names", () => {
     assert.equal(shared.PROGRAMME_LABELS[id] && shared.PROGRAMME_LABELS[id].name, name, `programme name drift for ${id}`);
   }
 });
+
+// --- Phase 60: fixed 5-day split (upper-lower-5d-fixed) ---
+test("upper-lower-5d-fixed maps fixed weekdays Mon..Sun", () => {
+  const START = "2026-07-20"; // Monday
+  const expect = {
+    "2026-07-20": "upperA", // Mon
+    "2026-07-21": "lowerA", // Tue
+    "2026-07-22": null,     // Wed rest
+    "2026-07-23": "upperB", // Thu
+    "2026-07-24": "lowerB", // Fri
+    "2026-07-25": "zone2",  // Sat
+    "2026-07-26": null,     // Sun rest
+  };
+  for (const [date, sess] of Object.entries(expect)) {
+    assert.equal(shared.sessionTypeForDate("upper-lower-5d-fixed", date, START), sess, `5d @ ${date}`);
+  }
+});
+
+test("upper-lower-5d-fixed is unscheduled before programmeStartDate (no retro sessions/make-ups)", () => {
+  const START = "2026-07-20";
+  // Sun 19 Jul (switch day) and every earlier weekday must be rest, even Mon-Sat
+  assert.equal(shared.sessionTypeForDate("upper-lower-5d-fixed", "2026-07-19", START), null, "switch-day Sunday = rest");
+  assert.equal(shared.sessionTypeForDate("upper-lower-5d-fixed", "2026-07-16", START), null, "prior Thursday not retro-scheduled");
+  assert.equal(shared.sessionTypeForDate("upper-lower-5d-fixed", "2026-07-13", START), null, "prior Monday not retro-scheduled");
+  // On/after the start weekdays schedule normally
+  assert.equal(shared.sessionTypeForDate("upper-lower-5d-fixed", "2026-07-20", START), "upperA");
+});
+
+test("upper-lower-5d-fixed repeats weekly after the start", () => {
+  const START = "2026-07-20";
+  assert.equal(shared.sessionTypeForDate("upper-lower-5d-fixed", "2026-07-27", START), "upperA", "next Mon");
+  assert.equal(shared.sessionTypeForDate("upper-lower-5d-fixed", "2026-08-01", START), "zone2", "a later Sat");
+});

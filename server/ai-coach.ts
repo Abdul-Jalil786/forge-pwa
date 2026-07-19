@@ -1051,7 +1051,7 @@ export function buildContext(state: any): string {
     // Determine if this date was a training day, honouring the user's programme
     // (delegates to the shared schedule — no hardcoded upper/lower cycle).
     const programId = state.profile?.programId || "upper-lower-4d";
-    const wasTrainingDay = sessionTypeForDate(programId, d, state.trainingStartDate) !== null;
+    const wasTrainingDay = sessionTypeForDate(programId, d, state.profile?.programmeStartDate || state.trainingStartDate) !== null;
     if (wasTrainingDay) nonRestCount++; else restDayCount++;
   }
   if (cardioSessions7 > 0 || cardioLog && Object.keys(cardioLog).length > 0) {

@@ -140,7 +140,7 @@ export async function runDailyScanner(): Promise<{ scanned: number; fired: numbe
       if (state.profile?.coachProactive === false) continue; // kill switch
       const programId = state.profile?.programId || "upper-lower-4d";
       const scheduledDays: string[] = [];
-      for (let i = 1; i <= 10; i++) { const d = _addDaysUK(today, -i); if (shared.sessionTypeForDate(programId, d, state.trainingStartDate)) scheduledDays.push(d); }
+      for (let i = 1; i <= 10; i++) { const d = _addDaysUK(today, -i); if (shared.sessionTypeForDate(programId, d, state.profile?.programmeStartDate || state.trainingStartDate)) scheduledDays.push(d); }
       const fired = core.computeTriggers(state, {
         today, exerciseReps: shared.EXERCISE_REPS,
         proteinFloor: state.profile?.coachTargets?.proteinFloorDaily,
