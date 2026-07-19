@@ -406,6 +406,133 @@ function isFirstSundayOfMonth(dateStr) {
   return dt.getDay() === 0 && dt.getDate() <= 7;
 }
 
+// ============================================================
+// Phase 61: Weekly Report Card — SINGLE SOURCE for the metrics
+// ============================================================
+// Pure functions consumed by the Coach-page card (public/data.js), the AI coach
+// context (server/ai-coach.ts) and the tests. Nothing here reads a global or the
+// clock — the window ("today") + targets + scheduled sessions are passed in, so
+// the card can never drift from what the coach reports. NO parallel maths.
+
+// Grade bands (letter from a 0-100 score). One block — no inline magic numbers.
+var GRADE_THRESHOLDS = { A: 90, B: 75, C: 60, D: 45 }; // below D = F
+// Weekly-score weights — cut priorities: protein + training lead, then steps/sleep.
+var SCORE_WEIGHTS = { protein: 0.30, training: 0.30, steps: 0.20, sleep: 0.20 };
+// Sleep grade = 60% duration + 40% timing (when bedtime is known).
+var SLEEP_MIX = { duration: 0.60, timing: 0.40 };
+var STEPS_DEFAULT_TARGET = 10000; // seed default for coachTargets.stepsDaily only
+
+function scoreToGrade(score) {
+  if (score == null) return "—";
+  if (score >= GRADE_THRESHOLDS.A) return "A";
+  if (score >= GRADE_THRESHOLDS.B) return "B";
+  if (score >= GRADE_THRESHOLDS.C) return "C";
+  if (score >= GRADE_THRESHOLDS.D) return "D";
+  return "F";
+}
+function _last7(today) { var a = []; for (var i = 6; i >= 0; i--) a.push(_addDays(today, -i)); return a; }
+function _sum(a) { return a.reduce(function (s, x) { return s + x; }, 0); }
+// Normalise a bedtime hour to a monotonic "night" scale so averaging across
+// midnight works: small hours (0-11 = after midnight) shift +24. 11pm=23,
+// midnight=24, 1am=25, 3am=27.
+function _bedtimeNb(bedtime) { var b = _num(bedtime); if (b == null) return null; return b < 12 ? b + 24 : b; }
+// Timing credit from an average night-scale bedtime: before midnight = full,
+// 00:00-01:00 = partial, after 01:00 = none.
+function _timingScore(avgNb) { if (avgNb == null) return null; if (avgNb < 24) return 100; if (avgNb <= 25) return 50; return 0; }
+function _clock(h) { // decimal hour (0-24) -> "1:40am"
+  var hh = Math.floor(h), mm = Math.round((h - hh) * 60); if (mm === 60) { hh++; mm = 0; }
+  hh = ((hh % 24) + 24) % 24; var ap = hh >= 12 ? "pm" : "am"; var h12 = hh % 12; if (h12 === 0) h12 = 12;
+  return h12 + ":" + String(mm).padStart(2, "0") + ap;
+}
+function _wmean(pairs) { // [[score,weight],...], skips null scores, renormalises
+  var sw = 0, ssw = 0; pairs.forEach(function (p) { if (p[0] != null) { ssw += p[0] * p[1]; sw += p[1]; } });
+  return sw > 0 ? Math.round(ssw / sw) : null;
+}
+
+// STEPS — hit vs coachTargets.stepsDaily; a day with no data = 0 = honest miss.
+function stepsMetric(state, opts) {
+  var days = opts.days || _last7(opts.today), target = _num(opts.stepsTarget), steps = state.stepsLog || {};
+  var hit = 0, logged = 0;
+  days.forEach(function (d) { var v = _num(steps[d]); if (v != null) logged++; if (target && (v || 0) >= target) hit++; });
+  var hasTarget = target != null;
+  return { hit: hit, total: days.length, logged: logged, target: target, hasTarget: hasTarget, score: hasTarget ? Math.round(hit / days.length * 100) : null };
+}
+// PROTEIN — hit vs coachTargets.proteinFloorDaily (SAME value the scanner uses).
+// No ×0.9 fudge. No target set -> score null (card shows "no target set").
+function proteinMetric(state, opts) {
+  var days = opts.days || _last7(opts.today), floor = _num(opts.proteinFloor), intake = dailyIntake(state);
+  var hit = 0, logged = 0;
+  days.forEach(function (d) { var e = intake[d]; if (e && e.kcal > 0) logged++; if (floor && e && e.protein >= floor) hit++; });
+  var hasTarget = floor != null;
+  return { hit: hit, total: days.length, logged: logged, floor: floor, hasTarget: hasTarget, score: hasTarget ? Math.round(hit / days.length * 100) : null };
+}
+// SLEEP — 60% duration + 40% timing. Timing needs bedtime; when absent, the score
+// is duration-only (graceful) and hasTiming=false so the card can say so.
+function sleepMetric(state, opts) {
+  var days = opts.days || _last7(opts.today), hrs = [], nbs = [];
+  days.forEach(function (d) {
+    var s = sleepEntry(state, d);
+    if (s && s.hours != null) { hrs.push(s.hours); var nb = _bedtimeNb(s.bedtime); if (nb != null) nbs.push(nb); }
+  });
+  var avgH = hrs.length ? _round(_sum(hrs) / hrs.length, 1) : null;
+  var avgNb = nbs.length ? _round(_sum(nbs) / nbs.length, 2) : null;
+  var durScore = avgH == null ? null : (avgH >= 7 ? 100 : avgH >= 6 ? 70 : 40);
+  var timeScore = _timingScore(avgNb), hasTiming = timeScore != null;
+  var score = durScore == null ? null : (!hasTiming ? durScore : Math.round(durScore * SLEEP_MIX.duration + timeScore * SLEEP_MIX.timing));
+  return { avgHours: avgH, avgBedtimeNb: avgNb, avgBedtimeClock: avgNb == null ? null : _clock(avgNb % 24), nightsLogged: hrs.length, total: days.length, durationScore: durScore, timingScore: timeScore, hasTiming: hasTiming, score: score };
+}
+// WEIGHT — 7-day least-squares slope (kg/week) over the raw weightLog window (the
+// same series the Track page uses); NOT a single last-minus-first reading.
+function weightMetric(state, opts) {
+  var days = opts.days || _last7(opts.today), from = days[0], to = days[days.length - 1];
+  var wl = (state.weightLog || []).filter(function (e) { return e.date >= from && e.date <= to; });
+  var pts = wl.map(function (e) { return [_dayIdx(e.date, from), _num(e.weight)]; }).filter(function (p) { return p[1] != null; });
+  if (pts.length < 2) return { perWeek: null, n: pts.length, hasTrend: false };
+  var s = slope(pts);
+  return { perWeek: s == null ? null : _round(s * 7, 2), n: pts.length, hasTrend: s != null };
+}
+// TRAINING — schedule-aware. opts.scheduled = [{date,type,exerciseIds:[...]}] for
+// scheduled sessions in the window (rehab-filtered by the caller). A session is
+// complete when >=60% of its template exercises are done — that day OR via a
+// make-up (exLog[x]._session.forDate === scheduled date). Deload weeks keep the
+// same exercises (fewer sets), so completion is unaffected.
+function trainingMetric(state, opts) {
+  var exLog = state.exLog || {}, madeUp = {};
+  for (var k in exLog) { var se = exLog[k] && exLog[k]._session; if (se && se.forDate) madeUp[se.forDate] = k; }
+  function comp(dayLog, ids) {
+    if (!dayLog || !ids || !ids.length) return 0;
+    var done = 0; ids.forEach(function (id) { var ex = dayLog[id]; if (ex && ex.done) done++; });
+    return done / ids.length;
+  }
+  var sched = opts.scheduled || [], completed = 0;
+  sched.forEach(function (s) {
+    var ids = s.exerciseIds || [], c = comp(exLog[s.date], ids);
+    if (madeUp[s.date]) c = Math.max(c, comp(exLog[madeUp[s.date]], ids));
+    if (c >= 0.6) completed++;
+  });
+  return { completed: completed, scheduled: sched.length, score: sched.length ? Math.round(completed / sched.length * 100) : null };
+}
+
+// Aggregate — the one function the card + coach call. opts: { today, stepsTarget,
+// proteinFloor, scheduled }.
+function weeklyReport(state, opts) {
+  opts = opts || {};
+  var days = _last7(opts.today);
+  var steps = stepsMetric(state, { days: days, stepsTarget: opts.stepsTarget });
+  var protein = proteinMetric(state, { days: days, proteinFloor: opts.proteinFloor });
+  var training = trainingMetric(state, { scheduled: opts.scheduled });
+  var sleep = sleepMetric(state, { days: days });
+  var weight = weightMetric(state, { days: days });
+  var overall = _wmean([[protein.score, SCORE_WEIGHTS.protein], [training.score, SCORE_WEIGHTS.training], [steps.score, SCORE_WEIGHTS.steps], [sleep.score, SCORE_WEIGHTS.sleep]]);
+  return {
+    window: { from: days[0], to: days[days.length - 1], days: days.length },
+    steps: steps, protein: protein, training: training, sleep: sleep, weight: weight,
+    overall: overall,
+    grades: { steps: scoreToGrade(steps.score), protein: scoreToGrade(protein.score), training: scoreToGrade(training.score), sleep: scoreToGrade(sleep.score) },
+    weights: SCORE_WEIGHTS,
+  };
+}
+
 var PROACTIVE_CORE = {
   MIN_N: MIN_N, MIN_CYCLES: MIN_CYCLES,
   pearson: pearson, slope: slope, dailyIntake: dailyIntake, sessionPerf: sessionPerf, detectStalls: detectStalls,
@@ -413,6 +540,9 @@ var PROACTIVE_CORE = {
   computeTriggers: computeTriggers, selectNudge: selectNudge, isFirstSundayOfMonth: isFirstSundayOfMonth,
   blendedLeanSeries: blendedLeanSeries, leanTrendRate: leanTrendRate, LEAN_SOURCE_PRIORITY: LEAN_SOURCE_PRIORITY,
   validateBoditraxEntry: validateBoditraxEntry, BODITRAX_FIELDS: BODITRAX_FIELDS,
+  weeklyReport: weeklyReport, stepsMetric: stepsMetric, proteinMetric: proteinMetric,
+  sleepMetric: sleepMetric, weightMetric: weightMetric, trainingMetric: trainingMetric,
+  scoreToGrade: scoreToGrade, GRADE_THRESHOLDS: GRADE_THRESHOLDS, SCORE_WEIGHTS: SCORE_WEIGHTS, STEPS_DEFAULT_TARGET: STEPS_DEFAULT_TARGET,
 };
 if (typeof window !== "undefined") window.PROACTIVE_CORE = PROACTIVE_CORE;
 if (typeof module !== "undefined" && module.exports) module.exports = PROACTIVE_CORE;
