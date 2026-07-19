@@ -210,11 +210,12 @@ function buildSkinContext(state: any): string {
   const L: string[] = [];
   const phase = sc.phase || 1;
   const ret = products.find((p) => p.type === "retinol");
+  const retLabel = ret?.name || "retinoid";
   const retStart = ret?.frequencyStartedAt || ret?.startedDate;
   const weeksAtPhase = retStart ? ((Date.now() - new Date(retStart + "T12:00:00").getTime()) / (7 * 86400000)) : 0;
 
   L.push("SKIN CARE ROUTINE (review weekly):");
-  L.push(`  Retinol phase: ${phase} of 6 · ${ret?.frequency || "?"} · ${weeksAtPhase.toFixed(1)} weeks at this frequency`);
+  L.push(`  ${retLabel} frequency step: ${phase} of 3 · ${ret?.frequency || "?"} · ${weeksAtPhase.toFixed(1)} weeks at this frequency (ladder: every-other-night → 5x/wk → nightly)`);
   for (const p of products) {
     L.push(`  - [id:${p.id}] ${p.name}${p.concentration ? ` ${p.concentration}` : ""} · ${p.type} · ${p.slot} · ${p.frequency}`);
   }
@@ -238,7 +239,7 @@ function buildSkinContext(state: any): string {
   }
   L.push("14-DAY COMPLIANCE:");
   L.push(`  Overall routine: ${due ? Math.round((done / due) * 100) : 0}% (${done}/${due} items)`);
-  L.push(`  Retinol: ${retDue ? Math.round((retDone / retDue) * 100) : 0}% (${retDone}/${retDue} due nights)`);
+  L.push(`  ${retLabel}: ${retDue ? Math.round((retDone / retDue) * 100) : 0}% (${retDone}/${retDue} due nights)`);
   L.push(`  Full AM routine: ${amDays} days · Full PM routine: ${pmDays} days · Longest streak: ${bestStreak} days`);
   L.push("");
 
@@ -260,7 +261,7 @@ function buildSkinContext(state: any): string {
   }
   L.push("14-DAY IRRITATION:");
   L.push(`  none ${irr.none} · mild-dryness ${irr["mild-dryness"]} · peeling ${irr.peeling} · redness ${irr.redness} · burning ${irr.burning}`);
-  if (irr.burning > 0) L.push(`  ⚠️ BURNING logged ${irr.burning}× — HIGH PRIORITY. Instruct 5 rest days before resuming retinol.`);
+  if (irr.burning > 0) L.push(`  ⚠️ BURNING logged ${irr.burning}× — HIGH PRIORITY. Instruct 5 rest days before resuming ${retLabel}.`);
   if (mjCorr > 0 && _dayAfterInj != null) L.push(`  ${mjCorr} irritation event(s) on ${DOW_NAMES[_dayAfterInj]} (day after the GLP-1 injection) — possible injection-sensitivity correlation`);
   L.push("");
 
@@ -280,14 +281,14 @@ function buildSkinContext(state: any): string {
   const badIrr = irr.redness > 0 || irr.burning > 0;
   const retComplete = retDue > 0 ? (retDone / retDue) : 1;
   const reasons: string[] = [];
-  if (weeksAtPhase < 3) reasons.push(`only ${weeksAtPhase.toFixed(1)} weeks at phase (need 3+)`);
+  if (weeksAtPhase < 4) reasons.push(`only ${weeksAtPhase.toFixed(1)} weeks at this frequency (need 4+ — tretinoin is stronger than retinol, go slow)`);
   if (badIrr) reasons.push("redness/burning logged in last 14d");
-  if (retComplete < 1) reasons.push(`retinol compliance ${Math.round(retComplete * 100)}% (need 100%)`);
-  L.push("PHASE READINESS:");
-  if (phase >= 6) L.push("  On tretinoin (phase 6).");
-  else if (phase === 5) L.push(`  At final retinol phase (nightly).${weeksAtPhase >= 3 && !badIrr ? " 3+ weeks tolerated nightly with no redness — user may discuss tretinoin." : ""}`);
-  else if (reasons.length === 0) L.push(`  READY to advance to phase ${phase + 1}. If appropriate, emit a "skincare-phase" suggestion.`);
-  else L.push(`  NOT ready to advance: ${reasons.join("; ")}.`);
+  if (retComplete < 1) reasons.push(`${retLabel} compliance ${Math.round(retComplete * 100)}% (need 100%)`);
+  const STEP_LABELS: Record<number, string> = { 1: "every other night", 2: "5 nights per week", 3: "nightly" };
+  L.push("FREQUENCY STEP READINESS:");
+  if (phase >= 3) L.push(`  At the top of the ladder (${retLabel} nightly). Hold here — no further frequency increase.`);
+  else if (reasons.length === 0) L.push(`  READY to step ${retLabel} up to ${STEP_LABELS[phase + 1] || "the next frequency"} (step ${phase + 1} of 3). If appropriate, emit a "skincare-phase" suggestion.`);
+  else L.push(`  NOT ready to step up frequency: ${reasons.join("; ")}.`);
 
   return L.join("\n");
 }
@@ -1521,26 +1522,26 @@ INTERPRETATION RULES:
   - If either streak >= 7 days: name the streak and note that postural change becomes durable at ~4-6 weeks of daily consistency.
   - If morning compliance < 5/7 OR evening < 5/7, that gap is a strong candidate for one of the 3 Priority Actions — and the action must name the specific stretches (hip-flexor / pelvic-tilt for morning; 4-7-8 / legs-up-the-wall for evening).
   - The Flexibility routine (splits + forward fold, anytime) is an OPTIONAL goal, not a daily essential like the posture/recovery routines. Acknowledge progress and streaks and encourage consistency, but do NOT make low flexibility compliance a Priority Action unless the user is clearly prioritising it.
-- SKIN CARE (only if a SKIN CARE ROUTINE block is present — the routine, current retinoid product, phase and frequency are all in that block; read them, don't assume):
-  RETINOL PHASE RULES:
-  - NEVER suggest advancing phase if ANY redness or burning logged in the last 14 days.
-  - NEVER suggest advancing if retinol compliance is below 100%.
-  - Minimum 3 weeks at a phase before any advancement.
-  - Mild dryness and peeling are NORMAL on retinol — do NOT delay advancement for those alone.
+- SKIN CARE (only if a SKIN CARE ROUTINE block is present — the routine, current retinoid product, frequency step and frequency are all in that block; read them, don't assume. The user is on PRESCRIPTION TRETINOIN now, not over-the-counter retinol — use the product name from the context, never call it "retinol" if the context names tretinoin):
+  TRETINOIN FREQUENCY LADDER RULES:
+  - The ladder is a FREQUENCY progression on the same prescription tretinoin: step 1 = every other night, step 2 = 5 nights/week, step 3 = nightly. There is no product change ahead — the user has already reached prescription strength.
+  - NEVER suggest stepping frequency up if ANY redness or burning logged in the last 14 days.
+  - NEVER suggest stepping up if tretinoin compliance is below 100%.
+  - Minimum 4 weeks at a frequency step before any increase — tretinoin is stronger than retinol, so be MORE conservative than a retinol ramp.
+  - Mild dryness and peeling are NORMAL on tretinoin — do NOT delay a step-up for those alone.
   - Always acknowledge compliance achievements (streaks, full AM/PM days).
-  - If burning was logged: instruct 5 rest days before resuming retinol — do not advance.
-  - The PHASE READINESS line in the context already states whether the user is ready. If it says READY, you may emit a "skincare-phase" suggestion to advance.
-  - Do NOT suggest tretinoin until phase 5 is complete and 3+ weeks of nightly retinol with zero redness — even then, only as a "note" to discuss with a doctor, never an automatic step.
+  - If burning was logged: instruct 5 rest days before resuming tretinoin — do not step up.
+  - The FREQUENCY STEP READINESS line in the context already states whether the user is ready. If it says READY, you may emit a "skincare-phase" suggestion to increase frequency. At nightly (step 3) the ladder is complete — do NOT suggest going further.
   ROUTINE STRUCTURE RULES:
-  - CE Ferulic (vitamin C) always AM, never PM. SPF always the last AM step — flag if missed. Retinol always PM, never AM.
-  - Niacinamide and CE Ferulic never the same session. Alpha Arbutin and Niacinamide never on retinol nights. Cicaplast only on retinol nights. (The app's conflict engine enforces this — flag only if context shows otherwise.)
+  - CE Ferulic (vitamin C) always AM, never PM. SPF always the last AM step — flag if missed. Tretinoin always PM, never AM.
+  - Niacinamide and CE Ferulic never the same session. Alpha Arbutin and Niacinamide never on tretinoin nights. Cicaplast only on tretinoin nights. (The app's conflict engine enforces this — flag only if context shows otherwise.)
   SKIN HEALTH CONTEXT (read from BLOOD MARKERS / HEALTH CONDITIONS / MEDICATIONS — apply only what's actually present):
   - High blood sugar (elevated HbA1c) slows skin healing — expect retinoid tolerance to build slower; be conservative.
   - If the user smokes (HEALTH CONDITIONS) — skin is more sensitive and recovers slower.
   - If on a GLP-1 (MEDICATIONS) — irritation the day after the injection day may correlate with injection sensitivity; the context flags this.
   - Elevated inflammation (hsCRP) affects skin response; low Vitamin D too, if flagged.
-  - The current retinoid product, concentration and phase are in the SKIN CARE ROUTINE block — reference those; do not name a specific product or provider that isn't in the context.
-  - For retinol phase advancement use a "skincare-phase" suggestion. For routine-structure fixes or loose-skin advice use a "note".
+  - The current retinoid product, concentration and frequency step are in the SKIN CARE ROUTINE block — reference those; do not name a specific product or provider that isn't in the context.
+  - For a tretinoin frequency step-up use a "skincare-phase" suggestion. For routine-structure fixes or loose-skin advice use a "note".
 
 OUTPUT FORMAT:
 1. Markdown REPORT under 600 words. Open with these TWO mandatory lines BEFORE the first ## heading (Phase 46):
@@ -1552,7 +1553,7 @@ OUTPUT FORMAT:
    ## Nutrition & recovery — calorie/protein/fasting/supplement compliance, sleep + HRV + readiness trend.
    ## Recovery calibration — ONLY include when a RECOVERY GATE CALIBRATION block is present. Answer EXPLICITLY: does readiness <60 predict weak sessions FOR THIS USER? Compare the session scores on trained-through days against 100% (their own 4-week average), and check whether any override was followed by an injury within 7 days. If overrides consistently score ≥95% with no injuries, say plainly that their personal readiness threshold should move and suggest a number (e.g. 55 or 50). Consider that a consistently late sleep schedule depresses Oura readiness without necessarily reflecting true recovery — check the sleep data. If overrides score poorly or precede injuries, say the gate is earning its keep and they should respect it.
    ## Mobility & stretching — ONLY include this section when a STRETCHING COMPLIANCE block is present. Open with the compliance score and trend, name the most-skipped stretch, correlate with HRV / sleep / lower-back pain where relevant.
-   ## Skin & medical — retinol phase + compliance (if present), any blood-marker improvements or concerns.
+   ## Skin & medical — tretinoin frequency step + compliance (if present), any blood-marker improvements or concerns.
    ## Priority actions — exactly 3, ranked by importance, each one specific and doable this week.
    - Reference previous reports when relevant ("3 weeks ago I suggested X, you applied it, results: ...").
    - End with a realistic timeline ("at current rate you hit your goal ≈ <month year>"), computed honestly from the 14-day weight trend.
@@ -1562,7 +1563,7 @@ OUTPUT FORMAT:
 Suggestion types:
 - "macros": adjust daily calorie/macro targets. Payload keys (any subset): calsGym, calsRest, protein, carbs, fat. Only suggest if 7-day average is off target rate by >0.2kg/wk AND it isn't explained by medication timing.
 - "reminders": add/change a reminder. Payload: { action: "add" | "remove", reminder: { time: "HH:MM", text: string, days?: number[] } }.
-- "skincare-phase": advance the retinol phase. Payload: { newPhase: number (current phase + 1, max 5), newFrequency: string }. ONLY when PHASE READINESS says READY. This re-frequencies the retinol + cicaplast products automatically.
+- "skincare-phase": step tretinoin frequency up one rung. Payload: { newPhase: number (current step + 1, max 3), newFrequency: string }. ONLY when FREQUENCY STEP READINESS says READY. This re-frequencies the tretinoin + cicaplast products automatically.
 - "training-swap": suggest moving away from a lift that is causing problems. Payload: { exerciseId, currentExercise, suggestedExercise, reason }. Exercises in the split are FIXED — applying this only attaches a coach note to that lift's outline, it does not change the program. Use sparingly, only with a clear injury/pain reason.
 - "injury-flag": flag or resolve an injury on a lift. Payload: { exerciseId, action: "flag"|"resolve", severity: "mild"|"moderate"|"severe", notes }. "flag" creates an injury (auto-reduces load: mild -20% / moderate -35% / severe = hold). "resolve" clears active injuries on that lift. Only flag with clear evidence of pain/injury in the data or prior reports.
 - "supplement-reminder": flag a repeatedly-missed critical supplement. Payload: { supplementId, supplementName, missedDays, message }. Applying it posts an in-app reminder notification.

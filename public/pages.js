@@ -2154,66 +2154,56 @@ function renderSkinJournalPrompt(){
   </div>`;
 }
 
-// Phase 37: Retinol Journey phase tracker
+// Phase 62: Tretinoin frequency ladder (was the retinol build-up journey).
 const SKIN_PHASE_ROADMAP=[
-  {n:1,label:'Every 4 days',     dates:'May 21 – ~Jun 10'},
-  {n:2,label:'Every 3 days',     dates:'~Jun 10 – ~Jul 1'},
-  {n:3,label:'Every other day',  dates:'~Jul 1 – ~Jul 21'},
-  {n:4,label:'5 nights / week',  dates:'~Jul 21 – ~Aug 10'},
-  {n:5,label:'Every night',      dates:'~Aug 10 onwards'},
-  {n:6,label:'Tretinoin 0.025%', dates:'Discuss with coach first'},
+  {n:1,label:'Every other night'},
+  {n:2,label:'5 nights per week'},
+  {n:3,label:'Every night'},
 ];
 function renderRetinolJourney(){
   const sc=getSkinCare();
   const cur=sc.phase||1;
-  const readiness=getRetinolPhaseReadiness();
+  const readiness=getSkinPhaseReadiness();
+  const ret=getSkinProducts().find(p=>p.type==='retinol');
+  const label=(ret&&ret.name)||'Tretinoin 0.025%';
+  const weeksAt=readiness.weeksAtPhase!=null?readiness.weeksAtPhase:0;
+  const curLabel=(SKIN_PHASE_ROADMAP.find(p=>p.n===cur)||{}).label||'';
   const steps=SKIN_PHASE_ROADMAP.map(ph=>{
-    const done=ph.n<cur, isCur=ph.n===cur, locked=ph.n===6&&cur<5;
-    const marker=done?'✓':locked?'🔒':isCur?'●':'○';
+    const done=ph.n<cur, isCur=ph.n===cur;
+    const marker=done?'✓':isCur?'●':'○';
     const mColor=isCur?'var(--lime)':done?'var(--green)':'var(--text3)';
+    const tag=isCur?' · current':ph.n===cur+1?' · next':'';
     return `<div style="display:flex;gap:10px;padding:7px 0;${isCur?'':done?'opacity:.7;':'opacity:.45;'}">
       <div style="color:${mColor};font-size:13px;width:18px;text-align:center;flex-shrink:0;">${marker}</div>
       <div style="flex:1;">
-        <div style="font-size:12px;color:${isCur?'var(--lime)':'var(--text2)'};font-weight:${isCur?'700':'400'};">Phase ${ph.n} — ${ph.label}</div>
-        <div style="font-size:10px;color:var(--text3);">${ph.dates}</div>
+        <div style="font-size:12px;color:${isCur?'var(--lime)':'var(--text2)'};font-weight:${isCur?'700':'400'};">Step ${ph.n} — ${ph.label}${tag}</div>
       </div>
     </div>`;
   }).join('');
   let advance='';
-  if(!readiness.atMax&&readiness.nextPhase){
+  if(readiness.atMax){
+    advance=`<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5;">You're at nightly — the top of the ladder. Maintain and watch for irritation.</div>`;
+  }else if(readiness.nextPhase){
+    const nextLabel=(SKIN_PHASE_ROADMAP.find(p=>p.n===readiness.nextPhase)||{}).label||('Step '+readiness.nextPhase);
     if(readiness.ready){
       advance=`<div style="background:rgba(0,232,122,.1);border:1px solid var(--green);border-radius:8px;padding:10px;margin-top:10px;">
-        <div style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:8px;">✅ Ready to advance to Phase ${readiness.nextPhase}</div>
-        <button class="btn btn-lime btn-sm" style="width:100%;" onclick="advanceSkinPhase(${readiness.nextPhase})">Advance to Phase ${readiness.nextPhase}</button>
+        <div style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:8px;">✅ Ready to step up to ${nextLabel}</div>
+        <button class="btn btn-lime btn-sm" style="width:100%;" onclick="advanceSkinPhase(${readiness.nextPhase})">Step up to ${nextLabel}</button>
       </div>`;
     }else{
-      // Phase 50f: the gate is ADVISORY — you know your own skin, so always offer a
-      // manual advance. The reason just tells you what the app would prefer to see
-      // first (usually missing in-app retinol ticks, not actual skin problems).
+      // Advisory gate — tretinoin is strong, so 4 weeks/step + a calm stretch is the
+      // guidance, but you know your own skin: a manual step-up is always offered.
       advance=`<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:10px;">
-        <div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:8px;">App suggests waiting until: ${escapeHtml(readiness.reason)}.<br>If your skin's calm and you want to step up, you can advance manually.</div>
-        <button class="btn btn-ghost btn-sm" style="width:100%;" onclick="advanceSkinPhase(${readiness.nextPhase})">Advance to Phase ${readiness.nextPhase} anyway</button>
+        <div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:8px;">App suggests waiting until: ${escapeHtml(readiness.reason)}.<br>Tretinoin is stronger than retinol — 4 weeks per step with calm skin. If your skin's settled and you want to step up, you can do it manually.</div>
+        <button class="btn btn-ghost btn-sm" style="width:100%;" onclick="advanceSkinPhase(${readiness.nextPhase})">Step up to ${nextLabel} anyway</button>
       </div>`;
     }
   }
-  // Tretinoin milestone — phase 5, 3+ weeks, no redness/burning
-  let tret='';
-  if(cur>=5){
-    const phaseStart=sc.phaseStartDate;
-    const weeksAt=phaseStart?((Date.now()-new Date(phaseStart+'T12:00:00').getTime())/(7*86400000)):0;
-    const irr=getSkinIrritationSummary(21);
-    if(cur===5&&weeksAt>=3&&irr.redness===0&&irr.burning===0){
-      tret=`<div style="background:rgba(200,255,0,.08);border:1px solid var(--lime);border-radius:8px;padding:10px;margin-top:10px;">
-        <div style="font-size:12px;color:var(--lime);font-weight:600;margin-bottom:4px;">🎯 Ready to discuss tretinoin</div>
-        <div style="font-size:11px;color:var(--text2);line-height:1.5;">You've tolerated nightly retinol for 3+ weeks with no redness. Speak to your coach before switching to tretinoin 0.025% — it's not an automatic step.</div>
-      </div>`;
-    }
-  }
-  return `<div class="sec-label">Retinol Journey</div>
+  return `<div class="sec-label">${escapeHtml(label)}</div>
     <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Prescription tretinoin · currently <strong style="color:var(--lime);">${curLabel.toLowerCase()}</strong> · ${weeksAt.toFixed(1)} weeks at this frequency</div>
       ${steps}
       ${advance}
-      ${tret}
     </div>`;
 }
 
@@ -2510,7 +2500,7 @@ function renderCoachTransformationCard(){
     <div style="display:flex;gap:14px;margin-top:10px;font-size:11px;color:var(--text2);flex-wrap:wrap;">
       <div>🏋️ ${sessions} sessions</div>
       <div>🔥 ${gymStreak} day streak</div>
-      ${phase?`<div>🧴 Retinol phase ${phase}/5</div>`:''}
+      ${phase?`<div>🧴 Tretinoin step ${phase}/3</div>`:''}
     </div>
     <div style="font-size:11px;color:var(--text3);margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
       Next report in ${daysToSun===0?'today':daysToSun+' day'+(daysToSun===1?'':'s')} (Sunday 09:00) · <span onclick="generateCoachReportNow().then(()=>renderCoach())" style="color:var(--lime);cursor:pointer;font-weight:600;">Generate now</span>

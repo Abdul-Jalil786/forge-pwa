@@ -357,14 +357,16 @@ function skinDueOn(product,date){
 }
 
 // ---- SKIN CARE PHASES + CONFLICT ENGINE (Phase 37) ----
+// Phase 62: tretinoin FREQUENCY ladder. The retinol build-up ladder is retired —
+// the user is already on prescription tretinoin 0.025%; this ramps its frequency.
+// Every other night (current) → 5 nights/week → nightly. Tretinoin is stronger
+// than retinol, so the gate needs 4 weeks/step (see SKIN_MIN_WEEKS_PER_PHASE).
 const SKIN_PHASES=[
-  {n:1,freq:'every-4-days',label:'Every 4 days'},
-  {n:2,freq:'every-3-days',label:'Every 3 days'},
-  {n:3,freq:'every-2-days',label:'Every other day'},
-  {n:4,freq:'5x-week',label:'5 nights per week'},
-  {n:5,freq:'daily',label:'Every night'},
-  {n:6,freq:'daily',label:'Tretinoin 0.025%'},
+  {n:1,freq:'every-2-days',label:'Every other night'},
+  {n:2,freq:'5x-week',     label:'5 nights per week'},
+  {n:3,freq:'daily',       label:'Every night'},
 ];
+const SKIN_MIN_WEEKS_PER_PHASE=4;
 function getSkinPhase(){
   const n=getSkinCare().phase||1;
   return SKIN_PHASES.find(p=>p.n===n)||SKIN_PHASES[0];
@@ -458,11 +460,14 @@ function getSkinIrritationSummary(days){
   }
   return counts;
 }
-// Retinol phase readiness — 3 conditions: 3wk min, no redness/burning 14d, 100% retinol compliance 14d.
-function getRetinolPhaseReadiness(){
+// Tretinoin frequency-step readiness — 3 conditions: 4wk min at the step (stronger
+// than retinol → more conservative), no redness/burning in 14d, 100% tretinoin
+// due-night compliance in 14d.
+function getSkinPhaseReadiness(){
   const sc=getSkinCare();
   const phaseNum=sc.phase||1;
-  if(phaseNum>=5)return{ready:false,atMax:true,phaseNum,reason:phaseNum>=6?'On tretinoin':'At final retinol phase (every night)'};
+  const topN=SKIN_PHASES[SKIN_PHASES.length-1].n;
+  if(phaseNum>=topN)return{ready:false,atMax:true,phaseNum,reason:'At nightly — the top of the ladder'};
   const ret=sc.products.find(p=>p.type==='retinol');
   const phaseStart=sc.phaseStartDate||ret?.frequencyStartedAt;
   const weeksAtPhase=phaseStart?((Date.now()-new Date(phaseStart+'T12:00:00').getTime())/(7*86400000)):0;
@@ -476,13 +481,15 @@ function getRetinolPhaseReadiness(){
   }
   const retComplete=retDue>0?(retDone/retDue):1;
   const reasons=[];
-  if(weeksAtPhase<3)reasons.push(`3 weeks at this phase needed (${weeksAtPhase.toFixed(1)} so far)`);
+  if(weeksAtPhase<SKIN_MIN_WEEKS_PER_PHASE)reasons.push(`${SKIN_MIN_WEEKS_PER_PHASE} weeks at this frequency needed (${weeksAtPhase.toFixed(1)} so far)`);
   if(badIrritation)reasons.push(`irritation logged: ${irr.redness} redness, ${irr.burning} burning in 14d`);
-  if(retComplete<1)reasons.push(`retinol compliance ${Math.round(retComplete*100)}% in 14d (need 100%)`);
-  const ready=reasons.length===0&&weeksAtPhase>=3;
+  if(retComplete<1)reasons.push(`tretinoin compliance ${Math.round(retComplete*100)}% in 14d (need 100%)`);
+  const ready=reasons.length===0&&weeksAtPhase>=SKIN_MIN_WEEKS_PER_PHASE;
   const next=SKIN_PHASES.find(p=>p.n===phaseNum+1);
   return{ready,atMax:false,phaseNum,weeksAtPhase,reason:ready?'All conditions met':reasons.join(' · '),nextPhase:next?next.n:null,nextFrequency:next?next.freq:null};
 }
+// Backward-compat alias (old name still referenced in places).
+function getRetinolPhaseReadiness(){return getSkinPhaseReadiness();}
 // Per-product analytics for the More page (Phase 37)
 function getSkinProductLastUsed(productId){
   const all=pGet('skinCareLog',{});
