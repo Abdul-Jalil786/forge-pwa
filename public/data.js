@@ -973,20 +973,32 @@ function getPreviousSessions(beforeDate, sessionType, limit){
   return out;
 }
 
-// Phase 60: exercise-centric history — the most recent session of ANY type that
-// has logged data for a given exercise id. Used as a fallback so progression
-// references carry over when the SAME id moves between session types (e.g. Leg
-// Press l1 from the old 'lower' day into the new lowerA/lowerB) — the same-type
-// lookup finds nothing on a brand-new programme, this finds the real last weight.
-function getLastExercisePerformance(exId, beforeDate){
+// Exercise-centric history — the most recent N sessions of ANY type that have
+// logged data for a given exercise id, most recent first. A "Chest Press" is u1
+// in EVERY template (ids are deliberately shared across programmes), so history
+// for a lift must be keyed on the exercise id, never on the session type it was
+// logged under. This is what makes progression references + the last-session
+// display survive a programme switch (old 'upper'/'lower' → 'upperA/B/lowerA/B'):
+// the same-type session lookup finds nothing on a brand-new programme, so both
+// display and progression fall back to this. Session-type filtering stays only
+// where it is genuinely about whole sessions (recap card, make-up logic).
+function getExercisePreviousSessions(exId, beforeDate, limit){
   const exLog=getExLog();
   const dates=Object.keys(exLog).filter(d=>d<beforeDate).sort().reverse();
+  const out=[];
   for(const date of dates){
     const dayLog=exLog[date];
     const ex=dayLog&&dayLog[exId];
-    if(ex&&Array.isArray(ex.sets)&&ex.sets.some(s=>s.kg||s.reps||s.seconds))return {date,log:dayLog};
+    if(ex&&Array.isArray(ex.sets)&&ex.sets.some(s=>s.kg||s.reps||s.seconds)){
+      out.push({date,log:dayLog});
+      if(limit&&out.length>=limit)break;
+    }
   }
-  return null;
+  return out;
+}
+// The single most recent session (any type) that logged this exercise, or null.
+function getLastExercisePerformance(exId, beforeDate){
+  return getExercisePreviousSessions(exId, beforeDate, 1)[0] || null;
 }
 
 // Was a session completed on a date? (4+ exercises marked done)

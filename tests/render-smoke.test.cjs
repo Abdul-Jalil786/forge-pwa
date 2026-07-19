@@ -216,6 +216,46 @@ test("skincare: 3-step tretinoin frequency ladder (retinol journey retired)", ()
   assert.ok(!/Phase 6|Discuss with coach|graduate/i.test(html), "no retinol-graduation framing");
 });
 
+test("exercise history survives a programme switch (id-keyed, not session-type-keyed)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const T = "2026-07-20";
+  // Old 'upper'/'lower' sessions logged BEFORE the switch to the 5-day split.
+  // Their _session.sessionType is the OLD type, so the same-type lookup for
+  // 'upperA'/'lowerA' must MISS them — but per-exercise (id-keyed) history has
+  // to find them, because u4/u1/l1 are the same ids in every template.
+  vm.runInContext(`
+    STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='${T}';
+    STATE.exLog={
+      '2026-06-20':{_session:{sessionType:'upper'},u4:{sets:[{kg:50,reps:8,effort:'solid'}],done:true},u1:{sets:[{kg:70,reps:8,effort:'solid'}],done:true},u3:{sets:[{kg:65,reps:9,effort:'solid'}],done:true},u5:{sets:[{kg:60,reps:10,effort:'solid'}],done:true}},
+      '2026-06-24':{_session:{sessionType:'lower'},l1:{sets:[{kg:200,reps:9,effort:'solid'}],done:true}},
+      '2026-06-28':{_session:{sessionType:'upper'},u4:{sets:[{kg:50,reps:9,effort:'solid'}],done:true}}
+    };
+  `, ctx);
+  const q = (e) => vm.runInContext(e, ctx);
+
+  // 1) Same-type session lookups ARE blind after the switch — the root cause.
+  assert.equal(q(`getPreviousSessionData('${T}','upperA')`), null, "same-type lookup finds nothing post-switch");
+  assert.equal(q(`getPreviousSessions('${T}','upperA',5).length`), 0);
+
+  // 2) Exercise-centric (id-keyed) history finds the old sessions regardless of type.
+  assert.equal(q(`JSON.stringify(getExercisePreviousSessions('u4','${T}',5).map(s=>s.date))`), JSON.stringify(["2026-06-28", "2026-06-20"]));
+  assert.equal(q(`getLastExercisePerformance('u4','${T}').date`), "2026-06-28");
+  assert.equal(q(`JSON.stringify(getExercisePreviousSessions('l1','${T}',5).map(s=>s.date))`), JSON.stringify(["2026-06-24"]));
+
+  // 3) Progression continues from the established weights, not a fresh default.
+  const sug = q(`suggestWeight('u4', getPreviousSessionData('${T}','upperA'), 0, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), prevSessions:getPreviousSessions('${T}','upperA',5), forDate:'${T}' })`);
+  assert.ok(sug, "shoulder-press suggestion is not null after the switch");
+  assert.equal(sug.kg, 50, "references the 50kg history, not a fresh default");
+  const sugL = q(`suggestWeight('l1', getPreviousSessionData('${T}','lowerA'), 0, { exObj: WORKOUTS.lowerA.exercises.find(e=>e.id==='l1'), prevSessions:getPreviousSessions('${T}','lowerA',5), forDate:'${T}' })`);
+  assert.equal(sugL.kg, 200, "leg-press references its real history across the switch");
+
+  // 4) The Train-page display shows the last session, not "no history yet".
+  const html = q(`buildExItem(WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), {}, getPreviousSessionData('${T}','upperA'), false, '${T}')`);
+  assert.ok(/↺ Last: 50×9/.test(html), "renders the last-session summary from id-keyed history");
+  assert.ok(!/no history yet/.test(html), "does NOT show 'no history yet' when history exists");
+});
+
 test("skincare readiness needs 4 weeks/step (tretinoin is stronger than retinol)", () => {
   const { ctx } = bootApp();
   seed(ctx);
