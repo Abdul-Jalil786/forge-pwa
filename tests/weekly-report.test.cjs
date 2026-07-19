@@ -136,3 +136,24 @@ test("weeklyReport: components with no target drop out of the weighted mean", ()
   assert.equal(r.sleep.score, 100);
   assert.equal(r.overall, 100, "only sleep contributes → renormalised to sleep alone");
 });
+
+test("VERIFY 5-day week: 4 lifts + Zone 2 all done = 5/5; deload-week sessions count", () => {
+  // A full 5-day training week, all sessions completed (>=60% exercises done).
+  const sched = [
+    { date: d(-6), type: "upperA", exerciseIds: ["u4", "u1", "u3", "u5", "h5"] },
+    { date: d(-5), type: "lowerA", exerciseIds: ["h1", "l1", "l2", "l6", "core_pallof"] },
+    { date: d(-3), type: "upperB", exerciseIds: ["u2", "h3", "u4", "u8", "u6", "core_dead_bug"] },
+    { date: d(-2), type: "lowerB", exerciseIds: ["l5", "l1", "l4", "core_suitcase"] },
+    { date: d(-1), type: "zone2", exerciseIds: ["cardio_z2"] },
+  ];
+  const exLog = {};
+  sched.forEach(s => { exLog[s.date] = {}; s.exerciseIds.forEach(id => { exLog[s.date][id] = { done: true }; }); });
+  const m = core.trainingMetric({ exLog }, { scheduled: sched });
+  assert.equal(m.completed, 5);
+  assert.equal(m.scheduled, 5);
+  assert.equal(m.score, 100, "4 lifts + Zone 2 done = 5/5 = 100%");
+  // Deload week: SAME exercises, fewer sets — a completed deload session still has
+  // its exercises marked done, so it counts (2-set sessions count as complete).
+  const deloadDay = { u4: { done: true }, u1: { done: true }, u3: { done: true } }; // 3/5 = 60%
+  assert.equal(core.trainingMetric({ exLog: { [d(-6)]: deloadDay } }, { scheduled: [sched[0]] }).completed, 1, "deload session (60% done) counts");
+});
