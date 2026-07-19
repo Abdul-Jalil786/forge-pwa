@@ -56,6 +56,12 @@ router.get("/stats", requireAuth, async (req: Request, res: Response) => {
       hasKey: boolean;
       hasOura: boolean;
       hasWithings: boolean;
+      programId: string | null;
+      exLogDays: number;
+      exLogFirst: string | null;
+      exLogLast: string | null;
+      hasBoditrax: boolean;
+      hasBloodMarkers: boolean;
     }> = [];
 
     for (const u of users) {
@@ -71,6 +77,14 @@ router.get("/stats", requireAuth, async (req: Request, res: Response) => {
       if (hasW) hasWithings++;
       if (!firstSignup || u.createdAt < firstSignup) firstSignup = u.createdAt;
       if (!latestSignup || u.createdAt > latestSignup) latestSignup = u.createdAt;
+      // Training-history depth per account — answers "does this account have its
+      // OWN exLog, or is training commingled into another login?" Metadata only
+      // (date keys + a count), never the logged sets themselves.
+      const exLog: any = state.exLog || {};
+      const exDates = Object.keys(exLog).filter(
+        (k) => k.charAt(0) !== "_" && exLog[k] && typeof exLog[k] === "object" &&
+          Object.keys(exLog[k]).some((id) => id.charAt(0) !== "_" && exLog[k][id] && Array.isArray(exLog[k][id].sets) && exLog[k][id].sets.length > 0)
+      ).sort();
       userBreakdown.push({
         email: u.email,
         createdAt: u.createdAt.toISOString().slice(0, 10),
@@ -78,6 +92,12 @@ router.get("/stats", requireAuth, async (req: Request, res: Response) => {
         hasKey,
         hasOura: hasO,
         hasWithings: hasW,
+        programId: state.profile?.programId || null,
+        exLogDays: exDates.length,
+        exLogFirst: exDates[0] || null,
+        exLogLast: exDates[exDates.length - 1] || null,
+        hasBoditrax: Array.isArray(state.boditraxLog) && state.boditraxLog.length > 0,
+        hasBloodMarkers: Array.isArray(state.profile?.bloodMarkers) && state.profile.bloodMarkers.length > 0,
       });
     }
 
