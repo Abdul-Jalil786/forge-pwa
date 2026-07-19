@@ -411,7 +411,7 @@ router.put("/profile/coach-config", requireAuth, async (req: Request, res: Respo
       if (typeof body.coachTargets !== "object") { res.status(400).json({ error: "coachTargets must be an object" }); return; }
       const RANGES: Record<string, [number, number]> = {
         proteinFloorDaily: [100, 350], proteinPerMeal: [20, 80],
-        waterRestMl: [1000, 6000], waterGymMl: [1000, 6000],
+        waterRestMl: [1000, 6000], waterGymMl: [1000, 6000], stepsDaily: [3000, 40000],
         deficitKcal: [0, 1200], trainingBonusUpper: [0, 1000], trainingBonusLower: [0, 1000],
       };
       const ct: any = {};

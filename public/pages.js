@@ -2432,10 +2432,14 @@ function renderSupplementsCoach(){
   const last7=[];
   for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);last7.push(_ukDate(d));}
   const dayLabels=last7.map(d=>{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-GB',{weekday:'narrow'});});
+  const today=todayStr();
   const heatmap=supps.map(s=>{
     const cells=last7.map(d=>{
-      const dayLog=log[d]||{};
-      return dayLog[s.id]===true?'taken':'missed';
+      if(typeof isSupplementDue==='function'&&!isSupplementDue(s,d))return 'na'; // not due that day
+      const taken=(log[d]||{})[s.id]===true;
+      if(taken)return 'taken';
+      if(d===today)return 'pending';   // today, not yet ticked — neutral, not a miss
+      return 'missed';
     });
     return {name:s.name,cells};
   });
@@ -2448,7 +2452,13 @@ function renderSupplementsCoach(){
         <div></div>${dayLabels.map(d=>`<div style="text-align:center;font-size:9px;color:var(--text3);font-weight:700;">${d}</div>`).join('')}
         ${heatmap.map(row=>`
           <div style="font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${row.name}</div>
-          ${row.cells.map(c=>`<div style="width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;background:${c==='taken'?'var(--lime)':'var(--s2)'};color:${c==='taken'?'var(--bg)':'var(--text3)'};">${c==='taken'?'&#10003;':'·'}</div>`).join('')}
+          ${row.cells.map(c=>{
+            const st=c==='taken'?{bg:'var(--lime)',fg:'var(--bg)',ch:'&#10003;'}
+              :c==='pending'?{bg:'transparent',fg:'var(--text3)',ch:'○',bd:'1px dashed var(--border2)'}
+              :c==='na'?{bg:'transparent',fg:'var(--text3)',ch:'–',op:'.35'}
+              :{bg:'rgba(255,59,59,.12)',fg:'var(--red)',ch:'·'}; // missed
+            return `<div title="${c}" style="width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;background:${st.bg};color:${st.fg};${st.bd?`border:${st.bd};`:''}${st.op?`opacity:${st.op};`:''}">${st.ch}</div>`;
+          }).join('')}
         `).join('')}
       </div>
     </div>
@@ -2508,6 +2518,47 @@ function renderCoachTransformationCard(){
   </div>`;
 }
 
+// Phase 61: render the Weekly Report Card from the shared-engine result. Grades
+// are the engine's letters (A/B/C/D/F); details self-explain each number.
+function _rcClass(g){ const c=(g||'').toLowerCase(); return ['a','b','c','d','f'].includes(c)?c:''; }
+function _renderReportCard(r){
+  if(r.isBaseline){
+    const bed=r.sleep.hasTiming?` · bed ${r.sleep.avgBedtimeClock}`:'';
+    return `<div class="card" style="margin-bottom:10px;border-color:var(--blue);background:linear-gradient(135deg,rgba(61,155,255,.04),transparent);">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:15px;letter-spacing:-.3px;margin-bottom:6px;">Week 1 — Baseline</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;">You're in your first week. Grades and weekly scores activate from Week 2 onwards once we have meaningful data to compare against.</div>
+      <div style="margin-top:14px;font-size:11px;color:var(--text3);">Tracking so far · Steps ${r.steps.hit}/${r.steps.total} · Protein ${r.protein.hasTarget?r.protein.hit+'/'+r.protein.total:'no target'} · Training ${r.training.completed}/${r.training.scheduled} · Sleep ${r.sleep.avgHours!=null?r.sleep.avgHours+'h':'—'}${bed}</div>
+    </div>`;
+  }
+  const oc=r.overall==null?'var(--text3)':(r.overall>=75?'var(--green)':r.overall>=60?'var(--lime)':'var(--orange)');
+  const w=r.weights;
+  const item=(icon,label,detail,g)=>`<div class="rc-item"><div class="rc-icon">${icon}</div><div class="rc-info"><div class="rc-label">${label}</div><div class="rc-detail">${detail}</div></div><div class="rc-score ${_rcClass(g)}">${g||'—'}</div></div>`;
+  const stepsDetail=r.steps.hasTarget?`${r.steps.hit}/${r.steps.total} days hit ${r.steps.target.toLocaleString()} steps`:`No step target set`;
+  const proteinDetail=r.protein.hasTarget?`${r.protein.hit}/${r.protein.total} days ≥ ${r.protein.floor}g floor`:`No protein floor set — add one in Coach Settings`;
+  const trainingDetail=r.training.scheduled?`${r.training.completed}/${r.training.scheduled} scheduled sessions completed`:`No sessions scheduled this week`;
+  let sleepDetail;
+  if(r.sleep.avgHours==null){sleepDetail=`No sleep logged`;}
+  else{
+    const bedPart=r.sleep.hasTiming?` · bedtime avg ${r.sleep.avgBedtimeClock}`:` · bedtime not tracked`;
+    sleepDetail=`${r.sleep.avgHours}h avg${bedPart} · ${r.sleep.nightsLogged}/${r.sleep.total} nights logged`;
+  }
+  const wLine=r.weight.hasTrend
+    ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text2);">Weight trend this week: <strong style="color:${r.weight.perWeek<=0?'var(--green)':'var(--red)'};">≈ ${r.weight.perWeek>0?'+':''}${r.weight.perWeek.toFixed(1)}kg/wk</strong> <span style="color:var(--text3);">(7-day slope · ${r.weight.n} readings)</span></div>`
+    : `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text3);">Weight trend: need ≥2 weigh-ins this week</div>`;
+  return `<div class="card hi" style="margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:14px;">This Week's Score</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:36px;color:${oc};">${r.overall==null?'—':r.overall}</div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:12px;line-height:1.4;">Weighted: protein ${Math.round(w.protein*100)}% · training ${Math.round(w.training*100)}% · steps ${Math.round(w.steps*100)}% · sleep ${Math.round(w.sleep*100)}% · rolling 7 days (${r.window.from} → ${r.window.to})</div>
+    ${item('👟','Steps',stepsDetail,r.grades.steps)}
+    ${item('🥩','Protein',proteinDetail,r.grades.protein)}
+    ${item('🏋️','Training',trainingDetail,r.grades.training)}
+    <div class="rc-item" style="border:none;"><div class="rc-icon">😴</div><div class="rc-info"><div class="rc-label">Sleep</div><div class="rc-detail">${sleepDetail}</div></div><div class="rc-score ${_rcClass(r.grades.sleep)}">${r.grades.sleep||'—'}</div></div>
+    ${wLine}
+  </div>`;
+}
+
 function renderCoach(){
   const p=getActive(); if(!p)return;
   const report=getWeeklyReport();
@@ -2532,29 +2583,7 @@ function renderCoach(){
     </div>`:''}
 
     <div class="sec-label">Weekly Report Card</div>
-    ${report?(report.isBaseline?`
-    <div class="card" style="margin-bottom:10px;border-color:var(--blue);background:linear-gradient(135deg,rgba(61,155,255,.04),transparent);">
-      <div style="font-family:'Archivo Black',sans-serif;font-size:15px;letter-spacing:-.3px;margin-bottom:6px;">Week 1 — Baseline</div>
-      <div style="font-size:12px;color:var(--text2);line-height:1.6;">
-        You're in your first week. Grades and weekly scores activate from Week 2 onwards once we have meaningful data to compare against.
-      </div>
-      <div style="margin-top:14px;font-size:11px;color:var(--text3);">
-        Tracking so far · Steps ${report.stepsHit}/7 · Protein ${report.proteinDays}/7 · Gym ${report.gymDays} · Sleep ${report.avgSleep||'—'}h avg
-      </div>
-    </div>
-    `:`
-    <div class="card hi" style="margin-bottom:10px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <div style="font-family:'Archivo Black',sans-serif;font-size:14px;">This Week's Score</div>
-        <div style="font-family:'Archivo Black',sans-serif;font-size:36px;color:${report.overall>=75?'var(--green)':report.overall>=60?'var(--lime)':'var(--orange)'};">${report.overall}</div>
-      </div>
-      <div class="rc-item"><div class="rc-icon">👟</div><div class="rc-info"><div class="rc-label">Steps</div><div class="rc-detail">${report.stepsHit}/7 days hit 10,000 target</div></div><div class="rc-score ${gradeClass(report.scores.steps)}">${grade(report.scores.steps)}</div></div>
-      <div class="rc-item"><div class="rc-icon">🥩</div><div class="rc-info"><div class="rc-label">Protein</div><div class="rc-detail">${report.proteinDays}/7 days hit target</div></div><div class="rc-score ${gradeClass(report.scores.protein)}">${grade(report.scores.protein)}</div></div>
-      <div class="rc-item"><div class="rc-icon">🏋️</div><div class="rc-info"><div class="rc-label">Training</div><div class="rc-detail">${report.gymDays} gym sessions this week</div></div><div class="rc-score ${gradeClass(report.scores.gym)}">${grade(report.scores.gym)}</div></div>
-      <div class="rc-item" style="border:none;"><div class="rc-icon">😴</div><div class="rc-info"><div class="rc-label">Sleep</div><div class="rc-detail">Average ${report.avgSleep||'—'} hours per night</div></div><div class="rc-score ${gradeClass(report.scores.sleep)}">${grade(report.scores.sleep)}</div></div>
-      ${report.weightChange!==null?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text2);">Weight change this week: <strong style="color:${report.weightChange<=0?'var(--green)':'var(--red)'};">${report.weightChange>0?'+':''}${report.weightChange.toFixed(1)}kg</strong></div>`:''}
-    </div>
-    `):'<div class="card" style="text-align:center;color:var(--text3);font-size:13px;padding:20px;">Log data throughout the week to generate your report card</div>'}
+    ${report?_renderReportCard(report):'<div class="card" style="text-align:center;color:var(--text3);font-size:13px;padding:20px;">Log data throughout the week to generate your report card</div>'}
 
     ${renderSupplementsCoach()}
 
@@ -2856,6 +2885,11 @@ function renderMore(){
           <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;">Per-meal protein (g)</div>
           <input id="ct-permeal" type="number" min="20" max="80" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
           <div style="font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4;">Meals under this get an "add protein" nudge.</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;">Daily step target</div>
+          <input id="ct-steps" type="number" min="3000" max="40000" step="500" inputmode="numeric" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;" />
+          <div style="font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4;">Report card counts days that hit this.</div>
         </div>
         <div>
           <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;">Water — rest day (L)</div>

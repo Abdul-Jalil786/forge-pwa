@@ -99,6 +99,23 @@ function programmeLabel(programId) {
   return PROGRAMME_LABELS[programId] || PROGRAMME_LABELS['upper-lower-4d'];
 }
 
+// Exercise ids per WORKOUTS session type (mirrors public/data.js WORKOUTS — the
+// programme-shared parity test fails CI on drift). Lets the SERVER compute the
+// weekly-report training completion the same way the client does (the client can
+// also derive it from WORKOUTS, but this is the single cross-runtime source).
+// rehab ids (reh_*) are included; callers drop them for showRehab===false users.
+var SESSION_EXERCISE_IDS = {
+  upper: ['u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'u7', 'u8', 'core_pallof', 'neck_ext', 'neck_front', 'u9', 'core_dead_bug'],
+  lower: ['l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'core_pallof', 'core_dead_bug', 'core_suitcase'],
+  full: ['l1', 'u1', 'u3', 'u4', 'l4', 'u5', 'u6', 'u7', 'u9'],
+  home: ['h1', 'h2', 'h3', 'h4', 'u4', 'h5', 'u6', 'u9', 'core_dead_bug'],
+  upperA: ['u4', 'u1', 'u3', 'u5', 'h5', 'reh_1', 'reh_2', 'reh_3'],
+  lowerA: ['h1', 'l1', 'l2', 'l6', 'core_pallof'],
+  upperB: ['u2', 'h3', 'u4', 'u8', 'u6', 'core_dead_bug', 'reh_1', 'reh_2', 'reh_3'],
+  lowerB: ['l5', 'l1', 'l4', 'core_suitcase'],
+  zone2: ['cardio_z2'],
+};
+
 var DEFAULT_TRAINING_START = '2026-05-08';
 
 // 4-day pattern: Day 0 = Upper, Day 1 = Rest, Day 2 = Lower, Day 3 = Rest.
@@ -181,6 +198,7 @@ var FORGE_PROGRAMME = {
   programmeLabel: programmeLabel,
   trainingDayInCycle: trainingDayInCycle,
   sessionTypeForDate: sessionTypeForDate,
+  SESSION_EXERCISE_IDS: SESSION_EXERCISE_IDS,
   DEFAULT_TRAINING_START: DEFAULT_TRAINING_START,
 };
 

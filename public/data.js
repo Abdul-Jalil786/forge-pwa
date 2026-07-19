@@ -1197,6 +1197,17 @@ function getMealSupplements(meal){
 }
 
 function getSupplementLog(date){return(pGet('supplementLog',{})[date])||{};}
+// Phase 61: is a supplement DUE on a given date? Weekly GLP-1 items
+// (frequency 'weekly-wednesday') are due only on the configured injection day;
+// everything else is daily. Used so the grid + adherence don't count non-due
+// days as misses (a weekly item isn't "missed" 6 days a week).
+function isSupplementDue(supp,date){
+  if(!supp)return false;
+  if(supp.frequency==='weekly-wednesday'){
+    return new Date(date+'T12:00:00').getDay()===_injectionDow();
+  }
+  return true;
+}
 let _suppLogSaveTimer=null;
 function setSupplementTaken(date,suppId,taken){
   const log=pGet('supplementLog',{});
@@ -1244,6 +1255,7 @@ function deleteSupplement(id){
 function getSupplementAdherence(days){
   const supps=getSupplements();
   const log=pGet('supplementLog',{});
+  const today=todayStr();
   const byDay=[];
   const byId={};
   supps.forEach(s=>{byId[s.id]={taken:0,total:0,pct:0};});
@@ -1251,13 +1263,16 @@ function getSupplementAdherence(days){
     const d=new Date();d.setDate(d.getDate()-i);
     const date=_ukDate(d);
     const dayLog=log[date]||{};
-    let taken=0;
+    let taken=0,due=0;
     supps.forEach(s=>{
+      if(!isSupplementDue(s,date))return;             // not due that day → not counted
       const t=dayLog[s.id]===true;
+      if(date===today&&!t)return;                      // today, not yet ticked → pending, not a miss
+      due++;
       if(t)taken++;
       if(byId[s.id]){byId[s.id].total++;if(t)byId[s.id].taken++;}
     });
-    byDay.push({date,taken,total:supps.length,pct:supps.length?Math.round((taken/supps.length)*100):0});
+    byDay.push({date,taken,total:due,pct:due?Math.round((taken/due)*100):0});
   }
   let totalTaken=0,totalPossible=0;
   Object.values(byId).forEach(v=>{totalTaken+=v.taken;totalPossible+=v.total;v.pct=v.total?Math.round((v.taken/v.total)*100):0;});
@@ -1597,40 +1612,32 @@ function calcStreak(type){
 // ============================================================
 // WEEKLY REPORT CARD
 // ============================================================
+// Phase 61: the Weekly Report Card is now a THIN WRAPPER over the shared metrics
+// engine (proactive-core.weeklyReport) — the SAME functions the AI coach context
+// reads. No parallel maths here: this just gathers the user's targets (coach
+// targets), the schedule-aware session list (programme + rehab filter) and the
+// window, then delegates. Returns the engine result + isBaseline.
 function getWeeklyReport(){
   const p=getActive(); if(!p)return null;
-  const days=getLast7();
-  const stepsLog=getStepsLog();
-  const foodLog=pGet('foods',{});
-  const exLog=getExLog();
-  const sleepLog=getSleepLog();
-
-  const stepsHit=days.filter(d=>(stepsLog[d]||0)>=10000).length;
-  const proteinDays=days.filter(d=>{
-    const foods=foodLog[d]||[];
-    return foods.reduce((s,f)=>s+(f.protein||0),0)>=p.proteinTarget*0.9;
-  }).length;
-  const gymDays=days.filter(d=>{
-    const el=exLog[d]||{};
-    return Object.values(el).filter(e=>e.done).length>=4;
-  }).length;
-  const avgSleep=getAvgSleep(7);
-  const wl=getWeightLog();
-  const weekWeights=wl.filter(e=>days.includes(e.date));
-  const weightChange=weekWeights.length>=2?weekWeights[weekWeights.length-1].weight-weekWeights[0].weight:null;
-
-  const scores={
-    steps:Math.round((stepsHit/7)*100),
-    protein:Math.round((proteinDays/7)*100),
-    gym:Math.round((gymDays/4)*100),
-    sleep:avgSleep>=7?100:avgSleep>=6?70:40,
-  };
-  const overall=Math.round((scores.steps+scores.protein+scores.gym+scores.sleep)/4);
-
+  if(typeof PROACTIVE_CORE==='undefined'||!PROACTIVE_CORE.weeklyReport)return null;
+  const today=todayStr();
+  const ct=(STATE.profile&&STATE.profile.coachTargets)||{};
+  const stepsTarget=ct.stepsDaily!=null?ct.stepsDaily:PROACTIVE_CORE.STEPS_DEFAULT_TARGET;
+  const proteinFloor=ct.proteinFloorDaily!=null?ct.proteinFloorDaily:null;
+  // Scheduled sessions in the last-7 window (schedule-aware; rehab-filtered so the
+  // completion denominator matches what the user actually trains).
+  const scheduled=[];
+  getLast7().forEach(d=>{
+    const type=(typeof getSessionTypeForDate==='function')?getSessionTypeForDate(d):null;
+    if(type){
+      const ids=(typeof sessionExercises==='function')?sessionExercises(type).map(e=>e.id):[];
+      scheduled.push({date:d,type,exerciseIds:ids});
+    }
+  });
+  const r=PROACTIVE_CORE.weeklyReport(STATE,{today,stepsTarget,proteinFloor,scheduled});
   const planStart=STATE.planStartDate?new Date(STATE.planStartDate+'T00:00:00'):null;
   const isBaseline=!planStart||(Date.now()-planStart.getTime())<7*24*60*60*1000;
-
-  return{stepsHit,proteinDays,gymDays,avgSleep,weightChange,scores,overall,isBaseline};
+  return {...r,isBaseline};
 }
 
 // Phase 20 migration: convert time-based exercise sets from {kg,reps} to {seconds}
