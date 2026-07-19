@@ -280,9 +280,10 @@ router.put("/skin-care-weekly/:date", requireAuth, requireOwnerCheck, async (req
   }
 });
 
-// Phase 37: retinol phase update. Advancing phase also re-frequencies the retinol + cicaplast
-// products to match. One atomic write of the whole skinCare object.
-const PHASE_FREQ: Record<number, string> = { 1: "every-4-days", 2: "every-3-days", 3: "every-2-days", 4: "5x-week", 5: "daily", 6: "daily" };
+// Skin phase update. Advancing phase also re-frequencies the retinoid (tretinoin) +
+// cicaplast products to match. One atomic write of the whole skinCare object.
+// Ladder is now the tretinoin frequency progression: every-other-night → 5x/wk → nightly.
+const PHASE_FREQ: Record<number, string> = { 1: "every-2-days", 2: "5x-week", 3: "daily" };
 router.put("/skin-care-phase", requireAuth, requireOwnerCheck, async (req: Request, res: Response) => {
   try {
     const { phase, tretinoinReady } = req.body || {};
@@ -290,7 +291,7 @@ router.put("/skin-care-phase", requireAuth, requireOwnerCheck, async (req: Reque
     const st: any = user?.state || {};
     const sc = st.skinCare || { products: [] };
     if (phase != null) {
-      if (typeof phase !== "number" || phase < 1 || phase > 6) { res.status(400).json({ error: "phase must be 1-6" }); return; }
+      if (typeof phase !== "number" || phase < 1 || phase > 3) { res.status(400).json({ error: "phase must be 1-3" }); return; }
       sc.phase = Math.round(phase);
       sc.phaseStartDate = new Date().toISOString().slice(0, 10);
       const freq = PHASE_FREQ[sc.phase];

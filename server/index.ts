@@ -955,6 +955,48 @@ async function switchAbdulToTretinoinV1() {
   }
 }
 
+// Skincare ladder rebuild: the retinol frequency ladder (6 rungs, retinol → tretinoin
+// milestone) is retired. The user is on prescription tretinoin 0.025% (Dermatica),
+// currently EVERY OTHER NIGHT. The new ladder is a 3-rung tretinoin frequency
+// progression (every-other-night → 5x/wk → nightly), so the old phase 3 (every-2-days
+// under the 6-rung map) renumbers to phase 1 (every-2-days, the bottom rung of the new
+// ladder). Preserve the tolerance clock (phaseStartDate) and product history — only
+// renumber, tag the prescription, and mark the retinol ladder superseded.
+async function fixAbdulTretinoinLadderV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state = (user as any).state || {};
+    if (state.abdulTretinoinLadderV1) return;
+    const sc = state.skinCare;
+    if (!sc || !Array.isArray(sc.products)) return;
+    const ret = sc.products.find((p: any) => p && p.type === "retinol");
+    if (ret) {
+      ret.name = "Tretinoin 0.025%";
+      ret.concentration = "0.025%";
+      ret.strength = "0.025%";
+      ret.prescription = true;
+      ret.brand = "Dermatica";
+      // Keep every-other-night; only correct if a prior state drifted it.
+      if (ret.frequency !== "every-2-days") ret.frequency = "every-2-days";
+      ret.notes =
+        "Prescription tretinoin 0.025% (Dermatica), every other night. Step up to 5x/wk then nightly only after 4+ clear weeks with zero irritation.";
+    }
+    sc.phase = 1; // every-other-night = bottom rung of the new 3-step tretinoin ladder
+    // Preserve phaseStartDate (tolerance clock) if present; only seed it if missing.
+    if (!sc.phaseStartDate) {
+      sc.phaseStartDate = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" });
+    }
+    sc.tretinoinReady = true;
+    sc.retinolLadderSuperseded = true; // history marker — retinol phases done, on tretinoin now
+    state.abdulTretinoinLadderV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Abdul skincare ladder rebuilt to tretinoin frequency steps (phase 1 = every other night)");
+  } catch (err) {
+    console.error("[migration] fixAbdulTretinoinLadderV1 failed:", err);
+  }
+}
+
 // Fix Abdul's startWeight — seedAbdulCutV1 overwrote the correct 113.5
 // (from progress baseline) with the latest weightLog entry (~109.8).
 async function fixAbdulStartWeightV1() {
@@ -1691,6 +1733,7 @@ const server = app.listen(PORT, async () => {
   await fixJayLegPressSledV1();
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();
+  await fixAbdulTretinoinLadderV1();
   await seedAbdulBoditraxV1();
   await seedFiveDaySplitV1();
   // Phase 46: heal a fully-missed Sunday report (process was down across the

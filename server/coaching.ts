@@ -30,11 +30,12 @@ function applySkincare(state: any, payload: any) {
   p.frequencyStartedAt = new Date().toISOString().slice(0, 10);
 }
 
-const PHASE_FREQ: Record<number, string> = { 1: "every-4-days", 2: "every-3-days", 3: "every-2-days", 4: "5x-week", 5: "daily", 6: "daily" };
+// Tretinoin frequency ladder: every-other-night → 5x/wk → nightly.
+const PHASE_FREQ: Record<number, string> = { 1: "every-2-days", 2: "5x-week", 3: "daily" };
 function applySkincarePhase(state: any, payload: any) {
   const newPhase = payload?.newPhase;
-  if (typeof newPhase !== "number" || newPhase < 1 || newPhase > 6) {
-    throw new Error("skincare-phase payload needs newPhase 1-6");
+  if (typeof newPhase !== "number" || newPhase < 1 || newPhase > 3) {
+    throw new Error("skincare-phase payload needs newPhase 1-3");
   }
   const sc = state.skinCare;
   if (!sc || !Array.isArray(sc.products)) throw new Error("no skin care routine");

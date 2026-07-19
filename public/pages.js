@@ -2500,7 +2500,7 @@ function renderCoachTransformationCard(){
     <div style="display:flex;gap:14px;margin-top:10px;font-size:11px;color:var(--text2);flex-wrap:wrap;">
       <div>🏋️ ${sessions} sessions</div>
       <div>🔥 ${gymStreak} day streak</div>
-      ${phase?`<div>🧴 Retinol phase ${phase}/5</div>`:''}
+      ${phase?`<div>🧴 Tretinoin step ${phase}/3</div>`:''}
     </div>
     <div style="font-size:11px;color:var(--text3);margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
       Next report in ${daysToSun===0?'today':daysToSun+' day'+(daysToSun===1?'':'s')} (Sunday 09:00) · <span onclick="generateCoachReportNow().then(()=>renderCoach())" style="color:var(--lime);cursor:pointer;font-weight:600;">Generate now</span>
