@@ -46,7 +46,7 @@ function renderWorkout(){
       }else{
         const missed=(typeof getMissedSession==='function')?getMissedSession(date):null;
         if(missed){
-          const mw=WORKOUTS[missed.type];
+          const mw=getWorkout(missed.type);
           html+=`<div class="card" style="border-color:var(--orange);background:rgba(255,85,0,.05);margin-bottom:12px;">
             <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:4px;">↩️ Missed session</div>
             <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">You didn't log your <b>${mw?mw.name:missed.type}</b> on ${fmtDate(missed.date)}. Make it up today — it logs against that session and <b>nothing else on your calendar moves</b>.</div>
@@ -69,7 +69,7 @@ function renderWorkout(){
     return;
   }
 
-  const w=WORKOUTS[renderSession];
+  const w=getWorkout(renderSession);
   const dayLog=getExLogForDate(date);
   const done=w.exercises.filter(e=>dayLog[e.id]?.done).length;
   const pct=Math.round((done/w.exercises.length)*100);
@@ -193,7 +193,7 @@ function _exLevelChip(exId){
 // only). Today's plan + a recap of the last same-type session — all from local
 // data, no AI call. The AI strategy brief still fires when you tap START.
 function buildSessionReport(date,session){
-  const w=WORKOUTS[session];
+  const w=getWorkout(session);
   if(!w)return '';
   const prev=(typeof getPreviousSessionData==='function')?getPreviousSessionData(date,session):null;
   let lastBlock;
@@ -239,7 +239,7 @@ function buildExItem(ex,dayLog,prevSession,readonly){
   const data=dayLog[ex.id]||{};
   const done=!!data.done;
   const timed=isTimeBased(ex);
-  const sets=data.sets||Array(ex.sets).fill(null).map(()=>timed?{seconds:''}:{kg:'',reps:''});
+  const sets=data.sets||Array(_effectiveSets(ex)).fill(null).map(()=>timed?{seconds:''}:{kg:'',reps:''});
   const best=getBestLift(ex.id);
   const bestStr=best?(timed?`PB: ${fmtSec(best.seconds)}`:`PB: ${best.kg}kg`):'';
   const bestDetail=best?(timed?`🏆 Personal Best: ${fmtSec(best.seconds)} on ${fmtDate(best.date)}`:`🏆 Personal Best: ${best.kg}kg on ${fmtDate(best.date)}`):'';
@@ -277,7 +277,7 @@ function buildExItem(ex,dayLog,prevSession,readonly){
       </div>
       <div class="ex-info">
         <div class="ex-name">${ex.name}</div>
-        <div class="ex-meta">${ex.sets} sets × ${ex.reps} · Rest ${ex.rest}s${bestStr?' · '+bestStr:''}</div>
+        <div class="ex-meta">${_effectiveSets(ex)} sets × ${ex.reps} · Rest ${ex.rest}s${bestStr?' · '+bestStr:''}</div>
         ${lastLine}
       </div>
       <div class="ex-tag">${ex.muscle}</div>
@@ -340,10 +340,10 @@ function toggleExDone(exId){
   if(isViewingFuture())return;
   const date=getViewDate();
   const session=getSessionTypeForDate(date); if(!session)return;
-  const w=WORKOUTS[session];
+  const w=getWorkout(session);
   const ex=w.exercises.find(e=>e.id===exId); if(!ex)return;
   const dayLog=getExLogForDate(date);
-  if(!dayLog[exId])dayLog[exId]={done:false,sets:Array(ex.sets).fill(null).map(()=>isTimeBased(ex)?{seconds:''}:{kg:'',reps:''})};
+  if(!dayLog[exId])dayLog[exId]={done:false,sets:Array(_effectiveSets(ex)).fill(null).map(()=>isTimeBased(ex)?{seconds:''}:{kg:'',reps:''})};
   dayLog[exId].done=!dayLog[exId].done;
   saveExLogForDate(date,dayLog);
   renderWorkout();
@@ -682,6 +682,37 @@ function _roundToPlate(kg){
   return Math.round(kg * 4) / 4;
 }
 
+// Phase 60: scheduled deload (upper-lower-5d-fixed only) — every 5th week,
+// anchored to the user's own programmeStartDate. Reads STATE for the active
+// programme; returns {weekInCycle,isDeload} or null (so it's a total no-op for
+// every other programme). Pure maths live in programme-shared.deloadWeekInfo.
+function _scheduledDeload(dateStr){
+  if(typeof STATE==='undefined'||!STATE.profile)return null;
+  if(STATE.profile.programId!=='upper-lower-5d-fixed')return null;
+  if(typeof FORGE_PROGRAMME==='undefined'||!FORGE_PROGRAMME.deloadWeekInfo)return null;
+  return FORGE_PROGRAMME.deloadWeekInfo(STATE.profile.programmeStartDate,dateStr);
+}
+function _isDeloadDate(dateStr){ const d=_scheduledDeload(dateStr); return !!(d&&d.isDeload); }
+function isDeloadWeekToday(){ return _isDeloadDate(typeof todayStr==='function'?todayStr():null); }
+// Prescribed set count for TODAY: a scheduled deload week caps weighted lifts at
+// 2 sets. Rehab / cardio / timed holds keep their template set count.
+function _effectiveSets(ex){
+  if(!ex)return 3;
+  if(isDeloadWeekToday()&&!_isRehabOrCardio(ex)&&!isTimeBased(ex))return 2;
+  return ex.sets;
+}
+// Rehab + cardio are exempt from load progression AND scheduled deload.
+function _isRehabOrCardio(exObj){ return !!(exObj&&(exObj.category==='rehab'||exObj.cardio||exObj.size==='cardio')); }
+// Most-frequent (modal) working weight an exercise was logged at in one session.
+function _modalKgOf(session,exId){
+  const sets=((session&&session.log&&session.log[exId]&&session.log[exId].sets)||[]).filter(s=>s.kg&&s.reps);
+  if(!sets.length)return null;
+  const c={}; for(const s of sets){const k=String(parseFloat(s.kg));c[k]=(c[k]||0)+1;}
+  const e=Object.entries(c).map(([k,n])=>({kg:parseFloat(k),count:n}));
+  e.sort((a,b)=>b.count-a.count||b.kg-a.kg);
+  return e[0].kg;
+}
+
 // Phase 47: set-to-set autoregulation. Pure arithmetic — NO AI (you can't wait
 // for a network call mid-rest, and it's an exact rule, not a judgement). Reads
 // the set you JUST did (reps + effort) vs the rep range and tells you what to
@@ -873,7 +904,10 @@ function suggestWeight(exId, prevSession, setIdx, opts){
 }
 
 function _suggestWeightCore(exId, prevSession, setIdx, opts){
-  const exObj=getAllExercises().find(e=>e.id===exId);
+  // Phase 60: prefer the CURRENT session's template exercise (opts.exObj) so the
+  // rep range / size / increments come from the programme being trained today —
+  // the same id (e.g. Shoulder Press) has different ranges across templates.
+  const exObj=((opts&&opts.exObj&&opts.exObj.id===exId)?opts.exObj:null)||getAllExercises().find(e=>e.id===exId);
   if(!exObj)return null;
   const timed=isTimeBased(exObj);
 
@@ -887,6 +921,39 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
   const _hasEx=(s)=>s&&s.log&&s.log[exId]&&(s.log[exId].sets||[]).some(x=>x.kg&&x.reps);
   if(!_hasEx(prevSession)&&opts&&Array.isArray(opts.prevSessions)){
     prevSession=opts.prevSessions.find(_hasEx)||prevSession;
+  }
+  // Phase 60: cross-type carryover. If no SAME-type session has this exercise
+  // (e.g. a shared id moved into a new programme's session), fall back to the
+  // most recent session of ANY type that logged it — so history carries over.
+  if(!_hasEx(prevSession)&&typeof getLastExercisePerformance==='function'){
+    const _xfer=getLastExercisePerformance(exId,(opts&&opts.forDate)||(typeof todayStr==='function'?todayStr():'9999-12-31'));
+    if(_hasEx(_xfer))prevSession=_xfer;
+  }
+
+  // Phase 60: scheduled-deload overlay (5-day split). HIGHEST precedence —
+  // overrides double-progression AND reactive stall-deload. Deload-week sessions
+  // are excluded from the progression reference, so the week AFTER a deload
+  // builds off the last real (non-deload) working weight, not the 60% load.
+  const _forDate=(opts&&opts.forDate)||(typeof todayStr==='function'?todayStr():null);
+  const _dlToday=_forDate?_scheduledDeload(_forDate):null;
+  const _fiveDay=!!(typeof STATE!=='undefined'&&STATE.profile&&STATE.profile.programId==='upper-lower-5d-fixed');
+  const _cands=[]; if(prevSession&&prevSession.date)_cands.push(prevSession);
+  if(opts&&Array.isArray(opts.prevSessions))for(const s of opts.prevSessions){ if(s&&s.date&&!_cands.some(c=>c.date===s.date))_cands.push(s); }
+  const _nonDeload=_fiveDay?_cands.filter(s=>!_isDeloadDate(s.date)):_cands;
+  if(_dlToday&&_dlToday.isDeload&&!_isRehabOrCardio(exObj)){
+    const _base=_nonDeload.find(s=>_modalKgOf(s,exId)!=null)||_cands.find(s=>_modalKgOf(s,exId)!=null);
+    const _baseKg=_base?_modalKgOf(_base,exId):null;
+    if(_baseKg!=null){
+      const _rm=String(exObj.reps).match(/(\d+)/);
+      const _lo=_rm?parseInt(_rm[1]):8;
+      const _dk=_roundToPlate(_baseKg*0.60);
+      return { kg:_dk, reps:_lo, dir:'down', deload:true, scheduledDeload:true, setsOverride:2,
+        reason:`Deload week — 60% of ${_baseKg}kg, 2 light sets. Move well, leave reps in the tank.` };
+    }
+  }
+  // Not a deload week today: never reference a deload (60%) session for progression.
+  if(_fiveDay&&(!_dlToday||!_dlToday.isDeload)&&prevSession&&prevSession.date&&_isDeloadDate(prevSession.date)&&_nonDeload.length){
+    prevSession=_nonDeload[0];
   }
 
   if(!prevSession||!prevSession.log[exId])return null;
@@ -926,9 +993,10 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
     return { kg:lastKg, reps:lastReps, reason:`Hold — low recovery (${opts.recoveryReason}). Focus on form.`, dir:null, recovery:'low' };
   }
 
-  // Check 2: stall detection (needs multi-session data)
+  // Check 2: stall detection (needs multi-session data). On the 5-day split,
+  // deload weeks are excluded so a planned 60% week never counts as a "stall".
   if(opts?.prevSessions){
-    const stall = detectStall(exId, exObj, opts.prevSessions);
+    const stall = detectStall(exId, exObj, _fiveDay?(_nonDeload.length?_nonDeload:opts.prevSessions):opts.prevSessions);
     if(stall){
       // Phase 44: holdKg exposes the stalled weight so the UI can offer
       // "hold instead" — the deload math itself is unchanged.
@@ -971,6 +1039,20 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
 }
 
 function suggestTime(exId,exObj,prevSession,setIdx,opts){
+  // Phase 60: Zone 2 cardio works in MINUTES — nudge toward the target, hard-cap
+  // at capMin, never a weight progression. Duration still stored in `seconds` so
+  // it reuses the timed set infra; `minutes` + cardio flag drive the display.
+  if(exObj&&exObj.cardio){
+    const cm=String(exObj.reps).match(/(\d+)[–-](\d+)/);
+    const loMin=cm?parseInt(cm[1]):40, hiMin=cm?parseInt(cm[2]):45;
+    const cap=exObj.capMin||hiMin;
+    const cs=((prevSession&&prevSession.log[exId]&&prevSession.log[exId].sets)||[]).filter(s=>s.seconds||s.minutes);
+    if(!cs.length)return{seconds:loMin*60,minutes:loMin,reason:`Walk ${loMin}–${hiMin} min at an easy, conversational (Zone 2) pace`,dir:null,timed:true,cardio:true};
+    const lastMin=cs[0].minutes?parseInt(cs[0].minutes):Math.round(parseInt(cs[0].seconds)/60);
+    if(lastMin>=cap)return{seconds:cap*60,minutes:cap,reason:`Hold ${cap} min — at your Zone 2 target`,dir:null,timed:true,cardio:true};
+    const nextMin=Math.min(cap,lastMin+5);
+    return{seconds:nextMin*60,minutes:nextMin,reason:`Aim ${nextMin} min (build to ${cap})`,dir:'up',timed:true,cardio:true};
+  }
   // Parse prescribed range from reps string like "30–45s"
   const rm=String(exObj.reps).match(/(\d+)[–-](\d+)/);
   const lower=rm?parseInt(rm[1]):30;
@@ -1007,7 +1089,7 @@ function suggestTime(exId,exObj,prevSession,setIdx,opts){
 }
 
 function renderWmOutline(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const date=todayStr();
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
@@ -1019,6 +1101,11 @@ function renderWmOutline(){
     ? `<div style="background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:#ffc107;line-height:1.5;">🌙 <strong>Taking it easy today</strong> (${gate.reason}). Form and finishing every set — not PRs. Suggestions hold last weights.</div>`
     : '';
 
+  // Phase 60: scheduled deload-week banner (5-day split, every 5th week)
+  const deloadBanner = (typeof isDeloadWeekToday==='function' && isDeloadWeekToday())
+    ? `<div style="background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.4);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:12px;color:var(--orange);line-height:1.5;">🔄 <strong>Deload week</strong> — planned recovery. Loads drop to ~60% and sets to 2. Move well, leave reps in the tank; you come back stronger next week.</div>`
+    : '';
+
   // Phase 38: injury banner — lists active injuries affecting today's lifts
   const injuredEx = w.exercises.filter(ex=>typeof isExerciseInjured==='function'&&isExerciseInjured(ex.id));
   const injuryBanner = injuredEx.length
@@ -1027,7 +1114,7 @@ function renderWmOutline(){
 
   // Phase 33: build prescriptions array for AI brief
   const prescriptions = w.exercises.map(ex => {
-    const sug = suggestWeight(ex.id, prev, undefined, opts);
+    const sug = suggestWeight(ex.id, prev, undefined, {...opts, exObj:ex});
     return {
       exId: ex.id,
       name: ex.name,
@@ -1056,6 +1143,7 @@ function renderWmOutline(){
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div class="wm-title">${w.name}</div>
     <div class="wm-sub">${w.muscles} · ${w.exercises.length} exercises · ~${w.duration} mins</div>
+    ${deloadBanner}
     ${banner}
     ${injuryBanner}
     ${calibrationBanner}
@@ -1063,14 +1151,15 @@ function renderWmOutline(){
     <div class="wm-h">Today's Plan</div>
     <div style="margin-bottom:24px;" id="wm-exercise-list">
       ${w.exercises.map((ex,i)=>{
-        const sug=suggestWeight(ex.id,prev,undefined,opts);
+        const sug=suggestWeight(ex.id,prev,undefined,{...opts, exObj:ex});
         const timed=isTimeBased(ex);
         const arrow=sug?.dir==='up'?'<span class="wm-arrow-up">↑</span>':sug?.dir==='down'?'<span class="wm-arrow-down">↓</span>':'';
         const wt=sug?(timed?`@ ${fmtSec(sug.seconds)} ${arrow}`:`@ ${sug.kg}kg ${arrow}`):(timed?'':'<span style="font-size:9px;color:var(--blue);font-weight:700;letter-spacing:1px;">FIND WEIGHT</span>');
         const badge=sug?.injured==='severe'?'<span style="font-size:9px;color:#ff6b6b;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">⚠ DO NOT LOAD</span>':sug?.injured?'<span style="font-size:9px;color:#ff6b6b;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">INJURY −</span>':sug?.deload?'<span style="font-size:9px;color:var(--orange);font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">DELOAD</span>':sug?.recovery==='low'?'<span style="font-size:9px;color:#ffc107;font-weight:700;letter-spacing:1px;display:block;margin-top:2px;">HOLD</span>':'';
         const cueId = `cue-${ex.id}`;
         const cueText = cached?.perExercise?.find(c => c.exId === ex.id)?.cue || '';
-        return `<div class="wm-ex-row"><div style="flex:1;"><div style="font-size:10px;color:var(--text3);font-weight:700;">${i+1}.</div><div class="wm-ex-name">${ex.name}</div><div id="${cueId}" style="font-size:11px;color:var(--lime);margin-top:4px;line-height:1.4;${cueText?'':'display:none;'}">${cueText}</div></div><div class="wm-ex-spec">${ex.sets}×${ex.reps}<br>${wt}${badge}</div></div>`;
+        const setsShown = sug?.setsOverride || ex.sets; // deload overrides to 2
+        return `<div class="wm-ex-row"><div style="flex:1;"><div style="font-size:10px;color:var(--text3);font-weight:700;">${i+1}.</div><div class="wm-ex-name">${ex.name}</div><div id="${cueId}" style="font-size:11px;color:var(--lime);margin-top:4px;line-height:1.4;${cueText?'':'display:none;'}">${cueText}</div></div><div class="wm-ex-spec">${setsShown}×${ex.reps}<br>${wt}${badge}</div></div>`;
       }).join('')}
     </div>
     <button class="wm-cta" onclick="wmStartFirstSet()">START WORKOUT →</button>
@@ -1139,7 +1228,7 @@ function _wmMarkSessionStart(){
   saveExLogForDate(date,dayLog);
 }
 function _wmMarkExerciseStart(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx]; if(!ex)return;
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -1148,7 +1237,7 @@ function _wmMarkExerciseStart(){
   saveExLogForDate(date,dayLog);
 }
 function _wmMarkExerciseDone(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx]; if(!ex)return;
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -1161,7 +1250,7 @@ function _wmMarkExerciseDone(){
 }
 
 function renderWmSet(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   if(typeof isCarry==='function'&&isCarry(ex)){renderWmSetCarry();return;}
   const timed=isTimeBased(ex);
@@ -1171,7 +1260,7 @@ function renderWmSet(){
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
   const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
-  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
+  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions,exObj:ex});
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const startKg=existingSet?.kg||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx)?wm.autoReg.kg:null)||sug?.kg||'';
   const repMatch=String(ex.reps).match(/(\d+)[–-](\d+)/);
@@ -1196,7 +1285,7 @@ function renderWmSet(){
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
     <div class="wm-title" style="margin-top:6px;">${ex.name}</div>
-    <div class="wm-sub">Set ${wm.setIdx+1} of ${ex.sets} · Target ${ex.reps} reps</div>
+    <div class="wm-sub">Set ${wm.setIdx+1} of ${_effectiveSets(ex)} · Target ${ex.reps} reps</div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
       <a href="${ex.yt}" target="_blank" style="color:var(--blue);font-size:12px;text-decoration:none;">🎥 Watch form →</a>
       ${_wmStrategyBtnHTML()}
@@ -1246,19 +1335,19 @@ function wmHoldInsteadOfDeload(exId,kg){
 let wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
 
 function renderWmSetTimed(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
   const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
-  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
+  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions,exObj:ex});
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const alreadyDone=existingSet?.done&&existingSet?.seconds;
 
   // Build set indicators
-  const totalSets=dayLog[ex.id]?.sets?.length||ex.sets;
+  const totalSets=dayLog[ex.id]?.sets?.length||_effectiveSets(ex);
   let setsHtml='';
   for(let i=0;i<Math.max(totalSets,wm.setIdx+1);i++){
     const s=dayLog[ex.id]?.sets?.[i];
@@ -1274,7 +1363,7 @@ function renderWmSetTimed(){
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
     <div class="wm-title" style="margin-top:6px;">${ex.name}</div>
-    <div class="wm-sub">Set ${wm.setIdx+1} of ${ex.sets} · Target ${ex.reps}</div>
+    <div class="wm-sub">Set ${wm.setIdx+1} of ${_effectiveSets(ex)} · Target ${ex.reps}</div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
       <a href="${ex.yt}" target="_blank" style="color:var(--blue);font-size:12px;text-decoration:none;">🎥 Watch form →</a>
       ${_wmStrategyBtnHTML()}
@@ -1328,7 +1417,7 @@ function wmToggleTimer(restSec){
 }
 
 function wmTimedSetDone(restSec){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const seconds=wmTimer.elapsed;
   const date=todayStr();
@@ -1337,10 +1426,10 @@ function wmTimedSetDone(restSec){
   while(dayLog[ex.id].sets.length<=wm.setIdx)dayLog[ex.id].sets.push({seconds:0,done:false});
   dayLog[ex.id].sets[wm.setIdx]={seconds,done:true,doneAt:Date.now(),
     setStartedAt:wm.setStartedAt||null,setCompletedAt:Date.now()};
-  if(dayLog[ex.id].sets.filter(s=>s.done).length>=ex.sets)dayLog[ex.id].done=true;
+  if(dayLog[ex.id].sets.filter(s=>s.done).length>=_effectiveSets(ex))dayLog[ex.id].done=true;
   saveExLogForDate(date,dayLog);
 
-  const isLastSet=wm.setIdx>=ex.sets-1;
+  const isLastSet=wm.setIdx>=_effectiveSets(ex)-1;
   if(isLastSet){
     wm.mode='effort';
     renderWmTimedEffort();
@@ -1367,7 +1456,7 @@ function suggestCarry(exId,prevSession){
   const last=sets[sets.length-1];
   const prevLeftKg=last.leftKg!=null?last.leftKg:'';
   const prevRightKg=last.rightKg!=null?last.rightKg:(prevLeftKg!==''?prevLeftKg:'');
-  const need=(ex&&ex.sets)||3;
+  const need=_effectiveSets(ex)||3;
   const hitAll=sets.length>=need&&sets.every(s=>(s.leftSeconds||0)>=target&&(s.rightSeconds||0)>=target);
   const inc=1.25;
   const up=v=>v===''?'':Math.round((parseFloat(v)+inc)*4)/4;
@@ -1387,7 +1476,7 @@ function wmCarryStepKg(delta){
 }
 
 function renderWmSetCarry(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -1407,7 +1496,7 @@ function renderWmSetCarry(){
   if(defaultKg==null)defaultKg='';
 
   let setsHtml='';
-  for(let i=0;i<ex.sets;i++){
+  for(let i=0;i<_effectiveSets(ex);i++){
     const s=dayLog[ex.id]?.sets?.[i]||{};
     const lDone=s.leftSeconds!=null,rDone=s.rightSeconds!=null;
     const isCur=i===wm.setIdx;
@@ -1424,7 +1513,7 @@ function renderWmSetCarry(){
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
     <div class="wm-title" style="margin-top:6px;">${ex.name}</div>
-    <div class="wm-sub">Set ${wm.setIdx+1} of ${ex.sets} · target ${fmtSec(target)} per side</div>
+    <div class="wm-sub">Set ${wm.setIdx+1} of ${_effectiveSets(ex)} · target ${fmtSec(target)} per side</div>
     <div style="display:flex;align-items:center;gap:10px;margin:8px 0 10px;flex-wrap:wrap;">
       <a href="${ex.yt}" target="_blank" style="color:var(--blue);font-size:12px;text-decoration:none;">🎥 Watch form →</a>
     </div>
@@ -1459,7 +1548,7 @@ function wmToggleCarryTimer(){
 }
 
 function wmCarrySideDone(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -1482,11 +1571,11 @@ function wmCarrySideDone(){
   set.rightKg=isNaN(kg)?'':kg; set.rightSeconds=seconds;
   set.done=true; set.doneAt=Date.now(); set.setCompletedAt=Date.now();
   dayLog[ex.id].sets[wm.setIdx]=set;
-  if(dayLog[ex.id].sets.filter(s=>s.done).length>=ex.sets)dayLog[ex.id].done=true;
+  if(dayLog[ex.id].sets.filter(s=>s.done).length>=_effectiveSets(ex))dayLog[ex.id].done=true;
   saveExLogForDate(date,dayLog);
   wm.carrySeconds=0; wm.carrySide='left';
   wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
-  if(wm.setIdx>=ex.sets-1){
+  if(wm.setIdx>=_effectiveSets(ex)-1){
     _wmMarkExerciseDone();
     wm.mode='exDone';
     renderWmExerciseDone();
@@ -1504,7 +1593,7 @@ function wmRedoTimedSet(idx){
 }
 
 function renderWmTimedEffort(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -1533,7 +1622,7 @@ function renderWmTimedEffort(){
 }
 
 function wmRecordTimedEffort(effort){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -1561,7 +1650,7 @@ function wmStepReps(delta){
 }
 
 function wmMarkSetDone(restSec){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const kg=parseFloat(document.getElementById('wm-kg').value)||'';
   const reps=parseInt(document.getElementById('wm-reps').value)||'';
@@ -1573,7 +1662,7 @@ function wmMarkSetDone(restSec){
   dayLog[ex.id].sets[wm.setIdx]={kg,reps,done:true,doneAt:Date.now(),
     setStartedAt:wm.setStartedAt||null,setCompletedAt:Date.now()};
   if(prevEffort)dayLog[ex.id].sets[wm.setIdx].effort=prevEffort;
-  if(dayLog[ex.id].sets.filter(s=>s.done).length>=ex.sets)dayLog[ex.id].done=true;
+  if(dayLog[ex.id].sets.filter(s=>s.done).length>=_effectiveSets(ex))dayLog[ex.id].done=true;
   saveExLogForDate(date,dayLog);
   wm.restTarget=restSec;
   wm.mode='effort';
@@ -1581,7 +1670,7 @@ function wmMarkSetDone(restSec){
 }
 
 function renderWmEffort(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -1609,7 +1698,7 @@ function renderWmEffort(){
 }
 
 function wmRecordEffort(effort){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -1617,7 +1706,7 @@ function wmRecordEffort(effort){
     dayLog[ex.id].sets[wm.setIdx].effort=effort;
     saveExLogForDate(date,dayLog);
   }
-  const isLastSet=wm.setIdx>=ex.sets-1;
+  const isLastSet=wm.setIdx>=_effectiveSets(ex)-1;
   if(isLastSet){
     _wmMarkExerciseDone();
     wm.mode='exDone';
@@ -1630,7 +1719,7 @@ function wmRecordEffort(effort){
 }
 
 function renderWmRest(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const timed=isTimeBased(ex);
   const carry=(typeof isCarry==='function')&&isCarry(ex); // Phase 53
@@ -1660,7 +1749,7 @@ function renderWmRest(){
       <div id="wm-timer-status" style="font-size:14px;color:var(--text2);margin-top:8px;">counting down</div>
     </div>
     ${arPanel}
-    <div class="wm-meta">Next: Set ${wm.setIdx+2} of ${ex.sets} · ${ex.name}</div>
+    <div class="wm-meta">Next: Set ${wm.setIdx+2} of ${_effectiveSets(ex)} · ${ex.name}</div>
     <button id="wm-next-btn" class="wm-cta ghost" onclick="wmStartNextSet()">SKIP REST · START NEXT SET</button>
   `;
   document.getElementById('wmContent').innerHTML=html;
@@ -1703,7 +1792,7 @@ function updateWmRest(){
 
 function wmStartNextSet(){
   const elapsed=Math.floor((Date.now()-wm.restStarted)/1000);
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -1727,7 +1816,7 @@ function wmStartNextSet(){
 
 function renderWmTransition(){
   if(wm.restInterval){clearInterval(wm.restInterval);wm.restInterval=null;}
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   if(!ex)return;
   const date=todayStr();
@@ -1735,7 +1824,7 @@ function renderWmTransition(){
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
   const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
-  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions});
+  const sug=suggestWeight(ex.id,prev,wm.setIdx,{lowRecovery:gate.lowRecovery,recoveryReason:gate.reason,prevSessions,exObj:ex});
   const timed=isTimeBased(ex);
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const startKg=existingSet?.kg||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx)?wm.autoReg.kg:null)||sug?.kg||'';
@@ -1748,7 +1837,7 @@ function renderWmTransition(){
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Get into position</div>
     <div class="wm-title" style="font-size:22px;margin-top:6px;">${ex.name}</div>
-    <div class="wm-sub" style="margin-bottom:30px;">Set ${wm.setIdx+1} of ${ex.sets} · ${upcoming}</div>
+    <div class="wm-sub" style="margin-bottom:30px;">Set ${wm.setIdx+1} of ${_effectiveSets(ex)} · ${upcoming}</div>
     <div style="text-align:center;padding:30px 0;">
       <div id="wm-trans" style="font-family:'Archivo Black',sans-serif;font-size:96px;letter-spacing:-4px;color:var(--blue);line-height:1;">15</div>
       <div style="font-size:14px;color:var(--text2);margin-top:8px;">walk over · lie down · grip the bar</div>
@@ -1768,7 +1857,7 @@ function wmFinishTransition(){
   if(wm.transitionInterval){clearInterval(wm.transitionInterval);wm.transitionInterval=null;}
   const elapsed=Math.round((Date.now()-(wm.transitionStarted||Date.now()))/1000);
   // Stamp transition time on the PREVIOUS set's record (which the transition followed)
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   if(ex && typeof wm.prevSetIdx==='number'){
     const date=todayStr();
@@ -1785,7 +1874,7 @@ function wmFinishTransition(){
 }
 
 function renderWmExerciseDone(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   const timed=isTimeBased(ex);
   const carry=(typeof isCarry==='function')&&isCarry(ex); // Phase 53
@@ -1818,7 +1907,7 @@ function renderWmExerciseDone(){
 }
 
 function wmNextExercise(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   wm.autoReg=null; // Phase 47: don't carry a set-to-set call across exercises
   if(wm.exIdx>=w.exercises.length-1){wmFinish();return;}
   wm.exIdx++;
@@ -1833,7 +1922,7 @@ function wmNextExercise(){
 // are logged, so the progression engine carries your last real session forward
 // (no deload), and the score/recap exclude it. The coach is told you chose to skip.
 function wmSkipExercise(){
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
   if(!confirm(`Skip ${ex.name}? It won't count against you — your next session won't deload from a skip.`))return;
   const date=todayStr();
@@ -1876,7 +1965,7 @@ function wmAddSessionNote(){
 
 function wmFinish(){
   wm.recapShown=true; // Phase 47b: recap is now on screen — let the next ✕ close cleanly
-  const w=WORKOUTS[wm.session];
+  const w=getWorkout(wm.session);
   const date=todayStr();
   const dayLog=getExLogForDate(date);
   // Phase 38: stamp session completion timing

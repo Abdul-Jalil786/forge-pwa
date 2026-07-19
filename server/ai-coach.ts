@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { decrypt } from "./crypto-util";
 import { analyzeNutrition } from "./nutrition";
-import { exerciseName, sessionTypeForDate, programmeLabel } from "./programme-shared";
+import { exerciseName, sessionTypeForDate, programmeLabel, deloadWeekInfo } from "./programme-shared";
 import { formatCorrelations, blendedLeanSeries, leanTrendRate } from "./proactive";
 
 // Phase 57: age derived from date of birth (YYYY-MM-DD) so it never goes stale.
@@ -973,6 +973,12 @@ export function buildContext(state: any): string {
   // (single source — no hardcoded "Upper/Rest/Lower/Rest").
   const prog = programmeLabel(profile.programId);
   lines.push(`  Programme: ${prog.name} — ${prog.pattern}. The split is fixed; suggest volume/intensity tweaks within it, not split changes.${state.trainingStartDate ? ` Training anchor: ${state.trainingStartDate}.` : ""}`);
+  // Phase 60: deload cycle — tell the coach when this user is inside a planned
+  // 60%/2-set deload week, so a light week isn't misread as regression.
+  if (profile.programId === "upper-lower-5d-fixed" && profile.programmeStartDate) {
+    const dl = deloadWeekInfo(profile.programmeStartDate, ukToday());
+    if (dl) lines.push(`  Deload cycle: week ${dl.weekInCycle + 1} of 5${dl.isDeload ? " — THIS IS A SCHEDULED DELOAD WEEK (planned ~60% load, 2 sets). Expect lower volume/weights; that is by design, not regression." : " (normal progression week)."}`);
+  }
   lines.push("");
 
   // Phase 57: coach targets — reference these numbers instead of assuming fixed values.
@@ -1051,7 +1057,7 @@ export function buildContext(state: any): string {
     // Determine if this date was a training day, honouring the user's programme
     // (delegates to the shared schedule — no hardcoded upper/lower cycle).
     const programId = state.profile?.programId || "upper-lower-4d";
-    const wasTrainingDay = sessionTypeForDate(programId, d, state.trainingStartDate) !== null;
+    const wasTrainingDay = sessionTypeForDate(programId, d, state.profile?.programmeStartDate || state.trainingStartDate) !== null;
     if (wasTrainingDay) nonRestCount++; else restDayCount++;
   }
   if (cardioSessions7 > 0 || cardioLog && Object.keys(cardioLog).length > 0) {

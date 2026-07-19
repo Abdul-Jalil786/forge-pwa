@@ -145,6 +145,140 @@ test("Coach Settings save/remove handlers are all defined", () => {
   }
 });
 
+test("5-day progression uses the CURRENT template's rep range (per-template exObj)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';`, ctx);
+  // Shoulder Press (u4) is 6–8 in the old 'upper' template but 10–12 in upperA.
+  // Last session: 40kg × 9 reps, solid. Under 10–12 that's below top → HOLD/climb
+  // reps; under 6–8 (the global-dedupe default) 9≥8 → it would add weight.
+  const prev = { date: "2026-07-20", log: { u4: { sets: [{ kg: 40, reps: 9, effort: "solid" }] } } };
+  vm.runInContext(`globalThis._prev = ${JSON.stringify(prev)};`, ctx);
+  const withTemplate = vm.runInContext(
+    `suggestWeight('u4', _prev, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), prevSessions:[_prev], forDate:'2026-07-27' })`, ctx);
+  assert.equal(withTemplate.dir, null, "upperA 10–12: 9 reps is below top → hold + climb reps");
+  const withoutTemplate = vm.runInContext(
+    `suggestWeight('u4', _prev, undefined, { prevSessions:[_prev], forDate:'2026-07-27' })`, ctx);
+  assert.equal(withoutTemplate.dir, "up", "global default 6–8: 9≥8 → adds weight (proves the template range matters)");
+});
+
+test("5-day scheduled deload: 60% of last non-deload weight, 2 sets, flagged", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';`, ctx);
+  // A real working session at 40kg on a NON-deload week (Jul 27).
+  const prev = { date: "2026-07-27", log: { u4: { sets: [{ kg: 40, reps: 11, effort: "solid" }, { kg: 40, reps: 10, effort: "solid" }] } } };
+  vm.runInContext(`globalThis._d = ${JSON.stringify(prev)};`, ctx);
+  // forDate 2026-08-17 = week index 4 = deload.
+  const sug = vm.runInContext(
+    `suggestWeight('u4', _d, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), prevSessions:[_d], forDate:'2026-08-17' })`, ctx);
+  assert.equal(sug.scheduledDeload, true, "flagged as scheduled deload");
+  assert.equal(sug.deload, true);
+  assert.equal(sug.setsOverride, 2, "set count overridden to 2");
+  assert.equal(sug.kg, 24, "60% of 40kg = 24kg");
+  // Rehab is exempt from deload (no scheduledDeload overlay)
+  const rehabPrev = { date: "2026-07-27", log: { reh_1: { sets: [{ kg: 5, reps: 15 }] } } };
+  const rehSug = vm.runInContext(
+    `suggestWeight('reh_1', ${JSON.stringify(rehabPrev)}, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='reh_1'), prevSessions:[${JSON.stringify(rehabPrev)}], forDate:'2026-08-17' })`, ctx);
+  assert.ok(!rehSug || !rehSug.scheduledDeload, "rehab exempt from scheduled deload");
+});
+
+test("5-day post-deload: progression references the last NON-deload weight, not the 60% week", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';`, ctx);
+  // Most recent session was the deload week (24kg on Aug 17); before it, real 40kg.
+  const deload = { date: "2026-08-17", log: { u4: { sets: [{ kg: 24, reps: 10 }, { kg: 24, reps: 10 }] } } };
+  const real = { date: "2026-08-10", log: { u4: { sets: [{ kg: 40, reps: 12, effort: "solid" }, { kg: 40, reps: 12, effort: "solid" }] } } };
+  // forDate Aug 24 = week 0 (normal). Reference must be the 40kg session, so a
+  // top-of-range (12) solid week progresses UP from 40, not from 24.
+  const sug = vm.runInContext(
+    `suggestWeight('u4', ${JSON.stringify(deload)}, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), prevSessions:[${JSON.stringify(deload)}, ${JSON.stringify(real)}], forDate:'2026-08-24' })`, ctx);
+  assert.equal(sug.dir, "up", "progresses up off the real week");
+  assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
+});
+
+test("shared-id history carries over across the programme switch (leg press l1)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';
+    // Historical LOWER-day session (old programme) with Leg Press at 275kg
+    // (the +53 sled-corrected value). No 'lowerA' session exists yet.
+    STATE.exLog={ '2026-07-10': { l1: { sets: [{ kg: 275, reps: 8, effort: 'solid' }] } } };`, ctx);
+  // Prescribing l1 for a new lowerA session (Tue 21 Jul) — same-type history is
+  // empty, so the cross-type fallback must find the 275kg leg press.
+  const sug = vm.runInContext(
+    `suggestWeight('l1', getPreviousSessionData('2026-07-21','lowerA'), undefined, { exObj: WORKOUTS.lowerA.exercises.find(e=>e.id==='l1'), prevSessions: getPreviousSessions('2026-07-21','lowerA',5), forDate:'2026-07-21' })`, ctx);
+  assert.ok(sug && sug.kg != null, "must carry over history, not show FIND WEIGHT");
+  assert.equal(sug.kg, 275, "references the 275kg leg press from the old lower day");
+  // With NO history anywhere → genuinely no reference (FIND WEIGHT).
+  vm.runInContext("STATE.exLog={};", ctx);
+  const none = vm.runInContext(
+    `suggestWeight('l1', null, undefined, { exObj: WORKOUTS.lowerA.exercises.find(e=>e.id==='l1'), prevSessions: [], forDate:'2026-07-21' })`, ctx);
+  assert.ok(!none || none.kg == null, "no history → no fabricated weight");
+});
+
+test("5-day switch-day (Sun 19 Jul): rest + no make-up of the pre-switch programme", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20'; STATE.exLog={};`, ctx);
+  // Sun 19 Jul: old 4-day cycle would show Upper; new programme → rest (gated).
+  assert.equal(vm.runInContext("getSessionTypeForDate('2026-07-19')", ctx), null, "switch-day = rest");
+  // Yesterday (Sat 18) is also pre-start → gated null → getMissedSession offers nothing.
+  assert.equal(vm.runInContext("getMissedSession('2026-07-19')", ctx), null, "no make-up on the switch day");
+  // From Mon 20 Jul the split runs.
+  assert.equal(vm.runInContext("getSessionTypeForDate('2026-07-20')", ctx), "upperA", "Mon = UPPER_A");
+  assert.equal(vm.runInContext("getSessionTypeForDate('2026-07-25')", ctx), "zone2", "Sat = ZONE2");
+});
+
+test("migration seedFiveDaySplitV1 switches BOTH users with correct rehab flags", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "server", "index.ts"), "utf8");
+  assert.ok(src.includes("async function seedFiveDaySplitV1"), "migration missing");
+  assert.ok(src.includes("await seedFiveDaySplitV1()"), "migration not wired into the chain");
+  assert.ok(/jay@afjltd\.co\.uk[\s\S]*showRehab: true/.test(src), "Jay: rehab on");
+  assert.ok(/mohammed\.naveed@birmingham\.gov\.uk[\s\S]*showRehab: false/.test(src), "Naveed: rehab off");
+  assert.ok(src.includes('programmeStartDate = "2026-07-20"'), "programmeStartDate = Mon 20 Jul");
+  assert.ok(src.includes('programId = "upper-lower-5d-fixed"'), "programId set");
+  assert.ok(src.includes("fiveDaySplitV1"), "one-shot guard");
+});
+
+test("rehab exercises are per-user: shown by default, hidden when profile.showRehab===false", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // Default (owner / Jay): rehab visible in UPPER_A
+  const withRehab = vm.runInContext("sessionExercises('upperA').map(e=>e.id)", ctx);
+  assert.ok(withRehab.includes("reh_1") && withRehab.includes("reh_3"), "rehab shown by default");
+  assert.ok(withRehab.includes("u4"), "normal lifts still present");
+  // Naveed: showRehab=false → rehab filtered out, everything else intact
+  vm.runInContext("STATE.profile.showRehab=false;", ctx);
+  const noRehab = vm.runInContext("sessionExercises('upperA').map(e=>e.id)", ctx);
+  assert.ok(!noRehab.includes("reh_1") && !noRehab.includes("reh_2") && !noRehab.includes("reh_3"), "rehab hidden for Naveed");
+  assert.ok(noRehab.includes("u4") && noRehab.includes("u1"), "non-rehab lifts unaffected");
+  // getWorkout reflects the same filtering (used by every render/nav path)
+  const gw = vm.runInContext("getWorkout('upperA').exercises.length", ctx);
+  assert.equal(gw, noRehab.length, "getWorkout uses the same filter as sessionExercises");
+});
+
+test("deload week caps weighted lifts at 2 sets; rehab/cardio keep their count", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';`, ctx);
+  const u4 = vm.runInContext("WORKOUTS.upperA.exercises.find(e=>e.id==='u4')", ctx);
+  const reh = vm.runInContext("WORKOUTS.upperA.exercises.find(e=>e.id==='reh_1')", ctx);
+  const z2 = vm.runInContext("WORKOUTS.zone2.exercises.find(e=>e.id==='cardio_z2')", ctx);
+  // Non-deload week (today outside a deload) → template sets
+  // (isDeloadWeekToday reads the real clock, so assert the RELATIONSHIP via the helper)
+  const effU4 = vm.runInContext("(function(){var _r=isDeloadWeekToday();return {deload:_r, u4:_effectiveSets(WORKOUTS.upperA.exercises.find(e=>e.id==='u4')), reh:_effectiveSets(WORKOUTS.upperA.exercises.find(e=>e.id==='reh_1')), z2:_effectiveSets(WORKOUTS.zone2.exercises.find(e=>e.id==='cardio_z2'))};})()", ctx);
+  if (effU4.deload) {
+    assert.equal(effU4.u4, 2, "weighted lift capped at 2 on a deload week");
+  } else {
+    assert.equal(effU4.u4, u4.sets, "weighted lift uses template sets off deload");
+  }
+  // Rehab + cardio always keep their template count regardless of deload
+  assert.equal(effU4.reh, reh.sets, "rehab keeps its set count");
+  assert.equal(effU4.z2, z2.sets, "cardio keeps its set count");
+});
+
 test("Mounjaro injection-day gate follows profile.glp1InjectionDow (not hardcoded Wed)", () => {
   const { ctx } = bootApp();
   seed(ctx);

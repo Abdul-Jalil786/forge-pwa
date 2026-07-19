@@ -70,7 +70,7 @@ function skinDueOnServer(product: any, dateStr: string): boolean {
 // respects the user's profile.programId instead of assuming upper-lower-4d.
 function sessionTypeFor(state: any, dateStr: string): string | null {
   const programId = state.profile?.programId || "upper-lower-4d";
-  return sessionTypeForDate(programId, dateStr, state.trainingStartDate);
+  return sessionTypeForDate(programId, dateStr, state.profile?.programmeStartDate || state.trainingStartDate);
 }
 
 async function sendPushToUser(userId: string, payload: { title: string; body: string }): Promise<void> {

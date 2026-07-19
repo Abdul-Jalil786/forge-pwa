@@ -36,6 +36,12 @@ var EXERCISE_NAMES = {
   neck_ext: 'Cable Neck Extension (back)',
   neck_front: 'Cable Neck Flexion (front)',
   core_dead_bug: 'Dead Bug',
+  // Cardio (Zone 2, upper-lower-5d-fixed)
+  cardio_z2: 'Zone 2 Walk',
+  // Shoulder rehab / physio (owner-configurable, category:'rehab')
+  reh_1: 'Rehab 1',
+  reh_2: 'Rehab 2',
+  reh_3: 'Rehab 3',
   // Lower
   l1: 'Leg Press',
   l2: 'Romanian Deadlift',
@@ -85,6 +91,7 @@ var EXERCISE_REPS = {
 // Names match public/data.js PROGRAMS (enforced by the parity test).
 var PROGRAMME_LABELS = {
   'upper-lower-4d': { name: 'Upper / Lower 4-Day', pattern: 'Upper / Rest / Lower / Rest (repeating 4-day cycle)' },
+  'upper-lower-5d-fixed': { name: 'Upper / Lower 5-Day (fixed)', pattern: 'Mon Upper A · Tue Lower A · Wed rest · Thu Upper B · Fri Lower B · Sat Zone 2 walk · Sun rest (fixed weekdays)' },
   'full-body-3d': { name: 'Full Body 3-Day', pattern: 'Mon / Wed / Fri full-body' },
   'home-3d': { name: 'Home Full Body 3-Day', pattern: 'Mon / Wed / Fri full-body (dumbbells + bodyweight)' },
 };
@@ -110,11 +117,31 @@ function _weekdaySession(dateStr, sessionType) {
   return (dow === 1 || dow === 3 || dow === 5) ? sessionType : null;
 }
 
+// Fixed 5-day split (upper-lower-5d-fixed): Mon UPPER_A, Tue LOWER_A, Wed rest,
+// Thu UPPER_B, Fri LOWER_B, Sat ZONE2, Sun rest. `startDate` is the programme's
+// own programmeStartDate — dates before it are NOT scheduled (so switching mid-
+// week doesn't retro-schedule old days or offer spurious make-ups). Weekday-based
+// (like full-body-3d), not a rolling cycle.
+function _fixed5daySession(dateStr, startDate) {
+  if (startDate && dateStr < startDate) return null;
+  var dow = new Date(dateStr + 'T12:00:00').getDay();
+  switch (dow) {
+    case 1: return 'upperA';
+    case 2: return 'lowerA';
+    case 4: return 'upperB';
+    case 5: return 'lowerB';
+    case 6: return 'zone2';
+    default: return null; // Wed (3), Sun (0)
+  }
+}
+
 // programId + date (+ training anchor) -> WORKOUTS session key, or null (rest).
 // Mirrors PROGRAMS[*].getSessionType in data.js exactly. Unknown ids fall back
 // to the default upper-lower-4d, matching getProgram()'s fallback.
 function sessionTypeForDate(programId, dateStr, startDate) {
   switch (programId) {
+    case 'upper-lower-5d-fixed':
+      return _fixed5daySession(dateStr, startDate);
     case 'full-body-3d':
       return _weekdaySession(dateStr, 'full');
     case 'home-3d':
@@ -129,8 +156,24 @@ function sessionTypeForDate(programId, dateStr, startDate) {
   }
 }
 
+// Scheduled deload: every 5th week of the programme cycle, anchored to the
+// user's own programmeStartDate. weekInCycle = floor(daysSince(start)/7) % 5;
+// week index 4 (the 5th week) is the deload. Returns { weekInCycle, isDeload },
+// or null when there is no start date or the date precedes it. Pure — the anchor
+// is passed in, never read from a global, so client + server + tests agree.
+function deloadWeekInfo(programmeStartDate, dateStr) {
+  if (!programmeStartDate || !dateStr || dateStr < programmeStartDate) return null;
+  var start = new Date(programmeStartDate + 'T12:00:00');
+  var target = new Date(dateStr + 'T12:00:00');
+  var days = Math.floor((target - start) / 86400000);
+  if (days < 0) return null;
+  var weekInCycle = ((Math.floor(days / 7) % 5) + 5) % 5;
+  return { weekInCycle: weekInCycle, isDeload: weekInCycle === 4 };
+}
+
 var FORGE_PROGRAMME = {
   EXERCISE_NAMES: EXERCISE_NAMES,
+  deloadWeekInfo: deloadWeekInfo,
   LEGACY_EXERCISE_NAMES: LEGACY_EXERCISE_NAMES,
   EXERCISE_REPS: EXERCISE_REPS,
   exerciseName: exerciseName,
