@@ -205,6 +205,23 @@ const PROGRAMS = {
 };
 function getProgramId(){return (STATE.profile&&STATE.profile.programId)||'upper-lower-4d';}
 function getProgram(){return PROGRAMS[getProgramId()]||PROGRAMS['upper-lower-4d'];}
+// Phase 60: per-user rehab visibility. Rehab-category exercises (the owner's
+// physio work) are ON by default and hidden for any user with
+// profile.showRehab===false (set for Naveed by the programme migration). Every
+// guided-workout render/nav path reads getWorkout()/sessionExercises() so the
+// exercise list is consistent (indices never drift). Classification + history
+// still read the FULL WORKOUTS templates, so hiding rehab never loses history.
+function sessionExercises(sessionKey){
+  const w=WORKOUTS[sessionKey];
+  if(!w||!Array.isArray(w.exercises))return [];
+  const showRehab=!(STATE.profile&&STATE.profile.showRehab===false);
+  return showRehab?w.exercises:w.exercises.filter(e=>e.category!=='rehab');
+}
+function getWorkout(sessionKey){
+  const w=WORKOUTS[sessionKey];
+  if(!w)return w;
+  return {...w, exercises: sessionExercises(sessionKey)};
+}
 // Union of every exercise across all program templates, deduped by id.
 function getAllExercises(){
   const seen=new Set(),out=[];

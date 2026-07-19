@@ -198,6 +198,43 @@ test("5-day post-deload: progression references the last NON-deload weight, not 
   assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
 });
 
+test("rehab exercises are per-user: shown by default, hidden when profile.showRehab===false", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // Default (owner / Jay): rehab visible in UPPER_A
+  const withRehab = vm.runInContext("sessionExercises('upperA').map(e=>e.id)", ctx);
+  assert.ok(withRehab.includes("reh_1") && withRehab.includes("reh_3"), "rehab shown by default");
+  assert.ok(withRehab.includes("u4"), "normal lifts still present");
+  // Naveed: showRehab=false → rehab filtered out, everything else intact
+  vm.runInContext("STATE.profile.showRehab=false;", ctx);
+  const noRehab = vm.runInContext("sessionExercises('upperA').map(e=>e.id)", ctx);
+  assert.ok(!noRehab.includes("reh_1") && !noRehab.includes("reh_2") && !noRehab.includes("reh_3"), "rehab hidden for Naveed");
+  assert.ok(noRehab.includes("u4") && noRehab.includes("u1"), "non-rehab lifts unaffected");
+  // getWorkout reflects the same filtering (used by every render/nav path)
+  const gw = vm.runInContext("getWorkout('upperA').exercises.length", ctx);
+  assert.equal(gw, noRehab.length, "getWorkout uses the same filter as sessionExercises");
+});
+
+test("deload week caps weighted lifts at 2 sets; rehab/cardio keep their count", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';`, ctx);
+  const u4 = vm.runInContext("WORKOUTS.upperA.exercises.find(e=>e.id==='u4')", ctx);
+  const reh = vm.runInContext("WORKOUTS.upperA.exercises.find(e=>e.id==='reh_1')", ctx);
+  const z2 = vm.runInContext("WORKOUTS.zone2.exercises.find(e=>e.id==='cardio_z2')", ctx);
+  // Non-deload week (today outside a deload) → template sets
+  // (isDeloadWeekToday reads the real clock, so assert the RELATIONSHIP via the helper)
+  const effU4 = vm.runInContext("(function(){var _r=isDeloadWeekToday();return {deload:_r, u4:_effectiveSets(WORKOUTS.upperA.exercises.find(e=>e.id==='u4')), reh:_effectiveSets(WORKOUTS.upperA.exercises.find(e=>e.id==='reh_1')), z2:_effectiveSets(WORKOUTS.zone2.exercises.find(e=>e.id==='cardio_z2'))};})()", ctx);
+  if (effU4.deload) {
+    assert.equal(effU4.u4, 2, "weighted lift capped at 2 on a deload week");
+  } else {
+    assert.equal(effU4.u4, u4.sets, "weighted lift uses template sets off deload");
+  }
+  // Rehab + cardio always keep their template count regardless of deload
+  assert.equal(effU4.reh, reh.sets, "rehab keeps its set count");
+  assert.equal(effU4.z2, z2.sets, "cardio keeps its set count");
+});
+
 test("Mounjaro injection-day gate follows profile.glp1InjectionDow (not hardcoded Wed)", () => {
   const { ctx } = bootApp();
   seed(ctx);
