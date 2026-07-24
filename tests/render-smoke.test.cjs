@@ -198,6 +198,33 @@ test("5-day post-deload: progression references the last NON-deload weight, not 
   assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
 });
 
+test("progression is rep-range-aware per day (undulating split: Leg Press 8–10 vs 10–12)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  // Lower A trains Leg Press (l1) at 8–10 reps (heavier); Lower B at 10–12
+  // (lighter). Both logged with their real session type. The reference for each
+  // day must come from THAT day's rep range, not blend across them.
+  vm.runInContext(`
+    STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-06';
+    STATE.exLog={
+      '2026-07-14':{_session:{sessionType:'lowerA'}, l1:{sets:[{kg:328,reps:9,effort:'solid'},{kg:328,reps:8,effort:'solid'}],done:true}},
+      '2026-07-18':{_session:{sessionType:'lowerB'}, l1:{sets:[{kg:300,reps:11,effort:'solid'},{kg:300,reps:11,effort:'solid'}],done:true}}
+    };
+  `, ctx);
+  const q = (e) => vm.runInContext(e, ctx);
+
+  // A new Lower B day (10–12) references the 300kg Lower B history — NOT 328kg.
+  const sugB = q(`suggestWeight('l1', null, 0, { exObj: WORKOUTS.lowerB.exercises.find(e=>e.id==='l1'), prevSessions:[], forDate:'${T}' })`);
+  assert.ok(sugB, "lower B suggestion exists");
+  assert.ok(sugB.kg <= 315, `Lower B references the ~300kg 10–12 history, not the 328kg 8–10 day (got ${sugB.kg})`);
+  assert.ok(/300/.test(sugB.reason || ''), "Lower B reason cites the 300kg set");
+
+  // A new Lower A day (8–10) references the 328kg Lower A history.
+  const sugA = q(`suggestWeight('l1', null, 0, { exObj: WORKOUTS.lowerA.exercises.find(e=>e.id==='l1'), prevSessions:[], forDate:'${T}' })`);
+  assert.ok(sugA.kg >= 325, `Lower A references the 328kg 8–10 history (got ${sugA.kg})`);
+});
+
 test("skincare: 3-step tretinoin frequency ladder (retinol journey retired)", () => {
   const { ctx } = bootApp();
   seed(ctx);

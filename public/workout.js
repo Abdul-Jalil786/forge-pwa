@@ -972,10 +972,26 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
   // Session-type filtering stays only where it's genuinely session-scoped (the
   // recap card, make-up logic).
   if(typeof getExercisePreviousSessions==='function'){
-    const _exHist=getExercisePreviousSessions(exId,(opts&&opts.forDate)||(typeof todayStr==='function'?todayStr():'9999-12-31'),6);
-    if(_exHist.length){
-      opts=Object.assign({},opts,{prevSessions:_exHist});
-      if(!_hasEx(prevSession))prevSession=_exHist[0];
+    const _fd=(opts&&opts.forDate)||(typeof todayStr==='function'?todayStr():'9999-12-31');
+    const _all=getExercisePreviousSessions(exId,_fd,8);
+    if(_all.length){
+      // Rep-range-aware per day (Phase 60b). On an undulating split a lift can
+      // carry a different rep target on different days (Leg Press 8–10 on Lower
+      // A, 10–12 on Lower B). The right weight for 8 reps is NOT the right weight
+      // for 12, so a low-rep-day weight must neither seed nor be judged on a
+      // high-rep day. Prefer history logged under the SAME rep range as today's
+      // session; fall back to all history only when today's range has never been
+      // trained (genuine first-time calibration for this rep target). This keeps
+      // cross-programme carryover intact (same lift + same range still links).
+      let _ref=_all;
+      const _todayKey=(typeof _repRangeKey==='function')?_repRangeKey(exObj.reps):null;
+      if(_todayKey&&typeof _sessionRepRangeFor==='function'){
+        const _match=_all.filter(s=>_repRangeKey(_sessionRepRangeFor(exId,s.log))===_todayKey);
+        if(_match.length)_ref=_match;
+      }
+      opts=Object.assign({},opts,{prevSessions:_ref});
+      const _prevKey=(prevSession&&prevSession.log&&_todayKey&&typeof _sessionRepRangeFor==='function')?_repRangeKey(_sessionRepRangeFor(exId,prevSession.log)):null;
+      if(!_hasEx(prevSession)||(_todayKey&&_prevKey!==_todayKey))prevSession=_ref[0];
     }
   }
 
