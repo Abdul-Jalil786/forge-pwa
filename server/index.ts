@@ -287,6 +287,76 @@ async function seedJayBloodMarkers() {
   }
 }
 
+// New dated blood panel — 22 Jul 2026 (NHS / University Hospitals Birmingham
+// pathology, ordered by GP Dr S Mughal, sample B,26.1396525.M). APPENDS to the
+// existing bloodMarkers array — the 2026-05-08 panel and every marker absent
+// from this panel (hormones, vitamins, FBC, PSA, etc.) are left untouched. The
+// 15 markers that also appear in the earlier panel reuse that panel's exact
+// `name` so the coach + Body-page trend link them by name across dates; each
+// July record gets a fresh unique id (edit-by-id stays unambiguous). Ranges are
+// THIS lab's ranges, stored on THESE records only. eGFR ">90" is stored numeric
+// (90) with a `valueQualifier` (">"). Values verified against the source panel.
+async function seedJayBloodMarkersJul2026V1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (!state.profile) state.profile = {};
+    if (state.profile.bloodMarkersJul2026SeededV1) return;
+    const date = "2026-07-22";
+    const july = [
+      // Diabetes
+      { id: "hba1c-jul26",         name: "HbA1c",                      value: 47,   unit: "mmol/mol", refLow: 20,  refHigh: 41,   category: "diabetes", date },
+      // Liver
+      { id: "total-protein-jul26", name: "Total Protein",              value: 72,   unit: "g/L",      refLow: 60,  refHigh: 80,   category: "liver", date },
+      { id: "albumin-jul26",       name: "Albumin",                    value: 42,   unit: "g/L",      refLow: 35,  refHigh: 50,   category: "liver", date },
+      { id: "alp-jul26",           name: "Alkaline Phosphatase",       value: 91,   unit: "IU/L",     refLow: 30,  refHigh: 130,  category: "liver", date },
+      { id: "alt-jul26",           name: "ALT (Alanine Transaminase)", value: 41,   unit: "IU/L",     refLow: 0,   refHigh: 55,   category: "liver", date },
+      { id: "bilirubin-jul26",     name: "Total Bilirubin",            value: 8,    unit: "umol/L",   refLow: null, refHigh: 21,  category: "liver", date },
+      // Lipids (Sampson-NIH)
+      { id: "chol-total-jul26",    name: "Total Cholesterol",          value: 3.4,  unit: "mmol/L",   refLow: null, refHigh: 5.0, category: "cholesterol", date },
+      { id: "triglycerides-jul26", name: "Triglycerides",              value: 0.7,  unit: "mmol/L",   refLow: 0,   refHigh: 1.7,  category: "cholesterol", date },
+      { id: "hdl-jul26",           name: "HDL Cholesterol",            value: 1.11, unit: "mmol/L",   refLow: 1.0, refHigh: null, category: "cholesterol", date },
+      { id: "ldl-jul26",           name: "LDL Cholesterol",            value: 1.95, unit: "mmol/L",   refLow: null, refHigh: 3.3, category: "cholesterol", date, notes: "Calculated (Sampson-NIH)." },
+      { id: "chol-hdl-ratio-jul26", name: "Cholesterol/HDL Ratio",     value: 3.06, unit: "",         refLow: null, refHigh: 5.0, category: "cholesterol", date },
+      { id: "non-hdl-jul26",       name: "Non-HDL Cholesterol",        value: 2.29, unit: "mmol/L",   refLow: null, refHigh: 7.5, category: "cholesterol", date },
+      // Kidney / U&E
+      { id: "sodium-jul26",        name: "Sodium",                     value: 139,  unit: "mmol/L",   refLow: 133, refHigh: 146,  category: "kidney", date },
+      { id: "potassium-jul26",     name: "Potassium",                  value: 4.2,  unit: "mmol/L",   refLow: 3.5, refHigh: 5.3,  category: "kidney", date },
+      { id: "urea-jul26",          name: "Urea",                       value: 9.6,  unit: "mmol/L",   refLow: 2.5, refHigh: 7.8,  category: "kidney", date },
+      { id: "creatinine-jul26",    name: "Creatinine",                 value: 83,   unit: "umol/L",   refLow: 64,  refHigh: 104,  category: "kidney", date },
+      { id: "egfr-jul26",          name: "eGFR",                       value: 90,   valueQualifier: ">", unit: "mL/min/1.73m²", refLow: 60, refHigh: null, category: "kidney", date, notes: "Reported as >90." },
+      // Thyroid
+      { id: "tsh-jul26",           name: "TSH",                        value: 1.2,  unit: "mU/L",     refLow: 0.4, refHigh: 4.9,  category: "thyroid", date },
+    ];
+    const existing: any[] = Array.isArray(state.profile.bloodMarkers) ? state.profile.bloodMarkers : [];
+    // Idempotency belt-and-braces: never double-append if these ids already exist.
+    const haveIds = new Set(existing.map((m: any) => m && m.id));
+    const toAdd = july.filter((m) => !haveIds.has(m.id));
+    state.profile.bloodMarkers = existing.concat(toAdd);
+    state.profile.bloodMarkersDate = date; // latest panel date (display convenience)
+    // Panel provenance for the Health Records timeline (owner-only Body page).
+    const recs: any[] = Array.isArray(state.healthRecords) ? state.healthRecords : [];
+    if (!recs.some((r: any) => r && r.type === "bloods" && r.date === date)) {
+      recs.push({
+        id: "hr_bloods_2026-07-22",
+        type: "bloods",
+        date,
+        provider: "NHS · University Hospitals Birmingham (GP Dr S Mughal)",
+        title: "Blood panel — 22 Jul 2026",
+        sourceText: "Sample B,26.1396525.M. Collected & received 22 Jul 2026.",
+        addedAt: new Date().toISOString(),
+      });
+      state.healthRecords = recs;
+    }
+    state.profile.bloodMarkersJul2026SeededV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] Jay Jul-2026 blood panel appended (${toAdd.length} markers; April panel untouched)`);
+  } catch (err) {
+    console.error("[migration] seedJayBloodMarkersJul2026V1 failed:", err);
+  }
+}
+
 // Phase 37: full skin care routine overhaul — replace all products with Jay's real 9-product routine.
 async function seedJaySkinCareV1() {
   try {
@@ -1702,6 +1772,7 @@ const server = app.listen(PORT, async () => {
   await seedJayMealPlan();
   await fixJayVisceralTarget();
   await seedJayBloodMarkers();
+  await seedJayBloodMarkersJul2026V1();
   await fixJayPostWorkoutBerries();
   await fixJayOmega3Dose();
   await seedJaySkinCareV1();

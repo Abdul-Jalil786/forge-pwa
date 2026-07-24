@@ -688,7 +688,16 @@ html,body{height:100%;height:-webkit-fill-available;overflow:hidden;font-family:
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
       <div>
         <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Value</div>
-        <input id="blm-value" type="number" step="0.01" inputmode="decimal" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+        <div style="display:flex;gap:6px;">
+          <select id="blm-qualifier" title="Comparator (e.g. >90)" style="width:56px;padding:10px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+            <option value="">=</option>
+            <option value="&gt;">&gt;</option>
+            <option value="&lt;">&lt;</option>
+            <option value="&gt;=">&ge;</option>
+            <option value="&lt;=">&le;</option>
+          </select>
+          <input id="blm-value" type="number" step="0.01" inputmode="decimal" style="flex:1;min-width:0;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+        </div>
       </div>
       <div>
         <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Unit</div>

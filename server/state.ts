@@ -546,10 +546,16 @@ router.put("/profile/blood-markers", requireAuth, async (req: Request, res: Resp
       if (value != null && !Number.isFinite(value)) return null;
       const refLow = typeof m.refLow === "number" ? m.refLow : (m.refLow != null ? Number(m.refLow) : null);
       const refHigh = typeof m.refHigh === "number" ? m.refHigh : (m.refHigh != null ? Number(m.refHigh) : null);
+      // Comparator-style results (e.g. eGFR reported as ">90") keep a numeric
+      // `value` (90) plus a nullable qualifier so the number stays sortable /
+      // trendable and the UI can render ">90". Whitelisted operators only.
+      const qRaw = String(m.valueQualifier || "").trim();
+      const valueQualifier = [">", "<", ">=", "<="].includes(qRaw) ? qRaw : null;
       return {
         id: String(m.id || "").trim().slice(0, 80) || ("blm_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
         name,
         value,
+        valueQualifier,
         unit: String(m.unit || "").trim().slice(0, 30),
         refLow: refLow != null && Number.isFinite(refLow) ? refLow : null,
         refHigh: refHigh != null && Number.isFinite(refHigh) ? refHigh : null,

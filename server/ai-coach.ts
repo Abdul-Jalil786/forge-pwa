@@ -972,17 +972,20 @@ export function buildContext(state: any): string {
       if (status === "in range") inRange.push(m);
       else flagged.push({ ...m, status });
     }
+    // Render a value with its comparator qualifier (eGFR ">90") so the coach
+    // never reads a bare "90" for a ">90" result.
+    const vstr = (m: any) => `${m.valueQualifier || ""}${m.value}`;
     if (flagged.length > 0) {
       lines.push("  OUT OF RANGE (factor these into every recommendation):");
       for (const m of flagged) {
         const refStr = m.refLow != null && m.refHigh != null ? `${m.refLow}-${m.refHigh}` : m.refLow != null ? `>${m.refLow}` : m.refHigh != null ? `<${m.refHigh}` : "?";
         const p = priorOf(m.name);
-        const trend = p && p.value != null ? ` (was ${p.value}${p.unit ? ` ${p.unit}` : ""} on ${p.date})` : "";
-        lines.push(`    - ${m.name}: ${m.value}${m.unit ? ` ${m.unit}` : ""} [${m.status}, ref ${refStr}]${trend}${m.notes ? ` — ${m.notes}` : ""}`);
+        const trend = p && p.value != null ? ` (was ${vstr(p)}${p.unit ? ` ${p.unit}` : ""} on ${p.date})` : "";
+        lines.push(`    - ${m.name}: ${vstr(m)}${m.unit ? ` ${m.unit}` : ""} [${m.status}, ref ${refStr}]${trend}${m.notes ? ` — ${m.notes}` : ""}`);
       }
     }
     if (inRange.length > 0) {
-      const names = inRange.slice(0, 30).map((m: any) => `${m.name} ${m.value}${m.unit ? m.unit : ""}`).join(", ");
+      const names = inRange.slice(0, 30).map((m: any) => `${m.name} ${vstr(m)}${m.unit ? m.unit : ""}`).join(", ");
       lines.push(`  IN RANGE: ${names}${inRange.length > 30 ? `, +${inRange.length - 30} more` : ""}`);
     }
     lines.push("");
