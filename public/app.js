@@ -953,6 +953,36 @@ function _markerColor(status){
   return 'var(--text3)';
 }
 
+// Value with its comparator qualifier (eGFR ">90"); '—' when absent.
+function _markerValueDisp(m){
+  if(!m || m.value == null) return '—';
+  return `${m.valueQualifier || ''}${m.value}`;
+}
+// Trend between the latest reading and the most recent earlier one. Direction is
+// judged by whether the value moved TOWARD or AWAY from the reference range
+// (not merely up/down): for an upper-bound marker (HbA1c) falling is good, for a
+// lower-bound marker (HDL) falling is bad. Uses the latest record's range.
+function _markerTrend(latest, prior){
+  if(!latest || !prior || latest.value == null || prior.value == null) return null;
+  const b = Number(latest.value), a = Number(prior.value);
+  if(!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  const lo = latest.refLow, hi = latest.refHigh;
+  const arrow = b < a ? '↓' : b > a ? '↑' : '→';
+  let dir = 'neutral';
+  if(b !== a){
+    if(hi != null && lo == null)      dir = b < a ? 'good' : 'bad';   // upper-bound: lower better
+    else if(lo != null && hi == null) dir = b > a ? 'good' : 'bad';   // lower-bound: higher better
+    else if(lo != null && hi != null){                                // two-sided: closer to range better
+      const dist = (v) => Math.max(0, lo - v) + Math.max(0, v - hi);
+      const d0 = dist(a), d1 = dist(b);
+      dir = d1 < d0 ? 'good' : d1 > d0 ? 'bad' : 'neutral';
+    }
+  }
+  const color = dir === 'good' ? 'var(--green)' : dir === 'bad' ? 'var(--red)' : 'var(--text3)';
+  const sd = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '?';
+  return { dir, color, text: `${arrow} ${_markerValueDisp(prior)} → ${_markerValueDisp(latest)} (${sd(prior.date)} → ${sd(latest.date)})` };
+}
+
 function renderBloodMarkersList(){
   const markers = _bloodMarkers();
   const el = document.getElementById('blm-list');
@@ -969,12 +999,27 @@ function renderBloodMarkersList(){
     const formatted = new Date(latestDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     dateEl.textContent = `Latest panel: ${formatted}`;
   }
-  // Group by category, out-of-range first within each
+  // De-duplicate: group every record by marker (name), so a marker measured on
+  // multiple panels shows ONCE — the latest reading, with a trend line from the
+  // most recent earlier reading. Group key = canonical name.
+  const groups = {};
+  markers.forEach((m, i) => {
+    const key = (m.name || m.id || '').trim().toLowerCase();
+    if(!key) return;
+    (groups[key] || (groups[key] = [])).push({ m, i });
+  });
+  const rows = Object.values(groups).map(entries => {
+    entries.sort((x, y) => String(y.m.date || '').localeCompare(String(x.m.date || '')));
+    const latest = entries[0];
+    const prior = entries.find(e => (e.m.date || '') < (latest.m.date || '')) || null;
+    return { m: latest.m, i: latest.i, prior: prior ? prior.m : null, _status: _markerStatus(latest.m) };
+  });
+
+  // Bucket the de-duped rows by category, out-of-range first within each.
   const byCategory = {};
-  for(const m of markers){
-    const cat = m.category || 'other';
-    if(!byCategory[cat]) byCategory[cat] = [];
-    byCategory[cat].push({ ...m, _status: _markerStatus(m) });
+  for(const r of rows){
+    const cat = r.m.category || 'other';
+    (byCategory[cat] || (byCategory[cat] = [])).push(r);
   }
   const catOrder = ['diabetes', 'liver', 'hormones', 'cholesterol', 'vitamins', 'inflammation', 'kidney', 'thyroid', 'iron', 'fbc', 'prostate', 'gout', 'other'];
   const sortedCats = Object.keys(byCategory).sort((a, b) => {
@@ -990,18 +1035,19 @@ function renderBloodMarkersList(){
     });
     return `
       <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:10px 0 6px;">${cat}</div>
-      ${items.map((m, idx) => {
-        const i = markers.findIndex(x => x.id === m.id);
-        const c = _markerColor(m._status);
+      ${items.map(r => {
+        const m = r.m, i = r.i, c = _markerColor(r._status);
         const refStr = m.refLow != null && m.refHigh != null ? `${m.refLow}–${m.refHigh}` : m.refLow != null ? `>${m.refLow}` : m.refHigh != null ? `<${m.refHigh}` : '';
+        const trend = _markerTrend(m, r.prior);
         return `<div onclick="openBloodMarkerEdit(${i})" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${c};border-radius:6px;margin-bottom:4px;cursor:pointer;">
           <div style="flex:1;min-width:0;">
             <div style="font-size:12px;font-weight:600;color:var(--text);">${_esc(m.name)}</div>
             ${refStr ? `<div style="font-size:10px;color:var(--text3);margin-top:1px;">ref ${refStr}${m.unit ? ' ' + _esc(m.unit) : ''}</div>` : ''}
+            ${trend ? `<div style="font-size:10px;color:${trend.color};margin-top:2px;font-weight:600;">${trend.text}</div>` : ''}
           </div>
           <div style="text-align:right;">
-            <div style="font-family:'Archivo Black',sans-serif;font-size:13px;color:${c};">${m.value != null ? m.value : '—'}${m.unit ? ` <span style="font-size:10px;color:var(--text3);font-family:inherit;font-weight:400;">${_esc(m.unit)}</span>` : ''}</div>
-            ${m._status !== 'in-range' && m._status !== 'unknown' ? `<div style="font-size:9px;color:${c};text-transform:uppercase;letter-spacing:1px;font-weight:700;">${m._status}</div>` : ''}
+            <div style="font-family:'Archivo Black',sans-serif;font-size:13px;color:${c};">${_markerValueDisp(m)}${m.unit ? ` <span style="font-size:10px;color:var(--text3);font-family:inherit;font-weight:400;">${_esc(m.unit)}</span>` : ''}</div>
+            ${r._status !== 'in-range' && r._status !== 'unknown' ? `<div style="font-size:9px;color:${c};text-transform:uppercase;letter-spacing:1px;font-weight:700;">${r._status}</div>` : ''}
           </div>
         </div>`;
       }).join('')}
@@ -1011,9 +1057,10 @@ function renderBloodMarkersList(){
 
 function openBloodMarkerEdit(idx){
   _blmEdit = { idx };
-  const m = idx === null ? { name: '', value: '', unit: '', refLow: '', refHigh: '', date: new Date().toISOString().slice(0,10), category: '', notes: '' } : (_bloodMarkers()[idx] || {});
+  const m = idx === null ? { name: '', value: '', valueQualifier: '', unit: '', refLow: '', refHigh: '', date: new Date().toISOString().slice(0,10), category: '', notes: '' } : (_bloodMarkers()[idx] || {});
   document.getElementById('blm-title').textContent = idx === null ? 'Add Blood Marker' : 'Edit Blood Marker';
   document.getElementById('blm-name').value = m.name || '';
+  const qEl = document.getElementById('blm-qualifier'); if(qEl) qEl.value = m.valueQualifier || '';
   document.getElementById('blm-value').value = m.value != null ? m.value : '';
   document.getElementById('blm-unit').value = m.unit || '';
   document.getElementById('blm-reflow').value = m.refLow != null ? m.refLow : '';
@@ -1046,10 +1093,13 @@ async function saveBloodMarker(){
   const refHighRaw = document.getElementById('blm-refhigh').value.trim();
   const refLow = refLowRaw === '' ? null : Number(refLowRaw);
   const refHigh = refHighRaw === '' ? null : Number(refHighRaw);
+  const qRaw = (document.getElementById('blm-qualifier')?.value || '').trim();
+  const valueQualifier = ['>','<','>=','<='].includes(qRaw) ? qRaw : null;
   const updated = {
     id: _blmEdit.idx !== null ? (_bloodMarkers()[_blmEdit.idx]?.id || ('blm_' + Date.now())) : ('blm_' + Date.now()),
     name,
     value,
+    valueQualifier,
     unit: document.getElementById('blm-unit').value.trim(),
     refLow: refLow != null && Number.isFinite(refLow) ? refLow : null,
     refHigh: refHigh != null && Number.isFinite(refHigh) ? refHigh : null,

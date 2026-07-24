@@ -216,6 +216,58 @@ test("skincare: 3-step tretinoin frequency ladder (retinol journey retired)", ()
   assert.ok(!/Phase 6|Discuss with coach|graduate/i.test(html), "no retinol-graduation framing");
 });
 
+test("blood markers: two dated panels render distinctly + HbA1c trends 72→47 (toward range)", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  // April panel (2026-05-08) + July panel (2026-07-22). HbA1c falls 72→47 (both
+  // ABOVE the upper-bound ref, so falling = toward range = good). HDL rises but
+  // (lower-bound) a hypothetical fall would be bad. eGFR is a ">90" qualifier.
+  vm.runInContext(`
+    STATE.profile.bloodMarkers = [
+      { id:'hba1c',      name:'HbA1c', value:72, unit:'mmol/mol', refLow:null, refHigh:42, category:'diabetes', date:'2026-05-08' },
+      { id:'hdl',        name:'HDL Cholesterol', value:1.01, unit:'mmol/L', refLow:1.04, refHigh:null, category:'cholesterol', date:'2026-05-08' },
+      { id:'testosterone', name:'Testosterone (Total)', value:9.55, unit:'nmol/L', refLow:8.4, refHigh:28.7, category:'hormones', date:'2026-05-08' },
+      { id:'hba1c-jul26', name:'HbA1c', value:47, unit:'mmol/mol', refLow:20, refHigh:41, category:'diabetes', date:'2026-07-22' },
+      { id:'hdl-jul26',  name:'HDL Cholesterol', value:1.11, unit:'mmol/L', refLow:1.0, refHigh:null, category:'cholesterol', date:'2026-07-22' },
+      { id:'egfr-jul26', name:'eGFR', value:90, valueQualifier:'>', unit:'mL/min/1.73m²', refLow:60, refHigh:null, category:'kidney', date:'2026-07-22' }
+    ];
+    STATE.healthRecords = [
+      { id:'hr1', type:'bloods', date:'2026-05-08', provider:'Bloodwork Group' },
+      { id:'hr2', type:'bloods', date:'2026-07-22', provider:'NHS · UHB (Dr S Mughal)' }
+    ];
+  `, ctx);
+
+  // (a) Body page Health Records timeline shows TWO distinct blood panels.
+  ctx.renderBody();
+  const body = els["page-body"]._html;
+  assert.ok(/22 Jul 2026/.test(body), "Body page shows the July panel");
+  assert.ok(/8 May 2026/.test(body), "Body page still shows the April panel");
+  const panelCount = (body.match(/🩸/g) || []).length; // one blood-drop icon per distinct panel row
+  assert.equal(panelCount, 2, "exactly two distinct blood panels on the Body page");
+
+  // (b) Blood Markers list de-dupes to ONE HbA1c row with a 72→47 trend.
+  ctx.renderMore();
+  ctx.renderBloodMarkersList();
+  const list = els["blm-list"]._html;
+  assert.equal((list.match(/HbA1c/g) || []).length, 1, "HbA1c appears once (de-duped), not twice");
+  assert.ok(/↓ 72 → 47/.test(list), "HbA1c trend line renders 72 → 47");
+  // Falling HbA1c is TOWARD the range → good (green); never flagged red.
+  const hb = vm.runInContext("_markerTrend({value:47,refLow:20,refHigh:41,date:'2026-07-22'},{value:72,refLow:null,refHigh:42,date:'2026-05-08'})", ctx);
+  assert.equal(hb.dir, "good", "HbA1c falling = toward range = good");
+  // Falling HDL is AWAY from the range → bad (lower-bound marker).
+  const hdlDown = vm.runInContext("_markerTrend({value:0.9,refLow:1.0,refHigh:null,date:'2026-07-22'},{value:1.11,refLow:1.0,refHigh:null,date:'2026-05-08'})", ctx);
+  assert.equal(hdlDown.dir, "bad", "HDL falling = away from range = bad");
+
+  // (c) eGFR ">90" renders with its qualifier, not a bare 90.
+  assert.ok(/&gt;90|>90/.test(list), "eGFR renders with its > qualifier");
+
+  // (d) The latest panel header reflects the July date.
+  assert.ok(/Latest panel: 22 Jul 2026/.test(els["blm-panel-date"]._html || els["blm-panel-date"].textContent || ""), "header shows latest panel date");
+
+  // (e) April-only markers absent from July (testosterone) are untouched + still shown once.
+  assert.equal((list.match(/Testosterone/g) || []).length, 1, "testosterone (April-only) still present, once");
+});
+
 test("exercise history survives a programme switch (id-keyed, not session-type-keyed)", () => {
   const { ctx } = bootApp();
   seed(ctx);
