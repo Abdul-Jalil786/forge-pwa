@@ -942,6 +942,24 @@ function _classifyLoggedSession(dayLog){
   return best;
 }
 
+// Normalise a reps string to a comparable "lo-hi" key ('10–12' -> '10-12'),
+// or null if it isn't a numeric range (e.g. a single number or a time hold).
+function _repRangeKey(repsStr){
+  const m=String(repsStr||'').match(/(\d+)[–-](\d+)/);
+  return m?(m[1]+'-'+m[2]):null;
+}
+// The rep TARGET a given exercise carried in a specific logged session — read
+// from the template of the session's own type. Lets progression tell apart an
+// undulating split's two days for the same lift (Leg Press 8–10 on Lower A vs
+// 10–12 on Lower B), so a weight tuned for one rep target isn't reused on the
+// other. Returns the reps string, or null if the type/exercise can't be found.
+function _sessionRepRangeFor(exId,dayLog){
+  const type=_classifyLoggedSession(dayLog);
+  const w=type?WORKOUTS[type]:null;
+  const ex=w&&Array.isArray(w.exercises)?w.exercises.find(e=>e.id===exId):null;
+  return ex?ex.reps:null;
+}
+
 function getPreviousSessionData(beforeDate,sessionType){
   if(!sessionType)return null;
   const exLog=getExLog();
