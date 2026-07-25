@@ -225,6 +225,73 @@ test("progression is rep-range-aware per day (undulating split: Leg Press 8–10
   assert.ok(sugA.kg >= 325, `Lower A references the 328kg 8–10 history (got ${sugA.kg})`);
 });
 
+test("suitcase carry: time double progression 40→50→60→+5kg, effort-aware", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // prevSession = 3 completed sets, both sides held `secs` at `kg`, aimed `target`.
+  const sug = (secs, kg, effort, target) => {
+    const sets = [0, 1, 2].map(() => ({ done: true, leftSeconds: secs, rightSeconds: secs, leftKg: kg, rightKg: kg, targetSeconds: target, effort }));
+    return vm.runInContext(`(function(){var s=suggestCarry('core_suitcase',${JSON.stringify({ date: '2026-07-20', log: { core_suitcase: { sets } } })});return JSON.stringify({kg:s.leftKg,sec:s.targetSeconds});})()`, ctx);
+  };
+  const exp = (kg, sec) => JSON.stringify({ kg, sec });
+  // First time → start at the 40s floor, no weight assumed.
+  assert.equal(vm.runInContext(`suggestCarry('core_suitcase',null).targetSeconds`, ctx), 40);
+  // Climb the time at a fixed weight: 40→50→60.
+  assert.equal(sug(40, 25, 'solid', 40), exp(25, 50), "held 40 → climb to 50, hold weight");
+  assert.equal(sug(50, 25, 'solid', 50), exp(25, 60), "held 50 → climb to 60, hold weight");
+  // Held the 60s ceiling on all sets → +5kg, reset to 40s (easy OR solid).
+  assert.equal(sug(60, 25, 'solid', 60), exp(30, 40), "held 60 solid → +5kg, back to 40");
+  assert.equal(sug(60, 25, 'easy', 60),  exp(30, 40), "held 60 easy → +5kg, back to 40 (easy adds weight)");
+  // Tough at the ceiling → hold weight, stay at 60.
+  assert.equal(sug(60, 25, 'tough', 60), exp(25, 60), "held 60 tough → hold weight + time");
+  // Fell under the 40s floor → drop 2.5kg, back to 40.
+  assert.equal(sug(35, 25, 'solid', 40), exp(22.5, 40), "under floor → drop weight");
+  // Short of the target but above the floor → repeat weight + time.
+  assert.equal(sug(47, 25, 'solid', 50), exp(25, 50), "short of target → repeat");
+});
+
+test("suitcase carry screens render (countdown target, 5s switch, effort)", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext(`todayStr=function(){return '2026-07-25';};`, ctx);
+  // lowerB exercise index 3 = core_suitcase (Suitcase Carry).
+  const idx = vm.runInContext(`getWorkout('lowerB').exercises.findIndex(e=>e.id==='core_suitcase')`, ctx);
+  assert.ok(idx >= 0, "carry is in lowerB");
+  vm.runInContext(`wm={active:true,session:'lowerB',exIdx:${idx},setIdx:0,mode:'set',autoReg:null,carrySide:'left'};`, ctx);
+  assert.doesNotThrow(() => vm.runInContext(`renderWmSetCarry()`, ctx), "carry set screen renders");
+  const set = els['wmContent']._html;
+  assert.ok(/range 40s–60s/.test(set), "shows the 40–60s range as plain seconds (not 1:00)");
+  assert.ok(/aim 40s per side/.test(set), "counts down from the 40s floor first time");
+  assert.doesNotThrow(() => vm.runInContext(`renderWmCarrySwitch()`, ctx), "5s switch renders");
+  assert.ok(/Switch hands/.test(els['wmContent']._html), "switch screen shows");
+  assert.doesNotThrow(() => vm.runInContext(`renderWmCarryEffort()`, ctx), "carry effort renders");
+  assert.ok(/How did that feel/.test(els['wmContent']._html), "effort screen shows");
+});
+
+test("weighted compounds get set-to-set guidance; accessories left alone", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // reps:99 forces the "topped the range" branch → non-null guidance for any lift
+  // the engine covers. null = the lift gets no set-to-set autoregulation.
+  const guided = (tmpl, id) => vm.runInContext(
+    `!!_autoregNextSet(WORKOUTS['${tmpl}'].exercises.find(e=>e.id==='${id}'), {kg:40,reps:99,effort:'easy'}, 1)`, ctx);
+
+  // Fixed: these weighted lifts now carry a rep range → guidance on every day.
+  assert.ok(guided('lowerA', 'l2'),          "RDL (lowerA) now gets guidance");
+  assert.ok(guided('upperB', 'h3'),          "One-Arm Row (upperB) now gets guidance");
+  assert.ok(guided('upperB', 'u8'),          "Face Pull (upperB) now gets guidance");
+  assert.ok(guided('upperB', 'u6'),          "Bicep Curl (upperB) now gets guidance");
+  assert.ok(guided('lowerA', 'core_pallof'), "Pallof (lowerA) now gets guidance");
+  // The add-weight reps target is the range floor (double progression):
+  const rdl = vm.runInContext(`_autoregNextSet(WORKOUTS.lowerA.exercises.find(e=>e.id==='l2'), {kg:100,reps:8,effort:'easy'}, 1)`, ctx);
+  assert.equal(rdl.reps, 6, "RDL 6–8: topped → reps reset to floor (6)");
+
+  // Left alone: bodyweight + rehab accessories get NO weight autoregulation.
+  assert.ok(!guided('upperB', 'core_dead_bug'), "Dead Bug left alone (no guidance)");
+  assert.ok(!guided('upperA', 'reh_2'),         "Band Pull-Apart left alone");
+  assert.ok(!guided('upperA', 'reh_3'),         "Banded Flexion left alone");
+});
+
 test("_autoregNextSet returns an explicit reps target on every branch (never undefined)", () => {
   const { ctx } = bootApp();
   seed(ctx);
