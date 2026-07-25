@@ -225,6 +225,30 @@ test("progression is rep-range-aware per day (undulating split: Leg Press 8–10
   assert.ok(sugA.kg >= 325, `Lower A references the 328kg 8–10 history (got ${sugA.kg})`);
 });
 
+test("weighted compounds get set-to-set guidance; accessories left alone", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // reps:99 forces the "topped the range" branch → non-null guidance for any lift
+  // the engine covers. null = the lift gets no set-to-set autoregulation.
+  const guided = (tmpl, id) => vm.runInContext(
+    `!!_autoregNextSet(WORKOUTS['${tmpl}'].exercises.find(e=>e.id==='${id}'), {kg:40,reps:99,effort:'easy'}, 1)`, ctx);
+
+  // Fixed: these weighted lifts now carry a rep range → guidance on every day.
+  assert.ok(guided('lowerA', 'l2'),          "RDL (lowerA) now gets guidance");
+  assert.ok(guided('upperB', 'h3'),          "One-Arm Row (upperB) now gets guidance");
+  assert.ok(guided('upperB', 'u8'),          "Face Pull (upperB) now gets guidance");
+  assert.ok(guided('upperB', 'u6'),          "Bicep Curl (upperB) now gets guidance");
+  assert.ok(guided('lowerA', 'core_pallof'), "Pallof (lowerA) now gets guidance");
+  // The add-weight reps target is the range floor (double progression):
+  const rdl = vm.runInContext(`_autoregNextSet(WORKOUTS.lowerA.exercises.find(e=>e.id==='l2'), {kg:100,reps:8,effort:'easy'}, 1)`, ctx);
+  assert.equal(rdl.reps, 6, "RDL 6–8: topped → reps reset to floor (6)");
+
+  // Left alone: bodyweight + rehab accessories get NO weight autoregulation.
+  assert.ok(!guided('upperB', 'core_dead_bug'), "Dead Bug left alone (no guidance)");
+  assert.ok(!guided('upperA', 'reh_2'),         "Band Pull-Apart left alone");
+  assert.ok(!guided('upperA', 'reh_3'),         "Banded Flexion left alone");
+});
+
 test("_autoregNextSet returns an explicit reps target on every branch (never undefined)", () => {
   const { ctx } = bootApp();
   seed(ctx);

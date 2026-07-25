@@ -16,7 +16,7 @@ const WORKOUTS = {
       {id:'u6',name:'Bicep Curl',sets:3,reps:'10–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
       {id:'u7',name:'Tricep Pushdown',sets:3,reps:'10–12',rest:60,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+pushdown+form'},
       {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
-      {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
+      {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10–12 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
       {id:'neck_ext',name:'Cable Neck Extension (back)',sets:2,reps:'12–15',rest:45,muscle:'Neck',size:'small',yt:'https://www.youtube.com/results?search_query=cable+neck+extension+harness+form'},
       {id:'neck_front',name:'Cable Neck Flexion (front)',sets:2,reps:'12–15',rest:45,muscle:'Neck',size:'small',yt:'https://www.youtube.com/results?search_query=cable+neck+flexion+harness+form'},
       {id:'u9',name:'Plank',sets:3,reps:'30–45s',rest:45,muscle:'Core',metric:'time',yt:'https://www.youtube.com/results?search_query=plank+form+technique'},
@@ -34,7 +34,7 @@ const WORKOUTS = {
       {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
       {id:'l5',name:'Hip Thrust',sets:3,reps:'8–10',rest:90,muscle:'Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
       {id:'l6',name:'Calf Raise',sets:4,reps:'15–20',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
-      {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
+      {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10–12 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
       {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
       {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'40s/side',metric:'carry',targetSeconds:40,rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
     ]
@@ -99,9 +99,9 @@ const WORKOUTS = {
     exercises:[
       {id:'h1',name:'Goblet Squat',sets:3,reps:'10–12',rest:90,muscle:'Quads',size:'medium',yt:'https://www.youtube.com/results?search_query=goblet+squat+form'},
       {id:'l1',name:'Leg Press',sets:4,reps:'8–10',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
-      {id:'l2',name:'Romanian Deadlift',sets:3,reps:'8',rest:120,muscle:'Hamstrings',size:'large',yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
+      {id:'l2',name:'Romanian Deadlift',sets:3,reps:'6–8',rest:120,muscle:'Hamstrings',size:'large',yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
       {id:'l6',name:'Calf Raise',sets:3,reps:'12–15',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
-      {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
+      {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10–12 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
     ]
   },
   upperB: {
@@ -110,10 +110,10 @@ const WORKOUTS = {
     duration:'50–60',
     exercises:[
       {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Upper Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
-      {id:'h3',name:'One-Arm Dumbbell Row',sets:3,reps:'10 each side',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=one+arm+dumbbell+row+form'},
+      {id:'h3',name:'One-Arm Dumbbell Row',sets:3,reps:'8–10 each side',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=one+arm+dumbbell+row+form'},
       {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
-      {id:'u8',name:'Face Pull',sets:3,reps:'15',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
-      {id:'u6',name:'Bicep Curl',sets:2,reps:'12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
+      {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
+      {id:'u6',name:'Bicep Curl',sets:2,reps:'10–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
       {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
       {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
       {id:'reh_2',name:'Band Pull-Apart',sets:2,reps:'15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+pull+apart+form'},
