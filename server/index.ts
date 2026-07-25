@@ -9,6 +9,22 @@ import prisma from "./db";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
+// DEV/staging detection. True when APP_ENV is "staging"/"development", OR Railway's
+// RAILWAY_ENVIRONMENT_NAME is set and isn't "production". Defaults to FALSE when it
+// can't tell — so production (and any unknown environment) is NEVER treated as dev.
+// This single flag gates every dev-only feature and is exposed to the frontend via
+// GET /api/env. Nothing dev-only renders or runs unless this is true.
+const IS_DEV = (() => {
+  const appEnv = (process.env.APP_ENV || "").trim().toLowerCase();
+  if (appEnv === "staging" || appEnv === "development") return true;
+  const railwayEnv = (process.env.RAILWAY_ENVIRONMENT_NAME || "").trim();
+  if (railwayEnv && railwayEnv.toLowerCase() !== "production") return true;
+  return false;
+})();
+console.log(
+  `[env] isDev=${IS_DEV} (APP_ENV="${process.env.APP_ENV || ""}", RAILWAY_ENVIRONMENT_NAME="${process.env.RAILWAY_ENVIRONMENT_NAME || ""}")`
+);
+
 const app = express();
 
 app.use(helmet({
@@ -28,6 +44,12 @@ app.use(helmet({
 }));
 
 app.use(express.json({ limit: "6mb" }));
+
+// Expose ONLY the dev flag to the frontend (a single boolean — no secrets). The
+// dev-only Test Sessions panel is drawn only when this is true; in production the
+// server returns { isDev: false }, so the panel never appears and its start path
+// is never wired up.
+app.get("/api/env", (_req, res) => res.json({ isDev: IS_DEV }));
 
 // Health check
 app.get("/api/health", async (_req, res) => {

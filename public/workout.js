@@ -36,6 +36,9 @@ function renderWorkout(){
     ${!isToday?`<button class="btn btn-ghost btn-sm" onclick="setViewDate(todayStr())">← Today</button>`:''}
   </div>`;
 
+  // DEV-ONLY: start-any-workout panel (staging). Returns '' in production.
+  html+=renderDevTestPanel();
+
   if(!renderSession){
     // Phase 56: on a rest/empty day, offer to make up an adjacent missed session
     // (or resume one already in progress). Never overwrites a scheduled session.
@@ -469,6 +472,29 @@ function _wmStartAutoSave(){
 function _wmStopAutoSave(){
   if(_wmAutoSaveInterval){clearInterval(_wmAutoSaveInterval);_wmAutoSaveInterval=null;}
 }
+
+// ── DEV-ONLY (staging) ────────────────────────────────────────────────────────
+// Start any workout on demand, ignoring the schedule, so changes can be tested
+// without waiting for a scheduled day. Both the panel and this entry point are
+// hard-gated on the server's isDev flag (window.__ENV__.isDev), so in production
+// the panel is never rendered AND this function is a no-op even if called.
+function renderDevTestPanel(){
+  if(!(window.__ENV__ && window.__ENV__.isDev) || typeof WORKOUTS!=='object') return '';
+  const btns=Object.keys(WORKOUTS).map(k=>
+    `<button class="btn btn-ghost btn-sm" style="margin:3px;font-size:11px;" onclick="devStartWorkout('${k}')">${WORKOUTS[k].name}</button>`
+  ).join('');
+  return `<div class="card" style="border:1px dashed var(--orange);background:rgba(255,85,0,.06);margin-bottom:14px;">
+    <div style="font-size:11px;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:3px;">🧪 DEV · TEST SESSIONS</div>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:8px;line-height:1.5;">Staging only — start any session on demand (ignores the schedule). Runs the real guided flow, including the Easy / Solid / Tough effort screen.</div>
+    <div style="display:flex;flex-wrap:wrap;">${btns}</div>
+  </div>`;
+}
+function devStartWorkout(type){
+  if(!(window.__ENV__ && window.__ENV__.isDev)) return; // hard guard — never runs in production
+  if(!WORKOUTS[type]) return;
+  startGuidedWorkout(type);
+}
+// ──────────────────────────────────────────────────────────────────────────────
 
 function startGuidedWorkout(overrideSession,forDate){
   // Phase 41k: if there's already a minimized in-progress session for today, resume it
