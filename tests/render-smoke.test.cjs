@@ -555,13 +555,17 @@ test("skincare readiness needs 4 weeks/step (tretinoin is stronger than retinol)
 test("supplements grid: weekly Mounjaro due only on injection day; today pending not missed", () => {
   const { ctx } = bootApp();
   seed(ctx);
+  // Pin "today" (like every other test in this file). getSupplementAdherence()
+  // measures the last 7 days from todayStr(), so without this the ticked Wednesday
+  // fell outside the window on any real run date and the test was date-flaky.
+  vm.runInContext(`todayStr=function(){return '2026-07-25';};`, ctx); // Saturday
   vm.runInContext(`
     STATE.profile.glp1InjectionDow=3; // Wednesday
     STATE.supplements=[{id:'creatine',name:'Creatine',frequency:'daily'},{id:'mnj',name:'Mounjaro',frequency:'weekly-wednesday'}];
-    STATE.supplementLog={'2026-07-15':{mnj:true}}; // ticked on the Wednesday in this week
+    STATE.supplementLog={'2026-07-22':{mnj:true}}; // ticked on the Wednesday inside the 7-day window
   `, ctx);
-  assert.equal(vm.runInContext("isSupplementDue(STATE.supplements[1],'2026-07-15')", ctx), true, "Mounjaro due Wed");
-  assert.equal(vm.runInContext("isSupplementDue(STATE.supplements[1],'2026-07-16')", ctx), false, "Mounjaro NOT due Thu");
+  assert.equal(vm.runInContext("isSupplementDue(STATE.supplements[1],'2026-07-22')", ctx), true, "Mounjaro due Wed");
+  assert.equal(vm.runInContext("isSupplementDue(STATE.supplements[1],'2026-07-23')", ctx), false, "Mounjaro NOT due Thu");
   const adh = vm.runInContext("getSupplementAdherence(7)", ctx);
   assert.equal(adh.byId.mnj.total, 1, "only the 1 due day (Wed) is in the denominator");
   assert.equal(adh.byId.mnj.taken, 1);
