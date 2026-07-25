@@ -114,6 +114,7 @@ const WORKOUTS = {
       {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
       {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
       {id:'u6',name:'Bicep Curl',sets:2,reps:'10–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
+      {id:'u7',name:'Tricep Rope Pushdown',sets:2,reps:'12–15',rest:60,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+rope+pushdown+form'},
       {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
       {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
       {id:'reh_2',name:'Band Pull-Apart',sets:2,reps:'15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+pull+apart+form'},
