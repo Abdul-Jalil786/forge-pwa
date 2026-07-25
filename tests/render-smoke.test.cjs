@@ -225,6 +225,65 @@ test("progression is rep-range-aware per day (undulating split: Leg Press 8–10
   assert.ok(sugA.kg >= 325, `Lower A references the 328kg 8–10 history (got ${sugA.kg})`);
 });
 
+test("_autoregNextSet returns an explicit reps target on every branch (never undefined)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // Same fixture as the investigation: u1 Chest Press, range 8–10, medium lift
+  // (increments +5 / +2.5 / −2.5), last set logged at 60kg.
+  const ar = (reps, effort) => vm.runInContext(
+    `_autoregNextSet(WORKOUTS.upperA.exercises.find(e=>e.id==='u1'), {kg:60,reps:${reps},effort:'${effort}'}, 1)`, ctx);
+  const easy  = ar(10, 'easy');   // topped + easy  → +weight, reps to FLOOR
+  const solid = ar(10, 'solid');  // topped + solid → +weight, reps to FLOOR
+  const inRng = ar(8,  'solid');  // in range       → hold, aim +1
+  const tough = ar(9,  'tough');  // grind          → hold weight + reps
+  const drop  = ar(6,  'solid');  // below range    → drop weight, aim top
+
+  // Weight is unchanged (confirmed-correct behaviour) — assert it stays put.
+  assert.equal(easy.kg, 65);   assert.equal(solid.kg, 62.5);
+  assert.equal(inRng.kg, 60);  assert.equal(tough.kg, 60);   assert.equal(drop.kg, 57.5);
+
+  // Reps — the fix — exact pairs, matching _suggestWeightCore's double progression:
+  assert.equal(easy.reps, 8,  "add-weight (easy) resets reps to BOTTOM (8), NOT top (10)");
+  assert.equal(solid.reps, 8, "add-weight (solid) resets reps to BOTTOM (8), NOT top (10)");
+  assert.equal(inRng.reps, 9, "in-range aims one more rep (8→9), capped at 10");
+  assert.equal(tough.reps, 9, "tough holds the same reps just done (9)");
+  assert.equal(drop.reps, 10, "drop aims the range top at the lighter load");
+
+  // Regression guard: NO branch may return a non-finite reps.
+  for (const r of [easy, solid, inRng, tough, drop])
+    assert.ok(Number.isFinite(r.reps), "reps must be a finite number on every branch");
+});
+
+test("next-set prefill reflects the add-weight guidance (kg up + reps to bottom)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`todayStr = function(){ return '2026-07-25'; };`, ctx);
+  vm.runInContext(`Object.assign(STATE, { exLog: { '2026-07-14': { _session:{sessionType:'upperA'}, u1:{ sets:[{kg:60,reps:9,effort:'solid'}], done:true } } } });`, ctx);
+  // Guided workout: upperA, exercise index 1 = u1 Chest Press (range 8–10), set 1.
+  vm.runInContext(`wm = { active:true, session:'upperA', exIdx:1, setIdx:0, mode:'set', restTarget:90, autoReg:null };`, ctx);
+  // Log set 1 = 60kg × 10 (top of range), rate SOLID → guidance "add weight".
+  vm.runInContext(`document.getElementById('wm-kg').value='60'; document.getElementById('wm-reps').value='10';`, ctx);
+  vm.runInContext(`wmMarkSetDone(90);`, ctx);
+  vm.runInContext(`wmRecordEffort('solid');`, ctx); // → rest screen, computes wm.autoReg
+
+  const stored = vm.runInContext(`JSON.stringify(wm.autoReg)`, ctx);
+  assert.ok(/"kg":62\.5/.test(stored), "guidance adds weight to 62.5kg");
+  assert.ok(/"reps":8/.test(stored), "guidance now stores reps=8 (bottom), not undefined");
+
+  // (~1902) Transition preview shows the next set's kg AND bottom-of-range reps.
+  vm.runInContext(`wmStartNextSet();`, ctx);
+  const trans = vm.runInContext(`document.getElementById('wmContent').innerHTML`, ctx);
+  assert.ok(/62\.5kg × 8 reps/.test(trans), `transition preview shows 62.5kg × 8 reps (got: ${(trans.match(/[\d.]+kg × \d+ reps/)||[])[0]})`);
+
+  // (~1332) Set screen prefills the actual inputs.
+  vm.runInContext(`wm.mode='set'; renderWmSet();`, ctx);
+  const setHtml = vm.runInContext(`document.getElementById('wmContent').innerHTML`, ctx);
+  const kg = (setHtml.match(/id="wm-kg"[^>]*value="([^"]*)"/) || [])[1];
+  const reps = (setHtml.match(/id="wm-reps"[^>]*value="([^"]*)"/) || [])[1];
+  assert.equal(kg, '62.5', "set-2 weight prefill = 62.5kg (incremented)");
+  assert.equal(reps, '8', "set-2 reps prefill = 8 (bottom of range) — was showing 10");
+});
+
 test("skincare: 3-step tretinoin frequency ladder (retinol journey retired)", () => {
   const { ctx } = bootApp();
   seed(ctx);

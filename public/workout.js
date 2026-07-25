@@ -760,43 +760,56 @@ function _autoregNextSet(ex, lastSet, setIdx){
   const lower=parseInt(rm[1]), upper=parseInt(rm[2]);
   const inc=_incForLift(ex);
   const effort=lastSet.effort;
-  let dir, kgNext, msg;
+  let dir, kgNext, repsNext, msg;
   const variants=(arr)=>arr[(setIdx||0)%arr.length];
   // Order matters: reps-missed and Tough are checked BEFORE the "topped the range"
   // bumps, so a set rated tough NEVER goes up — even at the top of the range.
   // Mirrors the session-to-session rule (any Tough set = at/near failure → hold).
+  // Each branch sets an explicit `repsNext` target that matches the same
+  // double-progression philosophy as _suggestWeightCore, so the next-set prefill
+  // (renderWmSet/renderWmTransition) shows a rep target consistent with the
+  // guidance — kg is UNCHANGED, only the rep target is now always populated.
   if(reps<lower){
-    dir='down'; kgNext=Math.max(0,_roundToPlate(kg-inc.fail));
+    // Reps missed → drop weight. At the lighter load the range top is an
+    // achievable target to nail cleanly (same intent as the stall-deload path).
+    dir='down'; kgNext=Math.max(0,_roundToPlate(kg-inc.fail)); repsNext=upper;
     msg=variants([
       `Reps fell short. Back off to ${kgNext}kg — quality over ego, every rep clean.`,
       `That got away from you. Drop to ${kgNext}kg and nail the reps.`,
     ]);
   } else if(effort==='tough'){
-    dir='hold'; kgNext=kg;
+    // In range but a grind → hold BOTH weight and reps, repeat the set.
+    dir='hold'; kgNext=kg; repsNext=reps;
     msg=variants([
       `A grind, but the reps were there. Hold ${kg}kg — match it, don't chase.`,
       `Hard-earned. Stay at ${kg}kg, same reps. Don't let form slip.`,
     ]);
   } else if(reps>=upper && effort==='easy'){
-    dir='up'; kgNext=_roundToPlate(kg+inc.easy);
+    // Topped, easy → +weight and RESET reps to the floor to work back up
+    // (double progression). Was previously showing the range top — backwards.
+    dir='up'; kgNext=_roundToPlate(kg+inc.easy); repsNext=lower;
     msg=variants([
       `Too light — you topped the range and it flew. ${kgNext}kg next set. Earn it.`,
       `That was easy money. Add ${inc.easy}kg → ${kgNext}kg. Make it count.`,
     ]);
   } else if(reps>=upper){
-    dir='up'; kgNext=_roundToPlate(kg+inc.solid);
+    // Topped, solid → +weight, reps reset to the floor.
+    dir='up'; kgNext=_roundToPlate(kg+inc.solid); repsNext=lower;
     msg=variants([
       `Topped the range clean. Nudge to ${kgNext}kg and own it.`,
       `Full range, controlled. ${kgNext}kg next — small step, no ego.`,
     ]);
   } else {
-    dir='hold'; kgNext=kg;
+    // In range, not topped → hold weight, aim ONE more rep (capped at the top).
+    dir='hold'; kgNext=kg; repsNext=Math.min(upper, reps+1);
     msg=variants([
       `Dialled in. Stay at ${kg}kg — aim ${upper} reps, make this set look like the last.`,
       `Right in the pocket. ${kg}kg again, push for ${upper}.`,
     ]);
   }
-  return { dir, kg:kgNext, reps:(dir==='down'?upper:undefined), msg };
+  // reps is NEVER undefined; final guard keeps it a sane integer within the range.
+  if(!Number.isFinite(repsNext)) repsNext=lower;
+  return { dir, kg:kgNext, reps:repsNext, msg };
 }
 
 // Phase 47: static one-line form cues per lift. Written once (form doesn't
