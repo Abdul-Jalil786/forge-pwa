@@ -6,8 +6,25 @@ import helmet from "helmet";
 import authRouter from "./auth";
 import stateRouter from "./state";
 import prisma from "./db";
+import bcrypt from "bcryptjs";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
+
+// DEV/staging detection. True when APP_ENV is "staging"/"development", OR Railway's
+// RAILWAY_ENVIRONMENT_NAME is set and isn't "production". Defaults to FALSE when it
+// can't tell — so production (and any unknown environment) is NEVER treated as dev.
+// This single flag gates every dev-only feature and is exposed to the frontend via
+// GET /api/env. Nothing dev-only renders or runs unless this is true.
+const IS_DEV = (() => {
+  const appEnv = (process.env.APP_ENV || "").trim().toLowerCase();
+  if (appEnv === "staging" || appEnv === "development") return true;
+  const railwayEnv = (process.env.RAILWAY_ENVIRONMENT_NAME || "").trim();
+  if (railwayEnv && railwayEnv.toLowerCase() !== "production") return true;
+  return false;
+})();
+console.log(
+  `[env] isDev=${IS_DEV} (APP_ENV="${process.env.APP_ENV || ""}", RAILWAY_ENVIRONMENT_NAME="${process.env.RAILWAY_ENVIRONMENT_NAME || ""}")`
+);
 
 const app = express();
 
@@ -28,6 +45,12 @@ app.use(helmet({
 }));
 
 app.use(express.json({ limit: "6mb" }));
+
+// Expose ONLY the dev flag to the frontend (a single boolean — no secrets). The
+// dev-only Test Sessions panel is drawn only when this is true; in production the
+// server returns { isDev: false }, so the panel never appears and its start path
+// is never wired up.
+app.get("/api/env", (_req, res) => res.json({ isDev: IS_DEV }));
 
 // Health check
 app.get("/api/health", async (_req, res) => {
@@ -1763,6 +1786,112 @@ async function seedJayTapeReminderV1() {
   }
 }
 
+// ── DEV-ONLY (staging): seeded test account ──────────────────────────────────
+// Creates a ready-to-use test@afjltd.co.uk with representative data so the app
+// can be exercised without touching real data or manually registering. Guarded
+// three ways so it can NEVER create the account in production:
+//   1) IS_DEV must be true (false in production and any unknown environment),
+//   2) TEST_USER_PASSWORD must be set (else it logs and skips — no hardcoded pw),
+//   3) idempotent — skips if the account already exists.
+// Password is hashed with the app's normal method (bcrypt, 12 rounds) so login works.
+async function seedDevTestUser() {
+  if (!IS_DEV) return; // hard gate — never runs in production
+  const email = "test@afjltd.co.uk";
+  try {
+    const pw = process.env.TEST_USER_PASSWORD;
+    if (!pw || pw.length < 8) {
+      console.log(`[dev-seed] TEST_USER_PASSWORD not set (or <8 chars) — skipping ${email} seed`);
+      return;
+    }
+    const ymd = (daysAgo: number): string => {
+      const d = new Date();
+      d.setDate(d.getDate() - daysAgo);
+      return d.toLocaleDateString("en-CA", { timeZone: "Europe/London" });
+    };
+    const iso = (daysAgo: number): string => {
+      const d = new Date();
+      d.setDate(d.getDate() - daysAgo);
+      return d.toISOString();
+    };
+    const set = (kg: number, reps: number, effort: string) => ({ kg, reps, done: true, effort });
+    const upperDay = ymd(6);
+    const lowerDay = ymd(4);
+
+    const state: any = {
+      profile: {
+        name: "Test User",
+        email,
+        personal: { age: 40, heightCm: 178, sex: "male", activityLevel: "moderate" },
+        programId: "upper-lower-4d",
+        startWeight: 98,
+        startBF: 26,
+        startLBM: 72.5,
+        activePhase: {
+          phase: "Cut", startDate: ymd(42),
+          calorieTarget: 2400, proteinFloor: 180, calorieFloor: 1800,
+          startWeight: 98, goalWeight: 84, targetBFLow: 15, targetBFHigh: 18,
+        },
+      },
+      planStartDate: ymd(42),
+      trainingStartDate: ymd(42),
+      weightLog: [
+        { date: ymd(42), weight: 98.0, source: "manual" },
+        { date: ymd(35), weight: 96.8, source: "manual" },
+        { date: ymd(28), weight: 96.0, source: "manual" },
+        { date: ymd(21), weight: 94.9, source: "manual" },
+        { date: ymd(14), weight: 94.2, source: "manual" },
+        { date: ymd(7), weight: 93.3, source: "manual" },
+        { date: ymd(1), weight: 92.6, source: "manual" },
+      ],
+      bodyComp: {
+        [ymd(28)]: { weight: 96.0, bodyFat: 25.2, muscleMass: 68.0, visceralFat: 11, source: "manual" },
+        [ymd(14)]: { weight: 94.2, bodyFat: 24.1, muscleMass: 67.6, visceralFat: 10, source: "manual" },
+        [ymd(1)]: { weight: 92.6, bodyFat: 23.3, muscleMass: 67.3, visceralFat: 10, source: "manual" },
+      },
+      stepsLog: { [ymd(4)]: 9200, [ymd(3)]: 11400, [ymd(2)]: 8600, [ymd(1)]: 10250 },
+      exLog: {
+        // Upper — varied effort so progression has data to work from:
+        [upperDay]: {
+          u1: { done: true, sets: [set(70, 8, "easy"), set(70, 8, "easy"), set(70, 8, "easy"), set(70, 8, "easy")] }, // topped + all easy -> suggests +weight
+          u3: { done: true, sets: [set(90, 7, "solid"), set(90, 7, "solid"), set(90, 6, "solid"), set(90, 6, "tough")] },
+          u4: { done: true, sets: [set(45, 8, "solid"), set(45, 7, "tough"), set(45, 6, "tough")] },                   // tough -> hold
+          u5: { done: true, sets: [set(60, 10, "solid"), set(60, 10, "solid"), set(60, 9, "solid")] },
+          u6: { done: true, sets: [set(25, 12, "easy"), set(25, 11, "solid"), set(25, 10, "solid")] },
+          _session: { sessionType: "upper", startedAt: iso(6), completedAt: iso(6) },
+        },
+        // Lower — same idea:
+        [lowerDay]: {
+          l1: { done: true, sets: [set(180, 8, "easy"), set(180, 8, "easy"), set(180, 8, "solid"), set(180, 8, "solid")] }, // topped -> +weight
+          l2: { done: true, sets: [set(100, 7, "solid"), set(100, 7, "solid"), set(100, 6, "tough")] },
+          l3: { done: true, sets: [set(55, 12, "solid"), set(55, 11, "tough"), set(55, 10, "tough")] },                     // tough -> hold
+          l5: { done: true, sets: [set(120, 10, "solid"), set(120, 9, "solid"), set(120, 8, "tough")] },
+          l6: { done: true, sets: [set(90, 18, "solid"), set(90, 17, "solid"), set(90, 15, "tough")] },
+          _session: { sessionType: "lower", startedAt: iso(4), completedAt: iso(4) },
+        },
+      },
+    };
+
+    const passwordHash = await bcrypt.hash(pw, 12);
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      const st: any = existing.state || {};
+      if (st.profile && st.profile.personal) {
+        console.log(`[dev-seed] ${email} already has a profile — leaving it as is`);
+        return;
+      }
+      // Empty account (e.g. a manual signup that only reached onboarding): backfill
+      // the test data and reset the password to TEST_USER_PASSWORD so login is predictable.
+      await prisma.user.update({ where: { email }, data: { state, passwordHash } });
+      console.log(`[dev-seed] backfilled existing empty ${email} with test data`);
+      return;
+    }
+    await prisma.user.create({ data: { email, passwordHash, state } });
+    console.log(`[dev-seed] created ${email} — profile + Upper/Lower program + Cut phase + weight/body-comp history + 2 sessions (varied effort)`);
+  } catch (err) {
+    console.error("[dev-seed] seedDevTestUser failed:", err);
+  }
+}
+
 const server = app.listen(PORT, async () => {
   console.log(`Forge server running on port ${PORT}`);
   startCron();
@@ -1807,6 +1936,7 @@ const server = app.listen(PORT, async () => {
   await fixAbdulTretinoinLadderV1();
   await seedAbdulBoditraxV1();
   await seedFiveDaySplitV1();
+  if (IS_DEV) await seedDevTestUser(); // DEV/staging only — never runs in production
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when
   // ~a week has elapsed with no report, never a spurious mid-week one.

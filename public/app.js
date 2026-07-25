@@ -3126,6 +3126,10 @@ async function checkAuth(){
 
 // ---- INIT ----
 async function init(){
+  // Dev flag from the server (staging only). Defaults to NOT dev on any error,
+  // so production and offline never expose dev-only features.
+  window.__ENV__ = { isDev:false };
+  try{ const _r=await fetch('/api/env'); if(_r.ok){ const _e=await _r.json(); window.__ENV__.isDev = !!_e.isDev; } }catch(_){}
   if(!await checkAuth())return;
   await loadState();
   // Migrate: ensure planStartDate + trainingStartDate exist for existing users
