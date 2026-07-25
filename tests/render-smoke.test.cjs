@@ -268,6 +268,88 @@ test("suitcase carry screens render (countdown target, 5s switch, effort)", () =
   assert.ok(/How did that feel/.test(els['wmContent']._html), "effort screen shows");
 });
 
+test("Tricep Rope Pushdown (u7) is a normal working lift in Upper B, not a filler", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (e) => vm.runInContext(e, ctx);
+  const ids = q(`getWorkout('upperB').exercises.map(e=>e.id)`);
+  assert.ok(ids.includes('u7'), "u7 renders in Upper B");
+  assert.equal(q(`getWorkout('upperB').exercises.find(e=>e.id==='u7').name`), 'Tricep Rope Pushdown');
+  assert.equal(q(`getWorkout('upperB').exercises.find(e=>e.id==='u7').size`), 'small', "size:small → lightest increments (like u6)");
+  assert.equal(q(`FILLERS['u7']===undefined`), true, "u7 is NOT a filler drill");
+  assert.equal(q(`computeSessionVolume({u7:{sets:[{kg:25,reps:15}]}})`), 375, "u7 counts as a normal working set");
+});
+
+test("filler drills never pollute working-set history; parent-keyed store avoids collisions", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
+  const q = (e) => vm.runInContext(e, ctx);
+
+  // Empty fillers array → Deep Squat Hold default; assigned → that filler.
+  assert.equal(q(`getFillerForLift({id:'h5'}).id`), 'fill_deep_squat', "no fillers → deep-squat default");
+  assert.equal(q(`getFillerForLift({id:'u4',fillers:['fill_band_pull_apart']}).id`), 'fill_band_pull_apart');
+  assert.equal(q(`FILLERS.fill_deep_squat.target`), 60, "deep squat default 60s");
+  assert.equal(q(`FILLERS.fill_deep_squat.max`), 120, "progressable to 120s");
+
+  // Real Upper A session: u4 (Shoulder Press) + reh_2 (Band Pull-Apart) are real
+  // WORKING lifts. Band Pull-Apart is also the filler *movement* for u4 — but the
+  // filler drill id is fill_band_pull_apart, stored under _fillers[u4].
+  q(`STATE.exLog={'${T}':{_session:{sessionType:'upperA'}, u4:{sets:[{kg:50,reps:10,done:true}]}, reh_2:{sets:[{kg:5,reps:15,done:true}]}}};`);
+  q(`logFillerGap('${T}','u4','fill_band_pull_apart',0,'done'); logFillerGap('${T}','u4','fill_band_pull_apart',1,'done'); logFillerGap('${T}','u1','fill_band_ext_rot',0,'skipped');`);
+
+  // Stored under _fillers, keyed by PARENT lift — never under reh_2 or the drill id.
+  assert.equal(q(`getExLogForDate('${T}').reh_2.sets.length`), 1, "reh_2 working set untouched");
+  assert.equal(q(`getExLogForDate('${T}').fill_band_pull_apart===undefined`), true, "no exercise entry for the filler id");
+  assert.equal(q(`Object.keys(getExLogForDate('${T}')._fillers).sort().join(',')`), 'u1,u4', "fillers keyed by parent lift");
+
+  // Volume counts ONLY the two real working sets (50×10 + 5×15 = 575).
+  assert.equal(q(`computeSessionVolume(getExLogForDate('${T}'))`), 575, "fillers excluded from volume");
+  // Progression/autoreg never see fillers (id lookups + the _ skip).
+  assert.equal(q(`getExercisePreviousSessions('fill_band_pull_apart','2026-08-01',5).length`), 0, "filler absent from progression history");
+  assert.equal(q(`_classifyLoggedSession(getExLogForDate('${T}'))`), 'upperA', "session classify ignores _fillers");
+
+  // Adherence recap: 2 done, 1 skipped.
+  const adh = q(`JSON.stringify(fillerAdherence('${T}'))`);
+  assert.ok(/"done":2/.test(adh) && /"skipped":1/.test(adh), "adherence tallies done + skipped per lift");
+});
+
+test("logging/skipping a filler does not affect the rest countdown", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
+  vm.runInContext(`STATE.exLog={'${T}':{}};`, ctx);
+  vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:123456,restInterval:null};`, ctx);
+  const before = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
+  vm.runInContext(`wmFillerDone('u4','fill_band_pull_apart',0);`, ctx);
+  vm.runInContext(`wmFillerSkip('u1','fill_band_ext_rot',0);`, ctx);
+  const after = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
+  assert.equal(before, after, "rest timer state (target/started/mode) untouched by Done/Skip");
+  assert.equal(vm.runInContext(`getFillerLog('${T}').u4.gaps[0].status`, ctx), 'done', "Done persisted");
+  assert.equal(vm.runInContext(`getFillerLog('${T}').u1.gaps[0].status`, ctx), 'skipped', "Skip persisted");
+});
+
+test("rest screen renders the filler card under the timer with the right pairing", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
+  vm.runInContext(`STATE.exLog={'${T}':{u4:{sets:[{kg:50,reps:10,done:true,effort:'solid'}]}}};`, ctx);
+  vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:1};`, ctx);
+  assert.doesNotThrow(() => vm.runInContext(`renderWmRest()`, ctx), "rest screen renders with a filler card");
+  const html = els['wmContent']._html;
+  assert.ok(/Band Pull-Apart/.test(html), "Upper A Shoulder Press filler = Band Pull-Apart");
+  assert.ok(/Filler · set 1 of 2/.test(html), "gap counter: set 1 of 2 (3 sets → 2 gaps)");
+  assert.ok(/wmFillerDone\('u4','fill_band_pull_apart',0\)/.test(html), "Done wired to parent lift u4");
+  // Suitcase carry rest → deep squat default; carry itself never used AS filler.
+  vm.runInContext(`STATE.exLog={'${T}':{core_suitcase:{sets:[{leftSeconds:40,rightSeconds:40,done:true}]}}};`, ctx);
+  vm.runInContext(`wm={active:true,session:'lowerB',exIdx:3,setIdx:0,mode:'rest',restTarget:60,restStarted:1};`, ctx);
+  vm.runInContext(`renderWmRest()`, ctx);
+  assert.ok(/Deep Squat Hold/.test(els['wmContent']._html), "Suitcase Carry rest → Deep Squat Hold default");
+});
+
 test("weighted compounds get set-to-set guidance; accessories left alone", () => {
   const { ctx } = bootApp();
   seed(ctx);

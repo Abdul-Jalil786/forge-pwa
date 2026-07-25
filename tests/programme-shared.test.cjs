@@ -191,7 +191,10 @@ test("SESSION_EXERCISE_IDS matches each WORKOUTS session's exercise ids exactly"
   const start = src.indexOf("const WORKOUTS = {");
   const block = src.slice(start, src.indexOf("\n};", start));
   // Parse each "sessionKey: { ... exercises:[ ... ] }" → ids
-  const re = /(\w+):\s*\{[\s\S]*?exercises:\s*\[([\s\S]*?)\]/g;
+  // Anchor the exercises-array close on "]" followed by the session's "}" so a
+  // nested inline array (e.g. fillers:['…']) inside an exercise doesn't end the
+  // capture early.
+  const re = /(\w+):\s*\{[\s\S]*?exercises:\s*\[([\s\S]*?)\]\s*\}/g;
   const parsed = {};
   let m;
   while ((m = re.exec(block)) !== null) {
