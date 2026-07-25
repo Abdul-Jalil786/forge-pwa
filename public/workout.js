@@ -1501,10 +1501,10 @@ function _wmCountDownStart(displayId,targetSec,onDone){
     const elapsed=Math.floor((Date.now()-wmTimer.startedAt)/1000);
     const remaining=Math.max(0,targetSec-elapsed);
     const el=document.getElementById(displayId);
-    if(el)el.textContent=fmtSec(remaining);
+    if(el)el.textContent=_fmtCarrySec(remaining);
     if(remaining<=0){
       clearInterval(wmTimer.interval); wmTimer.running=false; wmTimer.elapsed=targetSec;
-      if(el){el.textContent=fmtSec(0);el.classList.remove('active');el.classList.add('done');}
+      if(el){el.textContent=_fmtCarrySec(0);el.classList.remove('active');el.classList.add('done');}
       if(navigator.vibrate)navigator.vibrate([200,100,200]);
       if(typeof onDone==='function')onDone();
     }
@@ -1517,7 +1517,7 @@ function _wmCountDownStop(displayId){
   const held=Math.min(elapsed,wmTimer.target||elapsed);
   wmTimer.elapsed=held;
   const d=document.getElementById(displayId);
-  if(d){d.textContent=fmtSec(held);d.classList.remove('active');d.classList.add('done');}
+  if(d){d.textContent=_fmtCarrySec(held);d.classList.remove('active');d.classList.add('done');}
   return held;
 }
 
@@ -1565,6 +1565,8 @@ function wmTimedSetDone(restSec){
 // resets to 40s — exactly the rep-range double progression, on a time axis.
 // Effort steers it (easy/solid → advance, tough → hold). Weight is per side so
 // the user can load the weak side heavier; both sides progress together.
+// Carries cap at 60s, so always show plain seconds ("60s"), never mm:ss ("1:00").
+function _fmtCarrySec(s){return Math.round(s)+'s';}
 const CARRY_TIME_STEP=10, CARRY_WEIGHT_INC=5, CARRY_WEIGHT_DROP=2.5;
 function suggestCarry(exId,prevSession){
   const ex=(typeof getAllExercises==='function')?getAllExercises().find(e=>e.id===exId):null;
@@ -1573,7 +1575,7 @@ function suggestCarry(exId,prevSession){
   const sets=(prev&&Array.isArray(prev.sets))?prev.sets.filter(s=>s&&s.done&&(s.leftSeconds!=null||s.rightSeconds!=null)):[];
   if(!sets.length){
     return {leftKg:'',rightKg:'',targetSeconds:LOW,
-      reason:`First time — pick a weight you can hold ~${fmtSec(LOW)} per side, tall and level. Build to ${fmtSec(HIGH)}, then add weight.`};
+      reason:`First time — pick a weight you can hold ~${_fmtCarrySec(LOW)} per side, tall and level. Build to ${_fmtCarrySec(HIGH)}, then add weight.`};
   }
   const last=sets[sets.length-1];
   const prevLeftKg=last.leftKg!=null?last.leftKg:'';
@@ -1588,26 +1590,26 @@ function suggestCarry(exId,prevSession){
     if(lastTarget>=HIGH){
       if(effort==='tough'){
         return {leftKg:prevLeftKg,rightKg:prevRightKg,targetSeconds:HIGH,
-          reason:`Held ${fmtSec(HIGH)} everywhere but it was a fight — stay here and own it before adding weight.`};
+          reason:`Held ${_fmtCarrySec(HIGH)} everywhere but it was a fight — stay here and own it before adding weight.`};
       }
       return {leftKg:up(prevLeftKg),rightKg:up(prevRightKg),targetSeconds:LOW,
-        reason:`✅ Held ${fmtSec(HIGH)} on every set — up ${CARRY_WEIGHT_INC}kg, back to ${fmtSec(LOW)}. Climb again.`};
+        reason:`✅ Held ${_fmtCarrySec(HIGH)} on every set — up ${CARRY_WEIGHT_INC}kg, back to ${_fmtCarrySec(LOW)}. Climb again.`};
     }
     if(effort==='tough'){
       return {leftKg:prevLeftKg,rightKg:prevRightKg,targetSeconds:lastTarget,
-        reason:`${fmtSec(lastTarget)} was a grind — repeat it at this weight before climbing.`};
+        reason:`${_fmtCarrySec(lastTarget)} was a grind — repeat it at this weight before climbing.`};
     }
     const next=Math.min(HIGH,lastTarget+CARRY_TIME_STEP);
     return {leftKg:prevLeftKg,rightKg:prevRightKg,targetSeconds:next,
-      reason:`Held ${fmtSec(lastTarget)} clean — climb to ${fmtSec(next)}, same weight.`};
+      reason:`Held ${_fmtCarrySec(lastTarget)} clean — climb to ${_fmtCarrySec(next)}, same weight.`};
   }
   const worst=Math.min(...sets.map(s=>Math.min(s.leftSeconds||0,s.rightSeconds||0)));
   if(worst<LOW){
     return {leftKg:down(prevLeftKg),rightKg:down(prevRightKg),targetSeconds:LOW,
-      reason:`Couldn't hold ${fmtSec(LOW)} — drop ${CARRY_WEIGHT_DROP}kg and rebuild from the floor.`};
+      reason:`Couldn't hold ${_fmtCarrySec(LOW)} — drop ${CARRY_WEIGHT_DROP}kg and rebuild from the floor.`};
   }
   return {leftKg:prevLeftKg,rightKg:prevRightKg,targetSeconds:lastTarget,
-    reason:`Short of ${fmtSec(lastTarget)} — repeat the weight and time, nail all sets.`};
+    reason:`Short of ${_fmtCarrySec(lastTarget)} — repeat the weight and time, nail all sets.`};
 }
 
 function wmCarryStepKg(delta){
@@ -1659,7 +1661,7 @@ function renderWmSetCarry(){
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Exercise ${wm.exIdx+1} of ${w.exercises.length}</div>
     <div class="wm-title" style="margin-top:6px;">${ex.name}</div>
-    <div class="wm-sub">Set ${wm.setIdx+1} of ${_effectiveSets(ex)} · aim ${fmtSec(target)} per side · range ${fmtSec(LOW)}–${fmtSec(HIGH)}</div>
+    <div class="wm-sub">Set ${wm.setIdx+1} of ${_effectiveSets(ex)} · aim ${_fmtCarrySec(target)} per side · range ${_fmtCarrySec(LOW)}–${_fmtCarrySec(HIGH)}</div>
     <div style="display:flex;align-items:center;gap:10px;margin:8px 0 10px;flex-wrap:wrap;">
       <a href="${ex.yt}" target="_blank" style="color:var(--blue);font-size:12px;text-decoration:none;">🎥 Watch form →</a>
     </div>
@@ -1674,8 +1676,8 @@ function renderWmSetCarry(){
       <span style="font-size:12px;color:var(--text3);">kg</span>
     </div>
     <div style="position:relative;text-align:center;padding:22px 0;">
-      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Archivo Black',sans-serif;font-size:70px;color:var(--text);opacity:.10;pointer-events:none;">${fmtSec(target)}</div>
-      <div id="wm-carry-timer" class="wm-hold-timer" style="position:relative;">${fmtSec(target)}</div>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Archivo Black',sans-serif;font-size:70px;color:var(--text);opacity:.10;pointer-events:none;">${_fmtCarrySec(target)}</div>
+      <div id="wm-carry-timer" class="wm-hold-timer" style="position:relative;">${_fmtCarrySec(target)}</div>
     </div>
     <div id="wm-timer-sets" style="margin-bottom:16px;">${setsHtml}</div>
     <button id="wm-carry-btn" class="wm-timer-start" onclick="wmToggleCarryTimer()">START · ${sideLabel}</button>
@@ -1789,7 +1791,7 @@ function renderWmCarryEffort(){
   document.getElementById('wmContent').innerHTML=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">All sets done</div>
-    <div class="wm-title" style="font-size:22px;margin-top:6px;">${ex.name} — L ${fmtSec(s.leftSeconds||0)} / R ${fmtSec(s.rightSeconds||0)}</div>
+    <div class="wm-title" style="font-size:22px;margin-top:6px;">${ex.name} — L ${_fmtCarrySec(s.leftSeconds||0)} / R ${_fmtCarrySec(s.rightSeconds||0)}</div>
     <div class="wm-sub">How did that feel?</div>
     <button class="wm-effort-btn" onclick="wmRecordCarryEffort('easy')">
       <div class="em">😌</div>

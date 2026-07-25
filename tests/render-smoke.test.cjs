@@ -260,7 +260,7 @@ test("suitcase carry screens render (countdown target, 5s switch, effort)", () =
   vm.runInContext(`wm={active:true,session:'lowerB',exIdx:${idx},setIdx:0,mode:'set',autoReg:null,carrySide:'left'};`, ctx);
   assert.doesNotThrow(() => vm.runInContext(`renderWmSetCarry()`, ctx), "carry set screen renders");
   const set = els['wmContent']._html;
-  assert.ok(/range 40s–1:00/.test(set), "shows the 40–60s range");
+  assert.ok(/range 40s–60s/.test(set), "shows the 40–60s range as plain seconds (not 1:00)");
   assert.ok(/aim 40s per side/.test(set), "counts down from the 40s floor first time");
   assert.doesNotThrow(() => vm.runInContext(`renderWmCarrySwitch()`, ctx), "5s switch renders");
   assert.ok(/Switch hands/.test(els['wmContent']._html), "switch screen shows");
