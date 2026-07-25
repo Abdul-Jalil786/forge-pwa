@@ -29,7 +29,7 @@ var EXERCISE_NAMES = {
   u4: 'Shoulder Press',
   u5: 'Lat Pulldown',
   u6: 'Bicep Curl',
-  u7: 'Tricep Pushdown',
+  u7: 'Tricep Rope Pushdown',
   u8: 'Face Pull',
   u9: 'Plank',
   core_pallof: 'Pallof Press',
@@ -80,7 +80,7 @@ function exerciseName(id) {
 // range (mirrors public/data.js WORKOUTS; timed holds + "each side" moves omitted).
 // Single source so server-side stall detection can judge "hit top of range".
 var EXERCISE_REPS = {
-  u1: [6, 8], u2: [8, 10], u3: [6, 8], u4: [6, 8], u5: [8, 10], u6: [10, 12], u7: [10, 12], u8: [12, 15],
+  u1: [6, 8], u2: [8, 10], u3: [6, 8], u4: [6, 8], u5: [8, 10], u6: [10, 12], u7: [12, 15], u8: [12, 15],
   neck_ext: [12, 15], neck_front: [12, 15],
   l1: [6, 8], l2: [6, 8], l3: [10, 12], l4: [10, 12], l5: [8, 10], l6: [15, 20],
   h1: [10, 12], h2: [8, 15], h3: [8, 10], h4: [10, 12], h5: [12, 15],
@@ -111,7 +111,7 @@ var SESSION_EXERCISE_IDS = {
   home: ['h1', 'h2', 'h3', 'h4', 'u4', 'h5', 'u6', 'u9', 'core_dead_bug'],
   upperA: ['u4', 'u1', 'u3', 'u5', 'h5', 'reh_1', 'reh_2', 'reh_3'],
   lowerA: ['h1', 'l1', 'l2', 'l6', 'core_pallof'],
-  upperB: ['u2', 'h3', 'u4', 'u8', 'u6', 'core_dead_bug', 'reh_1', 'reh_2', 'reh_3'],
+  upperB: ['u2', 'h3', 'u4', 'u8', 'u6', 'u7', 'core_dead_bug', 'reh_1', 'reh_2', 'reh_3'],
   lowerB: ['l5', 'l1', 'l4', 'core_suitcase'],
   zone2: ['cardio_z2'],
 };

@@ -1977,6 +1977,30 @@ function renderWmRest(){
       <div style="font-size:10px;color:${arColor};text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:4px;">Next set ${arArrow} ${ar.kg}kg</div>
       <div style="font-size:13px;color:var(--text);line-height:1.5;">${ar.msg}</div>
     </div>`:'';
+  // Phase 62: rest-gap filler — a light accessory/mobility drill to do DURING
+  // this rest. Optional; logging/skipping it never touches the countdown (its
+  // own ids only). Gap after set N = index N (0-based); N total gaps = sets-1.
+  const filler=(typeof getFillerForLift==='function')?getFillerForLift(ex):null;
+  const gapIdx=wm.setIdx;
+  const gapTotal=Math.max(1,_effectiveSets(ex)-1);
+  const prevGap=(typeof getFillerLog==='function'&&getFillerLog(date)[ex.id]&&Array.isArray(getFillerLog(date)[ex.id].gaps))?getFillerLog(date)[ex.id].gaps[gapIdx]:null;
+  const fillerTargetStr=filler?(filler.kind==='timed'?`${filler.target}s hold`:`${filler.target} reps`):'';
+  const _fillerStatusHTML=(st)=>`<span id="wm-filler-status" style="font-size:12px;font-weight:700;color:${st==='done'?'var(--green)':'var(--text3)'};">${st==='done'?'✓ Done':'Skipped'}</span>`;
+  const fillerPanel=filler?`<div id="wm-filler" style="background:rgba(130,120,255,.06);border:1px solid rgba(140,130,255,.28);border-radius:12px;padding:12px 14px;margin:0 0 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <div style="min-width:0;">
+          <div style="font-size:10px;color:#a7a2ff;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Filler · set ${gapIdx+1} of ${gapTotal}</div>
+          <div style="font-size:14px;color:var(--text);font-weight:700;margin-top:2px;">${filler.name}</div>
+          <div style="font-size:11px;color:var(--text2);">${fillerTargetStr} · optional — doesn't shorten your rest</div>
+        </div>
+        <div id="wm-filler-actions" style="display:flex;gap:6px;flex-shrink:0;">
+          ${prevGap&&prevGap.status
+            ? _fillerStatusHTML(prevGap.status)
+            : `<button onclick="wmFillerDone('${ex.id}','${filler.id}',${gapIdx})" style="padding:7px 11px;background:rgba(0,200,120,.14);border:1px solid var(--green);border-radius:8px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;">✓ Done</button>
+               <button onclick="wmFillerSkip('${ex.id}','${filler.id}',${gapIdx})" style="padding:7px 11px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text3);font-size:12px;cursor:pointer;">Skip</button>`}
+        </div>
+      </div>
+    </div>`:'';
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Resting</div>
@@ -1985,6 +2009,7 @@ function renderWmRest(){
       <div id="wm-timer" style="font-family:'Archivo Black',sans-serif;font-size:88px;letter-spacing:-4px;color:var(--lime);line-height:1;">${wm.restTarget}s</div>
       <div id="wm-timer-status" style="font-size:14px;color:var(--text2);margin-top:8px;">counting down</div>
     </div>
+    ${fillerPanel}
     ${arPanel}
     <div class="wm-meta">Next: Set ${wm.setIdx+2} of ${_effectiveSets(ex)} · ${ex.name}</div>
     <button id="wm-next-btn" class="wm-cta ghost" onclick="wmStartNextSet()">SKIP REST · START NEXT SET</button>
@@ -2025,6 +2050,17 @@ function updateWmRest(){
     s.textContent='GO! Tap to start next set';
     if(b){b.textContent='START NEXT SET';b.classList.remove('ghost');b.classList.add('over');}
   }
+}
+
+// Phase 62: log/skip the rest-gap filler. Updates ONLY the filler card's own
+// element — never #wm-timer / #wm-timer-status / #wm-next-btn — so the rest
+// countdown is completely unaffected. Never gates the next set.
+function wmFillerDone(parentId,fillerId,gapIdx){ _wmLogFiller(parentId,fillerId,gapIdx,'done'); }
+function wmFillerSkip(parentId,fillerId,gapIdx){ _wmLogFiller(parentId,fillerId,gapIdx,'skipped'); }
+function _wmLogFiller(parentId,fillerId,gapIdx,status){
+  if(typeof logFillerGap==='function')logFillerGap(todayStr(),parentId,fillerId,gapIdx,status);
+  const box=document.getElementById('wm-filler-actions');
+  if(box)box.innerHTML=`<span id="wm-filler-status" style="font-size:12px;font-weight:700;color:${status==='done'?'var(--green)':'var(--text3)'};">${status==='done'?'✓ Done':'Skipped'}</span>`;
 }
 
 function wmStartNextSet(){
@@ -2236,6 +2272,14 @@ function wmFinish(){
   }
   const em=score&&score.effortMix;
   const effStr=(em&&em.rated>0)?`${em.easy} easy · ${em.solid} solid · ${em.tough} tough`:'';
+  // Phase 62: filler (mobility/rehab) adherence — done vs skipped per lift.
+  const fillers=(typeof fillerAdherence==='function')?fillerAdherence(date):[];
+  const fillDone=fillers.reduce((a,f)=>a+f.done,0), fillSkip=fillers.reduce((a,f)=>a+f.skipped,0);
+  const _liftName=(id)=>{const e=(w.exercises||[]).find(x=>x.id===id)||((typeof getAllExercises==='function')?getAllExercises().find(x=>x.id===id):null);return e?e.name:id;};
+  const fillerRecap=fillers.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);">
+      <div style="font-size:11px;font-weight:700;color:#a7a2ff;">Filler work: ${fillDone} done${fillSkip?` · ${fillSkip} skipped`:''}</div>
+      ${fillers.map(f=>`<div style="font-size:11px;color:var(--text3);margin-top:2px;">${_liftName(f.parentId)} → ${f.fillerName}: ${f.done}/${f.total}${f.skipped?` · ${f.skipped} skipped`:''}</div>`).join('')}
+    </div>`:'';
   const recap=`
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;margin:8px 0 16px;text-align:left;">
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">How you got on</div>
@@ -2245,6 +2289,7 @@ function wmFinish(){
       ${skipped.length?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">Skipped: ${skipped.join(', ')} — carried forward, no deload.</div>`:''}
       ${feel?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">You came in feeling: ${feel}.</div>`:''}
       ${sessNote?`<div style="font-size:11px;color:var(--text2);margin-top:6px;font-style:italic;">"${(typeof _esc==='function'?_esc(sessNote):sessNote)}"</div>`:''}
+      ${fillerRecap}
     </div>`;
   let feelVsPerf='';
   if(feel&&score&&typeof score.pct==='number'&&score.sessions4w>=1){

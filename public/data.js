@@ -82,10 +82,10 @@ const WORKOUTS = {
     muscles:'Shoulders · Chest · Back · Lats',
     duration:'50–60',
     exercises:[
-      {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
-      {id:'u1',name:'Chest Press',sets:3,reps:'8–10',rest:90,muscle:'Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=chest+press+form'},
-      {id:'u3',name:'Seated Row',sets:3,reps:'8–10',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
-      {id:'u5',name:'Lat Pulldown',sets:3,reps:'10–12',rest:90,muscle:'Lats',size:'medium',yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
+      {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'u1',name:'Chest Press',sets:3,reps:'8–10',rest:90,muscle:'Chest',size:'medium',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=chest+press+form'},
+      {id:'u3',name:'Seated Row',sets:3,reps:'8–10',rest:90,muscle:'Back',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
+      {id:'u5',name:'Lat Pulldown',sets:3,reps:'10–12',rest:90,muscle:'Lats',size:'medium',fillers:['fill_hip_switch'],yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
       {id:'h5',name:'Lateral Raise',sets:2,reps:'12–15',rest:60,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
       {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
       {id:'reh_2',name:'Band Pull-Apart',sets:2,reps:'15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+pull+apart+form'},
@@ -97,10 +97,10 @@ const WORKOUTS = {
     muscles:'Quads · Hamstrings · Calves · Core',
     duration:'50–60',
     exercises:[
-      {id:'h1',name:'Goblet Squat',sets:3,reps:'10–12',rest:90,muscle:'Quads',size:'medium',yt:'https://www.youtube.com/results?search_query=goblet+squat+form'},
-      {id:'l1',name:'Leg Press',sets:4,reps:'8–10',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
-      {id:'l2',name:'Romanian Deadlift',sets:3,reps:'6–8',rest:120,muscle:'Hamstrings',size:'large',yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
-      {id:'l6',name:'Calf Raise',sets:3,reps:'12–15',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
+      {id:'h1',name:'Goblet Squat',sets:3,reps:'10–12',rest:90,muscle:'Quads',size:'medium',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=goblet+squat+form'},
+      {id:'l1',name:'Leg Press',sets:4,reps:'8–10',rest:120,muscle:'Quads',size:'large',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
+      {id:'l2',name:'Romanian Deadlift',sets:3,reps:'6–8',rest:120,muscle:'Hamstrings',size:'large',fillers:['fill_pallof'],yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
+      {id:'l6',name:'Calf Raise',sets:3,reps:'12–15',rest:45,muscle:'Calves',size:'medium',fillers:['fill_deep_squat'],yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
       {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10–12 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
     ]
   },
@@ -109,11 +109,12 @@ const WORKOUTS = {
     muscles:'Chest · Back · Shoulders · Arms · Core',
     duration:'50–60',
     exercises:[
-      {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Upper Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
-      {id:'h3',name:'One-Arm Dumbbell Row',sets:3,reps:'8–10 each side',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=one+arm+dumbbell+row+form'},
-      {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Upper Chest',size:'medium',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
+      {id:'h3',name:'One-Arm Dumbbell Row',sets:3,reps:'8–10 each side',rest:90,muscle:'Back',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=one+arm+dumbbell+row+form'},
+      {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
       {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
       {id:'u6',name:'Bicep Curl',sets:2,reps:'10–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
+      {id:'u7',name:'Tricep Rope Pushdown',sets:2,reps:'12–15',rest:60,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+rope+pushdown+form'},
       {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
       {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
       {id:'reh_2',name:'Band Pull-Apart',sets:2,reps:'15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+pull+apart+form'},
@@ -125,9 +126,9 @@ const WORKOUTS = {
     muscles:'Glutes · Quads · Hamstrings · Core',
     duration:'50–60',
     exercises:[
-      {id:'l5',name:'Hip Thrust',sets:4,reps:'8–10',rest:90,muscle:'Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
-      {id:'l1',name:'Leg Press',sets:3,reps:'10–12',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
-      {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
+      {id:'l5',name:'Hip Thrust',sets:4,reps:'8–10',rest:90,muscle:'Glutes',size:'large',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
+      {id:'l1',name:'Leg Press',sets:3,reps:'10–12',rest:120,muscle:'Quads',size:'large',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
+      {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
       {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'40–60s/side',metric:'carry',targetSeconds:40,targetSecondsLow:40,targetSecondsHigh:60,rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
     ]
   },
@@ -890,6 +891,61 @@ function saveExLogForDate(date,data){
   STATE.exLog=all;
   updateLocalCache();
   saveFieldToServer(`/api/state/exLog/${date}`,{value:data});
+}
+
+// ======================= FILLER DRILLS (Phase 62) =======================
+// Light accessory/mobility done DURING a main lift's rest gaps. A filler is
+// NEVER a working set: it is stored under exLog[date]._fillers[parentLiftId] —
+// an underscore-prefixed key that every working-set consumer already skips
+// (computeSessionVolume, _classifyLoggedSession, buildContext, progression,
+// autoreg, lean-mass). Keying by the PARENT lift (not the filler's own id)
+// means a filler that is ALSO a main lift that day (e.g. Band Pull-Apart in
+// Upper A) never merges with its real working set.
+const FILLERS = {
+  fill_deep_squat:      {id:'fill_deep_squat',      name:'Deep Squat Hold',        kind:'timed', target:60, max:120},
+  fill_band_pull_apart: {id:'fill_band_pull_apart', name:'Band Pull-Apart',        kind:'reps',  target:'15'},
+  fill_band_ext_rot:    {id:'fill_band_ext_rot',    name:'Band External Rotation', kind:'reps',  target:'12–15 per arm'},
+  fill_dead_bug:        {id:'fill_dead_bug',        name:'Dead Bug',               kind:'reps',  target:'10 each side'},
+  fill_pallof:          {id:'fill_pallof',          name:'Pallof Press',           kind:'reps',  target:'10 each side'},
+  fill_hip_switch:      {id:'fill_hip_switch',      name:'90/90 Hip Switch',       kind:'reps',  target:'10'},
+};
+const FILLER_DEFAULT='fill_deep_squat';
+function getFiller(id){return FILLERS[id]||null;}
+// The filler for a lift's rest gaps: its first assigned filler, else the
+// universal Deep Squat Hold default so no rest gap is ever empty.
+function getFillerForLift(ex){
+  const ids=(ex&&Array.isArray(ex.fillers)&&ex.fillers.length)?ex.fillers:[FILLER_DEFAULT];
+  return FILLERS[ids[0]]||FILLERS[FILLER_DEFAULT];
+}
+function getFillerLog(date){const e=getExLogForDate(date);return (e&&e._fillers&&typeof e._fillers==='object')?e._fillers:{};}
+function _fillerEntry(dayLog,parentId){
+  if(!dayLog._fillers||typeof dayLog._fillers!=='object')dayLog._fillers={};
+  if(!dayLog._fillers[parentId]||typeof dayLog._fillers[parentId]!=='object')dayLog._fillers[parentId]={gaps:[]};
+  if(!Array.isArray(dayLog._fillers[parentId].gaps))dayLog._fillers[parentId].gaps=[];
+  return dayLog._fillers[parentId];
+}
+// Record a filler gap outcome for a parent lift. status = 'done' | 'skipped'.
+// gapIdx is the 0-based rest-gap index for that lift (gap after set N = N-1).
+function logFillerGap(date,parentId,fillerId,gapIdx,status){
+  const dayLog=getExLogForDate(date);
+  const e=_fillerEntry(dayLog,parentId);
+  e.fillerId=fillerId;
+  e.gaps[gapIdx]={status,at:Date.now()};
+  saveExLogForDate(date,dayLog);
+  return e;
+}
+// Session filler adherence for the recap — per parent lift, done/skipped counts.
+function fillerAdherence(date){
+  const log=getFillerLog(date), out=[];
+  for(const [parentId,e] of Object.entries(log)){
+    const gaps=(e&&Array.isArray(e.gaps))?e.gaps.filter(Boolean):[];
+    if(!gaps.length)continue;
+    const done=gaps.filter(g=>g.status==='done').length;
+    const skipped=gaps.filter(g=>g.status==='skipped').length;
+    const f=getFiller(e.fillerId);
+    out.push({parentId,fillerId:e.fillerId,fillerName:f?f.name:e.fillerId,done,skipped,total:gaps.length});
+  }
+  return out;
 }
 
 function getBestLift(exId){
