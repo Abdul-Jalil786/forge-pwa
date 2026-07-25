@@ -36,7 +36,7 @@ const WORKOUTS = {
       {id:'l6',name:'Calf Raise',sets:4,reps:'15–20',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
       {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10–12 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
       {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
-      {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'40s/side',metric:'carry',targetSeconds:40,rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
+      {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'40–60s/side',metric:'carry',targetSeconds:40,targetSecondsLow:40,targetSecondsHigh:60,rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
     ]
   },
   // Phase 42d: Full Body 3-day (gym) — beginner-friendly, shares exercise IDs with
@@ -128,7 +128,7 @@ const WORKOUTS = {
       {id:'l5',name:'Hip Thrust',sets:4,reps:'8–10',rest:90,muscle:'Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
       {id:'l1',name:'Leg Press',sets:3,reps:'10–12',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
       {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
-      {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'40s/side',metric:'carry',targetSeconds:40,rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
+      {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'40–60s/side',metric:'carry',targetSeconds:40,targetSecondsLow:40,targetSecondsHigh:60,rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
     ]
   },
   zone2: {
