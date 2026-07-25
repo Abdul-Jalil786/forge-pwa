@@ -1803,10 +1803,6 @@ async function seedDevTestUser() {
       console.log(`[dev-seed] TEST_USER_PASSWORD not set (or <8 chars) — skipping ${email} seed`);
       return;
     }
-    if (await prisma.user.findUnique({ where: { email } })) {
-      console.log(`[dev-seed] ${email} already exists — skipping`);
-      return;
-    }
     const ymd = (daysAgo: number): string => {
       const d = new Date();
       d.setDate(d.getDate() - daysAgo);
@@ -1876,6 +1872,19 @@ async function seedDevTestUser() {
     };
 
     const passwordHash = await bcrypt.hash(pw, 12);
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      const st: any = existing.state || {};
+      if (st.profile && st.profile.personal) {
+        console.log(`[dev-seed] ${email} already has a profile — leaving it as is`);
+        return;
+      }
+      // Empty account (e.g. a manual signup that only reached onboarding): backfill
+      // the test data and reset the password to TEST_USER_PASSWORD so login is predictable.
+      await prisma.user.update({ where: { email }, data: { state, passwordHash } });
+      console.log(`[dev-seed] backfilled existing empty ${email} with test data`);
+      return;
+    }
     await prisma.user.create({ data: { email, passwordHash, state } });
     console.log(`[dev-seed] created ${email} — profile + Upper/Lower program + Cut phase + weight/body-comp history + 2 sessions (varied effort)`);
   } catch (err) {
