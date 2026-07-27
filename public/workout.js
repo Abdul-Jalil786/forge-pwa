@@ -1171,6 +1171,7 @@ function suggestTime(exId,exObj,prevSession,setIdx,opts){
 function renderWmOutline(){
   const w=getWorkout(wm.session);
   const date=todayStr();
+  const outlineDayLog=getExLogForDate(date); // Phase 63: reflect anything done during rest on resume
   const prev=getPreviousSessionData(date,wm.session);
   const prevSessions=getPreviousSessions(date,wm.session,5);
   const gate=effectiveRecoveryGate(); // Phase 44: honours the user's train/easy choice
@@ -1239,6 +1240,10 @@ function renderWmOutline(){
         const cueId = `cue-${ex.id}`;
         const cueText = cached?.perExercise?.find(c => c.exId === ex.id)?.cue || '';
         const setsShown = sug?.setsOverride || ex.sets; // deload overrides to 2
+        // Phase 63: tick exercises already knocked out during a rest gap.
+        const exLog=outlineDayLog[ex.id];
+        const exDone=!!(exLog&&(exLog.done||exLog.skipped));
+        if(exDone)return `<div class="wm-ex-row" style="opacity:.5;"><div style="flex:1;"><div style="font-size:10px;color:var(--text3);font-weight:700;">${i+1}.</div><div class="wm-ex-name">${ex.name}</div></div><div class="wm-ex-spec"><span style="color:var(--green);font-weight:700;">${exLog.skipped?'skipped':'✓ done'}</span></div></div>`;
         return `<div class="wm-ex-row"><div style="flex:1;"><div style="font-size:10px;color:var(--text3);font-weight:700;">${i+1}.</div><div class="wm-ex-name">${ex.name}</div><div id="${cueId}" style="font-size:11px;color:var(--lime);margin-top:4px;line-height:1.4;${cueText?'':'display:none;'}">${cueText}</div></div><div class="wm-ex-spec">${setsShown}×${ex.reps}<br>${wt}${badge}</div></div>`;
       }).join('')}
     </div>
@@ -1287,7 +1292,12 @@ function wmShowStrategy(){
 }
 
 function wmStartFirstSet(){
-  wm.exIdx=0; wm.setIdx=0; wm.mode='set';
+  // Phase 63: start at the first exercise not already knocked out during rest.
+  const first=_wmFirstPendingIdx();
+  if(first===-1){wm.exIdx=0;wmFinish();return;}
+  wm.exIdx=first;
+  wm.setIdx=_wmFirstUndoneSetIdx(getWorkout(wm.session).exercises[first].id);
+  wm.mode='set';
   wm.setStartedAt=Date.now();
   _wmMarkSessionStart();
   _wmMarkExerciseStart();
@@ -1977,30 +1987,14 @@ function renderWmRest(){
       <div style="font-size:10px;color:${arColor};text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:4px;">Next set ${arArrow} ${ar.kg}kg</div>
       <div style="font-size:13px;color:var(--text);line-height:1.5;">${ar.msg}</div>
     </div>`:'';
-  // Phase 62: rest-gap filler — a light accessory/mobility drill to do DURING
-  // this rest. Optional; logging/skipping it never touches the countdown (its
-  // own ids only). Gap after set N = index N (0-based); N total gaps = sets-1.
-  const filler=(typeof getFillerForLift==='function')?getFillerForLift(ex):null;
-  const gapIdx=wm.setIdx;
-  const gapTotal=Math.max(1,_effectiveSets(ex)-1);
-  const prevGap=(typeof getFillerLog==='function'&&getFillerLog(date)[ex.id]&&Array.isArray(getFillerLog(date)[ex.id].gaps))?getFillerLog(date)[ex.id].gaps[gapIdx]:null;
-  const fillerTargetStr=filler?(filler.kind==='timed'?`${filler.target}s hold`:`${filler.target} reps`):'';
-  const _fillerStatusHTML=(st)=>`<span id="wm-filler-status" style="font-size:12px;font-weight:700;color:${st==='done'?'var(--green)':'var(--text3)'};">${st==='done'?'✓ Done':'Skipped'}</span>`;
-  const fillerPanel=filler?`<div id="wm-filler" style="background:rgba(130,120,255,.06);border:1px solid rgba(140,130,255,.28);border-radius:12px;padding:12px 14px;margin:0 0 14px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-        <div style="min-width:0;">
-          <div style="font-size:10px;color:#a7a2ff;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Filler · set ${gapIdx+1} of ${gapTotal}</div>
-          <div style="font-size:14px;color:var(--text);font-weight:700;margin-top:2px;">${filler.name}</div>
-          <div style="font-size:11px;color:var(--text2);">${fillerTargetStr} · optional — doesn't shorten your rest</div>
-        </div>
-        <div id="wm-filler-actions" style="display:flex;gap:6px;flex-shrink:0;">
-          ${prevGap&&prevGap.status
-            ? _fillerStatusHTML(prevGap.status)
-            : `<button onclick="wmFillerDone('${ex.id}','${filler.id}',${gapIdx})" style="padding:7px 11px;background:rgba(0,200,120,.14);border:1px solid var(--green);border-radius:8px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;">✓ Done</button>
-               <button onclick="wmFillerSkip('${ex.id}','${filler.id}',${gapIdx})" style="padding:7px 11px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text3);font-size:12px;cursor:pointer;">Skip</button>`}
-        </div>
-      </div>
-    </div>`:'';
+  // Phase 63: rest-gap accessories — do the session's own small/rehab work DURING
+  // this rest and log it as REAL sets (see _wmAccessoryPanelHTML). Supersedes the
+  // Phase 62 throwaway filler: because the accessory IS the end-of-session
+  // exercise, knocking it out here ticks it off and removes it from the end,
+  // instead of the old behaviour where the rest drill and its standalone twin were
+  // two separate items (band pull-apart done in a rest gap still showing up later).
+  // Logging never touches the countdown — it re-renders only the panel's own rows.
+  const accessoryPanel=_wmAccessoryPanelHTML(ex.id);
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Resting</div>
@@ -2009,7 +2003,7 @@ function renderWmRest(){
       <div id="wm-timer" style="font-family:'Archivo Black',sans-serif;font-size:88px;letter-spacing:-4px;color:var(--lime);line-height:1;">${wm.restTarget}s</div>
       <div id="wm-timer-status" style="font-size:14px;color:var(--text2);margin-top:8px;">counting down</div>
     </div>
-    ${fillerPanel}
+    ${accessoryPanel}
     ${arPanel}
     <div class="wm-meta">Next: Set ${wm.setIdx+2} of ${_effectiveSets(ex)} · ${ex.name}</div>
     <button id="wm-next-btn" class="wm-cta ghost" onclick="wmStartNextSet()">SKIP REST · START NEXT SET</button>
@@ -2052,16 +2046,145 @@ function updateWmRest(){
   }
 }
 
-// Phase 62: log/skip the rest-gap filler. Updates ONLY the filler card's own
-// element — never #wm-timer / #wm-timer-status / #wm-next-btn — so the rest
-// countdown is completely unaffected. Never gates the next set.
-function wmFillerDone(parentId,fillerId,gapIdx){ _wmLogFiller(parentId,fillerId,gapIdx,'done'); }
-function wmFillerSkip(parentId,fillerId,gapIdx){ _wmLogFiller(parentId,fillerId,gapIdx,'skipped'); }
-function _wmLogFiller(parentId,fillerId,gapIdx,status){
-  if(typeof logFillerGap==='function')logFillerGap(todayStr(),parentId,fillerId,gapIdx,status);
-  const box=document.getElementById('wm-filler-actions');
-  if(box)box.innerHTML=`<span id="wm-filler-status" style="font-size:12px;font-weight:700;color:${status==='done'?'var(--green)':'var(--text3)'};">${status==='done'?'✓ Done':'Skipped'}</span>`;
+// ===================== Phase 63: rest-gap accessories =====================
+// "Knock it out during rest" — do the session's small/rehab accessory work in a
+// compound lift's rest gaps and log it as a REAL set. Because the accessory IS
+// the end-of-session exercise, completing it here marks it done so the main flow
+// skips it later (see _wmNextPendingIdx / wmNextExercise). Fixes the duplication
+// where a rest drill and its standalone twin were two separate to-dos.
+
+// Eligible accessories for the given resting lift: small OR rehab, rep-based, in
+// THIS session, not the lift currently being rested, not already done/skipped.
+function _wmRestAccessories(currentExId){
+  const w=getWorkout(wm.session);
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  return (w.exercises||[]).filter(ex=>{
+    if(ex.id===currentExId)return false;
+    if(isTimeBased(ex))return false;
+    if(typeof isCarry==='function'&&isCarry(ex))return false;
+    if(!(ex.size==='small'||ex.category==='rehab'))return false;
+    const log=dayLog[ex.id];
+    if(log&&(log.done||log.skipped))return false;
+    return true;
+  });
 }
+// An accessory needs no external load when it's rehab/band work — kg column hidden.
+function _wmAccessoryWeighted(ex){ return ex.category!=='rehab'; }
+function _wmAccessoryRowsHTML(currentExId){
+  const accs=_wmRestAccessories(currentExId);
+  if(!accs.length)return `<div style="font-size:12px;color:var(--green);font-weight:700;margin-top:10px;">✓ All accessories knocked out — nothing left for the end.</div>`;
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const prev=(typeof getPreviousSessionData==='function')?getPreviousSessionData(date,wm.session):null;
+  const btnS='width:34px;height:34px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:18px;font-weight:700;cursor:pointer;line-height:1;';
+  const inS='width:46px;text-align:center;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:15px;padding:7px 0;';
+  return accs.map(ex=>{
+    const sets=(dayLog[ex.id]&&Array.isArray(dayLog[ex.id].sets))?dayLog[ex.id].sets.filter(s=>s.done):[];
+    const doneCount=sets.length;
+    const target=_effectiveSets(ex);
+    const repNums=String(ex.reps).match(/\d+/g);
+    const defReps=repNums?parseInt(repNums[repNums.length-1]):12;
+    const weighted=_wmAccessoryWeighted(ex);
+    const sug=weighted?suggestWeight(ex.id,prev,doneCount,{exObj:ex}):null;
+    const defKg=(weighted&&sug&&sug.kg!=null)?sug.kg:'';
+    const kgControl=weighted?`
+        <div style="display:flex;align-items:center;gap:5px;">
+          <button onclick="_wmAccStep('kg-${ex.id}',-2.5)" style="${btnS}">−</button>
+          <input id="wm-acc-kg-${ex.id}" type="number" step="0.5" inputmode="decimal" value="${defKg}" style="${inS}">
+          <span style="font-size:11px;color:var(--text3);">kg</span>
+          <button onclick="_wmAccStep('kg-${ex.id}',2.5)" style="${btnS}">+</button>
+        </div>`:'';
+    return `<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+          <div style="font-size:14px;color:var(--text);font-weight:700;min-width:0;">${ex.name}</div>
+          <div style="font-size:11px;color:var(--text2);flex-shrink:0;">${target}×${ex.reps} · <span style="color:var(--lime);">${doneCount}/${target} done</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <button onclick="_wmAccStep('reps-${ex.id}',-1)" style="${btnS}">−</button>
+            <input id="wm-acc-reps-${ex.id}" type="number" inputmode="numeric" value="${defReps}" style="${inS}">
+            <span style="font-size:11px;color:var(--text3);">reps</span>
+            <button onclick="_wmAccStep('reps-${ex.id}',1)" style="${btnS}">+</button>
+          </div>
+          ${kgControl}
+          <button onclick="wmRestLogSet('${ex.id}')" style="margin-left:auto;padding:9px 14px;background:rgba(200,255,0,.14);border:1px solid var(--lime);border-radius:8px;color:var(--lime);font-size:12px;font-weight:700;cursor:pointer;">✓ Log set</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+function _wmAccessoryPanelHTML(currentExId){
+  if(!_wmRestAccessories(currentExId).length)return '';
+  return `<div style="background:rgba(200,255,0,.04);border:1px solid rgba(200,255,0,.22);border-radius:12px;padding:12px 14px;margin:0 0 14px;">
+      <div style="font-size:10px;color:var(--lime);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Knock out accessories now</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4;">Do these during your rest — logged for real, so they drop off the end of the session.</div>
+      <div id="wm-rest-acc-rows">${_wmAccessoryRowsHTML(currentExId)}</div>
+    </div>`;
+}
+// Nudge a rest-accessory reps/kg field. Keys: 'reps-<exId>' or 'kg-<exId>'.
+function _wmAccStep(key,delta){
+  const el=document.getElementById('wm-acc-'+key);
+  if(!el)return;
+  if(key.indexOf('kg-')===0){
+    const cur=parseFloat(el.value)||0; el.value=Math.max(0,Math.round((cur+delta)*2)/2);
+  }else{
+    const cur=parseInt(el.value)||0; el.value=Math.max(0,cur+delta);
+  }
+}
+// Log one real working set for a rest-gap accessory. Writes into the accessory's
+// own exLog entry (never the resting lift's), marks it done at target set count,
+// and re-renders ONLY the accessory rows so the rest countdown is untouched.
+function wmRestLogSet(exId){
+  const w=getWorkout(wm.session);
+  const ex=(w.exercises||[]).find(e=>e.id===exId);
+  if(!ex)return;
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const repsEl=document.getElementById('wm-acc-reps-'+exId);
+  const kgEl=document.getElementById('wm-acc-kg-'+exId);
+  const reps=repsEl?(parseInt(repsEl.value)||''):'';
+  const kg=kgEl?(parseFloat(kgEl.value)||''):'';
+  if(!dayLog[ex.id]||typeof dayLog[ex.id]!=='object')dayLog[ex.id]={done:false,sets:[]};
+  if(!Array.isArray(dayLog[ex.id].sets))dayLog[ex.id].sets=[];
+  if(!dayLog[ex.id].exerciseStartedAt)dayLog[ex.id].exerciseStartedAt=Date.now();
+  const sets=dayLog[ex.id].sets;
+  let idx=0; while(sets[idx]&&sets[idx].done)idx++;
+  sets[idx]={kg,reps,done:true,doneAt:Date.now(),setCompletedAt:Date.now(),viaRest:true};
+  const target=_effectiveSets(ex);
+  const doneCount=sets.filter(s=>s.done).length;
+  if(doneCount>=target){
+    dayLog[ex.id].done=true;
+    dayLog[ex.id].exerciseCompletedAt=Date.now();
+    if(dayLog[ex.id].exerciseStartedAt)dayLog[ex.id].totalExerciseDuration=Math.round((Date.now()-dayLog[ex.id].exerciseStartedAt)/1000);
+  }
+  saveExLogForDate(date,dayLog);
+  const box=document.getElementById('wm-rest-acc-rows');
+  const curId=(w.exercises[wm.exIdx]||{}).id;
+  if(box)box.innerHTML=_wmAccessoryRowsHTML(curId);
+  showToast(doneCount>=target?`✓ ${ex.name} complete — off the end-of-session list`:`✓ ${ex.name} · set ${doneCount}/${target} logged`);
+}
+
+// Is an exercise finished for today (all sets done, or deliberately skipped)?
+function _wmExComplete(exId){
+  const log=getExLogForDate(todayStr())[exId];
+  return !!(log&&(log.done||log.skipped));
+}
+// First set index not yet logged for an exercise (handles accessories partly done
+// during rest — the main flow resumes at the next unlogged set, not set 1).
+function _wmFirstUndoneSetIdx(exId){
+  const log=getExLogForDate(todayStr())[exId];
+  const sets=(log&&Array.isArray(log.sets))?log.sets:[];
+  let i=0; while(sets[i]&&sets[i].done)i++;
+  return i;
+}
+// Next exercise index after `from` that isn't already complete/skipped (-1 = none).
+function _wmNextPendingIdx(from){
+  const ex=getWorkout(wm.session).exercises;
+  for(let i=from+1;i<ex.length;i++)if(!_wmExComplete(ex[i].id))return i;
+  return -1;
+}
+// First pending exercise index in the session (-1 = none left).
+function _wmFirstPendingIdx(){ return _wmNextPendingIdx(-1); }
 
 function wmStartNextSet(){
   const elapsed=Math.floor((Date.now()-wm.restStarted)/1000);
@@ -2156,7 +2279,7 @@ function renderWmExerciseDone(){
   const sets=dayLog[ex.id]?.sets||[];
   const exEffort=dayLog[ex.id]?.effort;
   const volume=(timed||carry)?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
-  const isLastEx=wm.exIdx>=w.exercises.length-1;
+  const isLastEx=_wmNextPendingIdx(wm.exIdx)===-1; // Phase 63: nothing left once rest-done accessories are excluded
   const effortEmoji={easy:'😌',solid:'💪',tough:'🔥',hard:'🔥',maybe:'🤔'};
   const effortLabel={easy:'easy',solid:'solid',tough:'tough'};
   const subText=carry
@@ -2182,9 +2305,11 @@ function renderWmExerciseDone(){
 function wmNextExercise(){
   const w=getWorkout(wm.session);
   wm.autoReg=null; // Phase 47: don't carry a set-to-set call across exercises
-  if(wm.exIdx>=w.exercises.length-1){wmFinish();return;}
-  wm.exIdx++;
-  wm.setIdx=0;
+  // Phase 63: skip exercises already completed during rest (or skipped).
+  const nextIdx=_wmNextPendingIdx(wm.exIdx);
+  if(nextIdx===-1){wmFinish();return;}
+  wm.exIdx=nextIdx;
+  wm.setIdx=_wmFirstUndoneSetIdx(w.exercises[nextIdx].id);
   wm.mode='set';
   wm.setStartedAt=Date.now();
   _wmMarkExerciseStart();
@@ -2204,9 +2329,11 @@ function wmSkipExercise(){
   saveExLogForDate(date,dayLog);
   wm.autoReg=null;
   showToast(`${ex.name} skipped — no harm done`);
-  if(wm.exIdx>=w.exercises.length-1){wmFinish();return;}
-  wm.exIdx++;
-  wm.setIdx=0;
+  // Phase 63: advance past anything already completed during rest.
+  const nextIdx=_wmNextPendingIdx(wm.exIdx);
+  if(nextIdx===-1){wmFinish();return;}
+  wm.exIdx=nextIdx;
+  wm.setIdx=_wmFirstUndoneSetIdx(w.exercises[nextIdx].id);
   wm.mode='set';
   wm.setStartedAt=Date.now();
   _wmMarkExerciseStart();
