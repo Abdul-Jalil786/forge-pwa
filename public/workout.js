@@ -2084,10 +2084,20 @@ function _wmAccessoryRowsHTML(currentExId){
     const doneCount=sets.length;
     const target=_effectiveSets(ex);
     const repNums=String(ex.reps).match(/\d+/g);
-    const defReps=repNums?parseInt(repNums[repNums.length-1]):12;
+    const rangeTop=repNums?parseInt(repNums[repNums.length-1]):12;
     const weighted=_wmAccessoryWeighted(ex);
     const sug=weighted?suggestWeight(ex.id,prev,doneCount,{exObj:ex}):null;
-    const defKg=(weighted&&sug&&sug.kg!=null)?sug.kg:'';
+    // Phase 63a: ground the defaults in what you actually did last time so each set
+    // nudges you to match or beat it (same idea as the main set screen), falling
+    // back to the rep-range top / progression weight for a first-timer. Reference
+    // the SAME set position last session, else its last set.
+    const last=(typeof getLastExercisePerformance==='function')?getLastExercisePerformance(ex.id,date):null;
+    const lastSets=(last&&last.log&&last.log[ex.id]&&Array.isArray(last.log[ex.id].sets))?last.log[ex.id].sets.filter(s=>s.reps||s.kg):[];
+    const refSet=lastSets[doneCount]||lastSets[lastSets.length-1]||null;
+    const defReps=(refSet&&parseInt(refSet.reps))||rangeTop;
+    const lastKg=(refSet&&parseFloat(refSet.kg))||null;
+    const defKg=weighted?((sug&&sug.kg!=null)?sug.kg:(lastKg!=null?lastKg:'')):'';
+    const lastRef=refSet?`last ${refSet.kg?refSet.kg+'kg×':''}${refSet.reps||'—'}`:'';
     const kgControl=weighted?`
         <div style="display:flex;align-items:center;gap:5px;">
           <button onclick="_wmAccStep('kg-${ex.id}',-2.5)" style="${btnS}">−</button>
@@ -2098,7 +2108,7 @@ function _wmAccessoryRowsHTML(currentExId){
     return `<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
           <div style="font-size:14px;color:var(--text);font-weight:700;min-width:0;">${ex.name}</div>
-          <div style="font-size:11px;color:var(--text2);flex-shrink:0;">${target}×${ex.reps} · <span style="color:var(--lime);">${doneCount}/${target} done</span></div>
+          <div style="font-size:11px;color:var(--text2);flex-shrink:0;">${target}×${ex.reps}${lastRef?` · <span style="color:var(--text3);">${lastRef}</span>`:''} · <span style="color:var(--lime);">${doneCount}/${target} done</span></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:5px;">
