@@ -360,6 +360,29 @@ test("rest screen offers session accessories; completing one drops it from the m
   assert.notEqual(vm.runInContext(`_wmNextPendingIdx(${rehIdx - 1})`, ctx), rehIdx, "completed accessory is skipped when advancing");
 });
 
+// Phase 63a: accessory-panel defaults are grounded in last session (match/beat),
+// falling back to the rep-range top / progression weight for a first-timer.
+test("rest accessory defaults reference last session's reps + weight", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
+  // A prior upperA session: Band Pull-Apart at 20 reps, weighted Lateral Raise (h5) at 8kg×14.
+  vm.runInContext(`STATE.exLog={
+    '2026-07-21':{_session:{sessionType:'upperA'}, u4:{done:true,sets:[{kg:50,reps:10,done:true},{kg:50,reps:10,done:true},{kg:50,reps:10,done:true}]}, u1:{done:true,sets:[{kg:40,reps:8,done:true}]}, u3:{done:true,sets:[{kg:40,reps:8,done:true}]}, u5:{done:true,sets:[{kg:40,reps:10,done:true}]}, reh_2:{done:true,sets:[{reps:20,done:true},{reps:20,done:true}]}, h5:{done:true,sets:[{kg:8,reps:14,done:true},{kg:8,reps:14,done:true}]}},
+    '${T}':{u4:{sets:[{kg:50,reps:10,done:true}]}}
+  };`, ctx);
+  vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:1};`, ctx);
+  vm.runInContext(`renderWmRest()`, ctx);
+  const html = els['wmContent']._html;
+  // Band Pull-Apart (rehab, no weight) reps default = last session's 20, not the range top (15).
+  assert.ok(/id="wm-acc-reps-reh_2"[\s\S]*?value="20"/.test(html), "reh_2 reps default to last session's 20 reps");
+  assert.ok(/last 20/.test(html), "shows a 'last time' reference for reh_2");
+  // Lateral Raise (weighted) shows last 8kg×14 and pre-fills a weight.
+  assert.ok(/last 8kg×14/.test(html), "shows last time's weight×reps for the weighted accessory");
+  assert.ok(/id="wm-acc-kg-h5"[\s\S]*?value="[0-9]/.test(html), "weighted accessory pre-fills a kg default");
+});
+
 test("weighted compounds get set-to-set guidance; accessories left alone", () => {
   const { ctx } = bootApp();
   seed(ctx);
