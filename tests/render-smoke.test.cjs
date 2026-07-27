@@ -315,39 +315,49 @@ test("filler drills never pollute working-set history; parent-keyed store avoids
   assert.ok(/"done":2/.test(adh) && /"skipped":1/.test(adh), "adherence tallies done + skipped per lift");
 });
 
-test("logging/skipping a filler does not affect the rest countdown", () => {
+// Phase 63: rest-gap accessories replace the throwaway filler — during a
+// compound's rest you log the session's own small/rehab work as REAL sets, so it
+// ticks off the end-of-session list instead of showing up again later.
+test("logging an accessory during rest records a real set without touching the countdown", () => {
   const { ctx } = bootApp();
   seed(ctx);
   const T = "2026-07-25";
   vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
-  vm.runInContext(`STATE.exLog={'${T}':{}};`, ctx);
+  // Resting after Shoulder Press (u4) set 1; reh_2 Band Pull-Apart is a 2×15 accessory.
+  vm.runInContext(`STATE.exLog={'${T}':{u4:{sets:[{kg:50,reps:10,done:true}]}}};`, ctx);
   vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:123456,restInterval:null};`, ctx);
+  vm.runInContext(`renderWmRest()`, ctx);
   const before = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
-  vm.runInContext(`wmFillerDone('u4','fill_band_pull_apart',0);`, ctx);
-  vm.runInContext(`wmFillerSkip('u1','fill_band_ext_rot',0);`, ctx);
+  vm.runInContext(`document.getElementById('wm-acc-reps-reh_2').value='15'; wmRestLogSet('reh_2');`, ctx);
   const after = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
-  assert.equal(before, after, "rest timer state (target/started/mode) untouched by Done/Skip");
-  assert.equal(vm.runInContext(`getFillerLog('${T}').u4.gaps[0].status`, ctx), 'done', "Done persisted");
-  assert.equal(vm.runInContext(`getFillerLog('${T}').u1.gaps[0].status`, ctx), 'skipped', "Skip persisted");
+  assert.equal(before, after, "rest timer state (target/started/mode) untouched by logging an accessory");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').reh_2.sets.filter(s=>s.done).length`, ctx), 1, "one real set logged on reh_2");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').reh_2.sets[0].reps`, ctx), 15, "reps recorded on the accessory");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').reh_2.sets[0].viaRest`, ctx), true, "tagged as done during rest");
+  assert.equal(vm.runInContext(`!!getExLogForDate('${T}').reh_2.done`, ctx), false, "not complete after 1 of 2 sets");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').u4.sets.length`, ctx), 1, "resting lift's own log untouched");
 });
 
-test("rest screen renders the filler card under the timer with the right pairing", () => {
+test("rest screen offers session accessories; completing one drops it from the main flow", () => {
   const { ctx, els } = bootApp();
   seed(ctx);
   const T = "2026-07-25";
   vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
   vm.runInContext(`STATE.exLog={'${T}':{u4:{sets:[{kg:50,reps:10,done:true,effort:'solid'}]}}};`, ctx);
   vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:1};`, ctx);
-  assert.doesNotThrow(() => vm.runInContext(`renderWmRest()`, ctx), "rest screen renders with a filler card");
+  assert.doesNotThrow(() => vm.runInContext(`renderWmRest()`, ctx), "rest screen renders the accessory panel");
   const html = els['wmContent']._html;
-  assert.ok(/Band Pull-Apart/.test(html), "Upper A Shoulder Press filler = Band Pull-Apart");
-  assert.ok(/Filler · set 1 of 2/.test(html), "gap counter: set 1 of 2 (3 sets → 2 gaps)");
-  assert.ok(/wmFillerDone\('u4','fill_band_pull_apart',0\)/.test(html), "Done wired to parent lift u4");
-  // Suitcase carry rest → deep squat default; carry itself never used AS filler.
-  vm.runInContext(`STATE.exLog={'${T}':{core_suitcase:{sets:[{leftSeconds:40,rightSeconds:40,done:true}]}}};`, ctx);
-  vm.runInContext(`wm={active:true,session:'lowerB',exIdx:3,setIdx:0,mode:'rest',restTarget:60,restStarted:1};`, ctx);
-  vm.runInContext(`renderWmRest()`, ctx);
-  assert.ok(/Deep Squat Hold/.test(els['wmContent']._html), "Suitcase Carry rest → Deep Squat Hold default");
+  assert.ok(/Knock out accessories now/.test(html), "accessory panel shown during rest");
+  assert.ok(/Band Pull-Apart/.test(html), "the session's Band Pull-Apart accessory is offered");
+  assert.ok(/wmRestLogSet\('reh_2'\)/.test(html), "log button wired to the accessory's own id");
+  assert.ok(!/wmRestLogSet\('u4'\)/.test(html), "the compound being rested is not offered as its own accessory");
+  // Complete reh_2 (2 sets) during rest → marked done and skipped by the main flow.
+  vm.runInContext(`document.getElementById('wm-acc-reps-reh_2').value='15'; wmRestLogSet('reh_2');`, ctx);
+  vm.runInContext(`document.getElementById('wm-acc-reps-reh_2').value='15'; wmRestLogSet('reh_2');`, ctx);
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').reh_2.done`, ctx), true, "reh_2 complete after 2 sets");
+  assert.equal(vm.runInContext(`_wmExComplete('reh_2')`, ctx), true, "flow treats reh_2 as complete");
+  const rehIdx = vm.runInContext(`getWorkout('upperA').exercises.findIndex(e=>e.id==='reh_2')`, ctx);
+  assert.notEqual(vm.runInContext(`_wmNextPendingIdx(${rehIdx - 1})`, ctx), rehIdx, "completed accessory is skipped when advancing");
 });
 
 test("weighted compounds get set-to-set guidance; accessories left alone", () => {
