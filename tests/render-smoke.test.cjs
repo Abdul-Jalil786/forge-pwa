@@ -407,6 +407,23 @@ test("rest screen falls back to the Asian squat hold when no accessory is left",
   assert.equal(vm.runInContext(`getExLogForDate('${T}').l5.sets.length`, ctx), 1, "resting lift's working sets untouched");
 });
 
+// Dev-only "Clear today's training" wipes the day's log so a test can re-run.
+test("dev clear-today wipes today's training log (dev-gated)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
+  // Not dev → no-op.
+  vm.runInContext(`window.__ENV__={isDev:false};`, ctx);
+  vm.runInContext(`STATE.exLog={'${T}':{h1:{done:true,sets:[{kg:30,reps:12,done:true}]}}};`, ctx);
+  vm.runInContext(`devClearToday();`, ctx);
+  assert.equal(vm.runInContext(`Object.keys(getExLogForDate('${T}')).length`, ctx), 1, "not cleared when isDev is false");
+  // Dev → wipes today's log (confirm() is stubbed true in the harness).
+  vm.runInContext(`window.__ENV__={isDev:true};`, ctx);
+  vm.runInContext(`devClearToday();`, ctx);
+  assert.equal(vm.runInContext(`Object.keys(getExLogForDate('${T}')).length`, ctx), 0, "today's exLog wiped when isDev");
+});
+
 test("weighted compounds get set-to-set guidance; accessories left alone", () => {
   const { ctx } = bootApp();
   seed(ctx);

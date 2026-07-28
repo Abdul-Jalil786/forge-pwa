@@ -483,16 +483,36 @@ function renderDevTestPanel(){
   const btns=Object.keys(WORKOUTS).map(k=>
     `<button class="btn btn-ghost btn-sm" style="margin:3px;font-size:11px;" onclick="devStartWorkout('${k}')">${WORKOUTS[k].name}</button>`
   ).join('');
+  const today=(typeof todayStr==='function')?todayStr():'';
+  const logged=Object.keys((STATE.exLog||{})[today]||{}).filter(k=>k[0]!=='_').length;
   return `<div class="card" style="border:1px dashed var(--orange);background:rgba(255,85,0,.06);margin-bottom:14px;">
     <div style="font-size:11px;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:3px;">🧪 DEV · TEST SESSIONS</div>
     <div style="font-size:10px;color:var(--text3);margin-bottom:8px;line-height:1.5;">Staging only — start any session on demand (ignores the schedule). Runs the real guided flow, including the Easy / Solid / Tough effort screen.</div>
     <div style="display:flex;flex-wrap:wrap;">${btns}</div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;font-size:11px;color:var(--red);border-color:var(--red);" onclick="devClearToday()">🧹 Clear today's training${logged?` (${logged} logged)`:''}</button>
   </div>`;
 }
 function devStartWorkout(type){
   if(!(window.__ENV__ && window.__ENV__.isDev)) return; // hard guard — never runs in production
   if(!WORKOUTS[type]) return;
   startGuidedWorkout(type);
+}
+// DEV-ONLY: wipe today's logged training (sets, session, rest-gap fillers) AND any
+// in-progress guided session, so a test can be re-run from scratch. Hard-gated on
+// isDev; never available in production.
+function devClearToday(){
+  if(!(window.__ENV__ && window.__ENV__.isDev)) return;
+  const date=todayStr();
+  if(!confirm(`Clear ALL of today's logged training (${date})? This wipes every set logged today so you can re-test. (dev only)`))return;
+  // Bin any in-progress guided session first.
+  try{ if(typeof wm==='object'&&wm){wm.active=false; if(wm.restInterval)clearInterval(wm.restInterval);} }catch(e){}
+  try{ localStorage.removeItem('forge_active_workout'); }catch(e){}
+  const wmEl=document.getElementById('workoutMode'); if(wmEl)wmEl.classList.remove('open');
+  // Wipe today's exercise log (empty object → server + local).
+  if(typeof saveExLogForDate==='function')saveExLogForDate(date,{});
+  if(typeof showToast==='function')showToast("Today's training cleared — start fresh");
+  if(typeof renderWorkout==='function')renderWorkout();
+  if(typeof renderToday==='function')renderToday();
 }
 // ──────────────────────────────────────────────────────────────────────────────
 
