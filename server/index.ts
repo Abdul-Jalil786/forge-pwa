@@ -1814,15 +1814,21 @@ async function seedDevTestUser() {
       return d.toISOString();
     };
     const set = (kg: number, reps: number, effort: string) => ({ kg, reps, done: true, effort });
-    const upperDay = ymd(6);
-    const lowerDay = ymd(4);
+    // Mirror production: the 5-day fixed split (Mon UPPER A · Tue LOWER A · Thu
+    // UPPER B · Fri LOWER B · Sat Zone 2). Seed one of each lift day with the
+    // real session's exercise ids so progression + "last time" show up.
+    const upperADay = ymd(9);
+    const lowerADay = ymd(8);
+    const upperBDay = ymd(6);
+    const lowerBDay = ymd(4);
 
     const state: any = {
       profile: {
         name: "Test User",
         email,
         personal: { age: 40, heightCm: 178, sex: "male", activityLevel: "moderate" },
-        programId: "upper-lower-4d",
+        programId: "upper-lower-5d-fixed",
+        programmeStartDate: ymd(42),
         startWeight: 98,
         startBF: 26,
         startLBM: 72.5,
@@ -1850,23 +1856,41 @@ async function seedDevTestUser() {
       },
       stepsLog: { [ymd(4)]: 9200, [ymd(3)]: 11400, [ymd(2)]: 8600, [ymd(1)]: 10250 },
       exLog: {
-        // Upper — varied effort so progression has data to work from:
-        [upperDay]: {
-          u1: { done: true, sets: [set(70, 8, "easy"), set(70, 8, "easy"), set(70, 8, "easy"), set(70, 8, "easy")] }, // topped + all easy -> suggests +weight
-          u3: { done: true, sets: [set(90, 7, "solid"), set(90, 7, "solid"), set(90, 6, "solid"), set(90, 6, "tough")] },
-          u4: { done: true, sets: [set(45, 8, "solid"), set(45, 7, "tough"), set(45, 6, "tough")] },                   // tough -> hold
-          u5: { done: true, sets: [set(60, 10, "solid"), set(60, 10, "solid"), set(60, 9, "solid")] },
-          u6: { done: true, sets: [set(25, 12, "easy"), set(25, 11, "solid"), set(25, 10, "solid")] },
-          _session: { sessionType: "upper", startedAt: iso(6), completedAt: iso(6) },
+        // UPPER A (Mon) — real session ids (u4/u1/u3/u5/h5); varied effort so the
+        // progression engine + the "last time" panel have data to work from.
+        [upperADay]: {
+          u4: { done: true, sets: [set(45, 12, "easy"), set(45, 12, "easy"), set(45, 11, "solid")] }, // topped + easy -> +weight
+          u1: { done: true, sets: [set(70, 8, "solid"), set(70, 8, "solid"), set(70, 7, "tough")] },
+          u3: { done: true, sets: [set(90, 8, "solid"), set(90, 8, "solid"), set(90, 7, "tough")] },
+          u5: { done: true, sets: [set(60, 12, "solid"), set(60, 11, "solid"), set(60, 10, "tough")] },
+          h5: { done: true, sets: [set(12, 15, "solid"), set(12, 14, "solid"), set(12, 12, "tough")] },
+          _session: { sessionType: "upperA", startedAt: iso(9), completedAt: iso(9) },
         },
-        // Lower — same idea:
-        [lowerDay]: {
-          l1: { done: true, sets: [set(180, 8, "easy"), set(180, 8, "easy"), set(180, 8, "solid"), set(180, 8, "solid")] }, // topped -> +weight
-          l2: { done: true, sets: [set(100, 7, "solid"), set(100, 7, "solid"), set(100, 6, "tough")] },
-          l3: { done: true, sets: [set(55, 12, "solid"), set(55, 11, "tough"), set(55, 10, "tough")] },                     // tough -> hold
+        // LOWER A (Tue) — h1/l1/l2/l6/core_pallof.
+        [lowerADay]: {
+          h1: { done: true, sets: [set(30, 12, "easy"), set(30, 12, "easy"), set(30, 12, "solid")] },
+          l1: { done: true, sets: [set(180, 10, "easy"), set(180, 10, "solid"), set(180, 10, "solid")] }, // topped -> +weight
+          l2: { done: true, sets: [set(100, 8, "solid"), set(100, 7, "solid"), set(100, 6, "tough")] },
+          l6: { done: true, sets: [set(90, 15, "solid"), set(90, 14, "tough"), set(90, 12, "tough")] },
+          core_pallof: { done: true, sets: [set(15, 12, "solid"), set(15, 12, "solid"), set(15, 10, "solid")] },
+          _session: { sessionType: "lowerA", startedAt: iso(8), completedAt: iso(8) },
+        },
+        // UPPER B (Thu) — u2/h3/u4/u8/u6/u7.
+        [upperBDay]: {
+          u2: { done: true, sets: [set(30, 8, "solid"), set(30, 8, "solid"), set(30, 7, "tough")] },
+          h3: { done: true, sets: [set(32, 10, "solid"), set(32, 9, "solid"), set(32, 8, "tough")] },
+          u4: { done: true, sets: [set(45, 12, "solid"), set(45, 11, "tough"), set(45, 10, "tough")] }, // tough -> hold
+          u8: { done: true, sets: [set(25, 15, "solid"), set(25, 14, "solid"), set(25, 13, "solid")] },
+          u6: { done: true, sets: [set(14, 12, "easy"), set(14, 12, "solid"), set(14, 11, "solid")] },
+          u7: { done: true, sets: [set(25, 15, "solid"), set(25, 14, "solid"), set(25, 12, "tough")] },
+          _session: { sessionType: "upperB", startedAt: iso(6), completedAt: iso(6) },
+        },
+        // LOWER B (Fri) — l5/l1/l4.
+        [lowerBDay]: {
           l5: { done: true, sets: [set(120, 10, "solid"), set(120, 9, "solid"), set(120, 8, "tough")] },
-          l6: { done: true, sets: [set(90, 18, "solid"), set(90, 17, "solid"), set(90, 15, "tough")] },
-          _session: { sessionType: "lower", startedAt: iso(4), completedAt: iso(4) },
+          l1: { done: true, sets: [set(180, 12, "solid"), set(180, 11, "solid"), set(180, 10, "tough")] },
+          l4: { done: true, sets: [set(55, 12, "solid"), set(55, 11, "tough"), set(55, 10, "tough")] }, // tough -> hold
+          _session: { sessionType: "lowerB", startedAt: iso(4), completedAt: iso(4) },
         },
       },
     };
@@ -1876,7 +1900,18 @@ async function seedDevTestUser() {
     if (existing) {
       const st: any = existing.state || {};
       if (st.profile && st.profile.personal) {
-        console.log(`[dev-seed] ${email} already has a profile — leaving it as is`);
+        // Keep the account's own data, but ensure its PROGRAM matches production's
+        // 5-day split so staging mirrors main. Idempotent: only writes when the
+        // program is out of date. Everything else (history, logs) is left alone.
+        const targetProgram = "upper-lower-5d-fixed";
+        if (st.profile.programId !== targetProgram || !st.profile.programmeStartDate) {
+          st.profile.programId = targetProgram;
+          if (!st.profile.programmeStartDate) st.profile.programmeStartDate = ymd(42);
+          await prisma.user.update({ where: { email }, data: { state: st } });
+          console.log(`[dev-seed] aligned existing ${email} to ${targetProgram} (matches production)`);
+        } else {
+          console.log(`[dev-seed] ${email} already on ${targetProgram} — leaving it as is`);
+        }
         return;
       }
       // Empty account (e.g. a manual signup that only reached onboarding): backfill
@@ -1886,7 +1921,7 @@ async function seedDevTestUser() {
       return;
     }
     await prisma.user.create({ data: { email, passwordHash, state } });
-    console.log(`[dev-seed] created ${email} — profile + Upper/Lower program + Cut phase + weight/body-comp history + 2 sessions (varied effort)`);
+    console.log(`[dev-seed] created ${email} — profile + 5-day split program + Cut phase + weight/body-comp history + 4 sessions (varied effort)`);
   } catch (err) {
     console.error("[dev-seed] seedDevTestUser failed:", err);
   }
