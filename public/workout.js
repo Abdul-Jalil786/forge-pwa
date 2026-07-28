@@ -2099,7 +2099,9 @@ function _wmRestAccessories(currentExId){
 function _wmAccessoryWeighted(ex){ return ex.category!=='rehab'; }
 function _wmAccessoryRowsHTML(currentExId){
   const accs=_wmRestAccessories(currentExId);
-  if(!accs.length)return `<div style="font-size:12px;color:var(--green);font-weight:700;margin-top:10px;">✓ All accessories knocked out — nothing left for the end.</div>`;
+  // Phase 63b: no session accessory left to knock out → fall back to the Asian
+  // (deep) squat hold as an optional mobility drill for the rest gap.
+  if(!accs.length)return _wmMobilityFallbackHTML(currentExId);
   const date=todayStr();
   const dayLog=getExLogForDate(date);
   const prev=(typeof getPreviousSessionData==='function')?getPreviousSessionData(date,wm.session):null;
@@ -2150,12 +2152,52 @@ function _wmAccessoryRowsHTML(currentExId){
   }).join('');
 }
 function _wmAccessoryPanelHTML(currentExId){
-  if(!_wmRestAccessories(currentExId).length)return '';
+  // Phase 63b: always render — real accessories when there are any, else the
+  // deep-squat mobility fallback. Header adapts to what's shown.
+  const hasAcc=_wmRestAccessories(currentExId).length>0;
+  const title=hasAcc?'Knock out accessories now':'Rest-gap mobility';
+  const sub=hasAcc
+    ?'Do these during your rest — logged for real, so they drop off the end of the session.'
+    :'No accessories left for this session — sink into a deep (Asian) squat while you rest to open hips + ankles.';
   return `<div style="background:rgba(200,255,0,.04);border:1px solid rgba(200,255,0,.22);border-radius:12px;padding:12px 14px;margin:0 0 14px;">
-      <div style="font-size:10px;color:var(--lime);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Knock out accessories now</div>
-      <div style="font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4;">Do these during your rest — logged for real, so they drop off the end of the session.</div>
+      <div style="font-size:10px;color:var(--lime);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">${title}</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4;">${sub}</div>
       <div id="wm-rest-acc-rows">${_wmAccessoryRowsHTML(currentExId)}</div>
     </div>`;
+}
+// Phase 63b: Asian (deep) squat hold — the mobility fallback shown when a rest
+// gap has no session accessory to knock out. Optional; logged via the (dormant)
+// filler data-layer under the resting lift, so it never becomes a fake working
+// set and still shows in the end-of-session recap. Per rest gap (keyed on setIdx).
+function _wmMobilityFallbackHTML(currentExId){
+  const date=todayStr();
+  const gapIdx=wm.setIdx;
+  const entry=(typeof getFillerLog==='function')?getFillerLog(date)[currentExId]:null;
+  const prev=(entry&&Array.isArray(entry.gaps))?entry.gaps[gapIdx]:null;
+  const done=prev&&prev.status==='done', skipped=prev&&prev.status==='skipped';
+  const actions=(done||skipped)
+    ? `<span style="font-size:12px;font-weight:700;color:${done?'var(--green)':'var(--text3)'};">${done?'✓ Done':'Skipped'}</span>`
+    : `<button onclick="wmRestMobility('done')" style="padding:8px 12px;background:rgba(0,200,120,.14);border:1px solid var(--green);border-radius:8px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;">✓ Done</button>
+       <button onclick="wmRestMobility('skip')" style="padding:8px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text3);font-size:12px;cursor:pointer;">Skip</button>`;
+  return `<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div style="min-width:0;">
+          <div style="font-size:14px;color:var(--text);font-weight:700;">🧘 Asian Squat Hold</div>
+          <div style="font-size:11px;color:var(--text2);">~60s deep squat · hip + ankle mobility · optional</div>
+        </div>
+        <div id="wm-rest-mob-actions" style="display:flex;gap:6px;flex-shrink:0;">${actions}</div>
+      </div>
+    </div>`;
+}
+// Log/skip the Asian-squat mobility hold for this rest gap. Updates ONLY its own
+// action buttons — never the countdown — and stores under _fillers[restingLift].
+function wmRestMobility(status){
+  const st=status==='done'?'done':'skipped';
+  const w=getWorkout(wm.session);
+  const currentExId=(w.exercises[wm.exIdx]||{}).id;
+  if(currentExId&&typeof logFillerGap==='function')logFillerGap(todayStr(),currentExId,'fill_deep_squat',wm.setIdx,st);
+  const box=document.getElementById('wm-rest-mob-actions');
+  if(box)box.innerHTML=`<span style="font-size:12px;font-weight:700;color:${st==='done'?'var(--green)':'var(--text3)'};">${st==='done'?'✓ Done':'Skipped'}</span>`;
 }
 // Nudge a rest-accessory reps/kg field. Keys: 'reps-<exId>' or 'kg-<exId>'.
 function _wmAccStep(key,delta){

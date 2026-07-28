@@ -383,6 +383,30 @@ test("rest accessory defaults reference last session's reps + weight", () => {
   assert.ok(/id="wm-acc-kg-h5"[\s\S]*?value="[0-9]/.test(html), "weighted accessory pre-fills a kg default");
 });
 
+// Phase 63b: when a rest gap has no session accessory to knock out, the panel
+// falls back to the Asian (deep) squat mobility hold instead of showing nothing.
+test("rest screen falls back to the Asian squat hold when no accessory is left", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
+  // Lower B has no small/rehab accessory (l5/l1 large, l4 medium, core_suitcase is a carry) → fallback.
+  vm.runInContext(`STATE.exLog={'${T}':{l5:{sets:[{kg:120,reps:10,done:true}]}}};`, ctx);
+  vm.runInContext(`wm={active:true,session:'lowerB',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:5};`, ctx);
+  vm.runInContext(`renderWmRest()`, ctx);
+  const html = els['wmContent']._html;
+  assert.ok(/Rest-gap mobility/.test(html), "header switches to mobility when no accessory remains");
+  assert.ok(/Asian Squat Hold/.test(html), "shows the Asian squat fallback");
+  assert.ok(!/wmRestLogSet\(/.test(html), "no real-accessory log buttons when none are available");
+  // Logging the hold must not touch the countdown, and records under _fillers (not a working set).
+  const before = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
+  vm.runInContext(`wmRestMobility('done')`, ctx);
+  const after = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
+  assert.equal(before, after, "rest countdown untouched by the mobility hold");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}')._fillers.l5.gaps[0].status`, ctx), 'done', "hold recorded under _fillers, not as a working set");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').l5.sets.length`, ctx), 1, "resting lift's working sets untouched");
+});
+
 test("weighted compounds get set-to-set guidance; accessories left alone", () => {
   const { ctx } = bootApp();
   seed(ctx);
