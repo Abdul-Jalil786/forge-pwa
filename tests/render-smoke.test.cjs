@@ -338,7 +338,7 @@ test("logging an accessory during rest records a real set without touching the c
   assert.equal(vm.runInContext(`getExLogForDate('${T}').u4.sets.length`, ctx), 1, "resting lift's own log untouched");
 });
 
-test("rest screen offers session accessories; completing one drops it from the main flow", () => {
+test("rest panel shows ONE accessory at a time, then advances; completing drops it from the main flow", () => {
   const { ctx, els } = bootApp();
   seed(ctx);
   const T = "2026-07-25";
@@ -348,15 +348,20 @@ test("rest screen offers session accessories; completing one drops it from the m
   assert.doesNotThrow(() => vm.runInContext(`renderWmRest()`, ctx), "rest screen renders the accessory panel");
   const html = els['wmContent']._html;
   assert.ok(/Knock out accessories now/.test(html), "accessory panel shown during rest");
-  assert.ok(/Band Pull-Apart/.test(html), "the session's Band Pull-Apart accessory is offered");
-  assert.ok(/wmRestLogSet\('reh_2'\)/.test(html), "log button wired to the accessory's own id");
+  // Only the FIRST rehab accessory (Band External Rotation, reh_1) is the active row.
+  assert.ok(/wmRestLogSet\('reh_1'\)/.test(html), "first accessory (reh_1) is the active one");
+  assert.ok(!/wmRestLogSet\('reh_2'\)/.test(html), "the next accessory (reh_2) is NOT shown as an active row yet");
+  assert.ok(/Then: Band Pull-Apart/.test(html), "a 'Then:' hint names what's queued next");
   assert.ok(!/wmRestLogSet\('u4'\)/.test(html), "the compound being rested is not offered as its own accessory");
-  // Complete reh_2 (2 sets) during rest → marked done and skipped by the main flow.
-  vm.runInContext(`document.getElementById('wm-acc-reps-reh_2').value='15'; wmRestLogSet('reh_2');`, ctx);
-  vm.runInContext(`document.getElementById('wm-acc-reps-reh_2').value='15'; wmRestLogSet('reh_2');`, ctx);
-  assert.equal(vm.runInContext(`getExLogForDate('${T}').reh_2.done`, ctx), true, "reh_2 complete after 2 sets");
-  assert.equal(vm.runInContext(`_wmExComplete('reh_2')`, ctx), true, "flow treats reh_2 as complete");
-  const rehIdx = vm.runInContext(`getWorkout('upperA').exercises.findIndex(e=>e.id==='reh_2')`, ctx);
+  // Complete reh_1 (2 sets) → it drops, and the next accessory (reh_2) becomes active.
+  vm.runInContext(`document.getElementById('wm-acc-reps-reh_1').value='14'; wmRestLogSet('reh_1');`, ctx);
+  vm.runInContext(`document.getElementById('wm-acc-reps-reh_1').value='14'; wmRestLogSet('reh_1');`, ctx);
+  assert.equal(vm.runInContext(`_wmExComplete('reh_1')`, ctx), true, "reh_1 complete after 2 sets");
+  vm.runInContext(`renderWmRest()`, ctx);
+  const html2 = els['wmContent']._html;
+  assert.ok(/wmRestLogSet\('reh_2'\)/.test(html2), "after finishing reh_1, reh_2 is now the active accessory");
+  // Completed accessory is skipped by the main-flow navigation.
+  const rehIdx = vm.runInContext(`getWorkout('upperA').exercises.findIndex(e=>e.id==='reh_1')`, ctx);
   assert.notEqual(vm.runInContext(`_wmNextPendingIdx(${rehIdx - 1})`, ctx), rehIdx, "completed accessory is skipped when advancing");
 });
 
@@ -376,14 +381,19 @@ test("rest accessory defaults reference last session's reps + weight", () => {
   vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:1};`, ctx);
   vm.runInContext(`renderWmRest()`, ctx);
   const html = els['wmContent']._html;
-  // Band Pull-Apart (band, no weight) reps default = last session's 20, not the range top (15).
-  assert.ok(/id="wm-acc-reps-reh_2"[\s\S]*?value="20"/.test(html), "reh_2 reps default to last session's 20 reps");
-  assert.ok(/last 20/.test(html), "shows a 'last time' reference for reh_2");
-  // A size:small isolation lift (Lateral Raise / Pallof) is NOT a rest-gap accessory.
-  assert.ok(!/wm-acc-reps-h5/.test(html), "Lateral Raise (size:small) is not offered as a rest accessory");
-  // Cable Band External Rotation (reh_1, weighted) shows last 10kg×14 and pre-fills a weight.
+  // First accessory shown = cable Band External Rotation (reh_1, weighted): last 10kg×14 + kg field.
   assert.ok(/last 10kg×14/.test(html), "shows last time's weight×reps for the cable accessory");
   assert.ok(/id="wm-acc-kg-reh_1"[\s\S]*?value="[0-9]/.test(html), "weighted rehab accessory pre-fills a kg default");
+  assert.ok(/id="wm-acc-reps-reh_1"[\s\S]*?value="14"/.test(html), "reh_1 reps default to last session's 14");
+  // A size:small isolation lift (Lateral Raise / Pallof) is NOT a rest-gap accessory.
+  assert.ok(!/wm-acc-reps-h5/.test(html), "Lateral Raise (size:small) is not offered as a rest accessory");
+  // Finish reh_1 → the next accessory (Band Pull-Apart, reps-only) takes over: reps default = last 20.
+  vm.runInContext(`document.getElementById('wm-acc-reps-reh_1').value='14'; wmRestLogSet('reh_1');`, ctx);
+  vm.runInContext(`document.getElementById('wm-acc-reps-reh_1').value='14'; wmRestLogSet('reh_1');`, ctx);
+  vm.runInContext(`renderWmRest()`, ctx);
+  const html2 = els['wmContent']._html;
+  assert.ok(/id="wm-acc-reps-reh_2"[\s\S]*?value="20"/.test(html2), "reh_2 reps default to last session's 20 reps");
+  assert.ok(/last 20/.test(html2), "shows a 'last time' reference for reh_2");
 });
 
 // Phase 63b: when a rest gap has no session accessory to knock out, the panel

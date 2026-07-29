@@ -2131,7 +2131,10 @@ function _wmAccessoryRowsHTML(currentExId){
   const prev=(typeof getPreviousSessionData==='function')?getPreviousSessionData(date,wm.session):null;
   const btnS='width:34px;height:34px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:18px;font-weight:700;cursor:pointer;line-height:1;';
   const inS='width:46px;text-align:center;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:15px;padding:7px 0;';
-  return accs.map(ex=>{
+  // Show ONLY the one accessory to do right now — carry it through its sets across
+  // rest gaps, then it drops out and the next incomplete one takes its place.
+  const _more=accs.length-1;
+  return accs.slice(0,1).map(ex=>{
     const sets=(dayLog[ex.id]&&Array.isArray(dayLog[ex.id].sets))?dayLog[ex.id].sets.filter(s=>s.done):[];
     const doneCount=sets.length;
     const target=_effectiveSets(ex);
@@ -2173,7 +2176,8 @@ function _wmAccessoryRowsHTML(currentExId){
           <button onclick="wmRestLogSet('${ex.id}')" style="margin-left:auto;padding:9px 14px;background:rgba(200,255,0,.14);border:1px solid var(--lime);border-radius:8px;color:var(--lime);font-size:12px;font-weight:700;cursor:pointer;">✓ Log set</button>
         </div>
       </div>`;
-  }).join('');
+  }).join('')
+  +(_more>0?`<div style="font-size:11px;color:var(--text3);margin-top:12px;padding-top:9px;border-top:1px dashed var(--border);">Then: ${accs[1].name}${_more>1?` · +${_more-1} more`:''}</div>`:'');
 }
 function _wmAccessoryPanelHTML(currentExId){
   // Phase 63b: always render — real accessories when there are any, else the
