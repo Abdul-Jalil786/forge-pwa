@@ -424,6 +424,24 @@ test("dev clear-today wipes today's training log (dev-gated)", () => {
   assert.equal(vm.runInContext(`Object.keys(getExLogForDate('${T}')).length`, ctx), 0, "today's exLog wiped when isDev");
 });
 
+// Track page sections collapse into dropdowns with state persisted per user.
+test("Track page renders collapsible sections with persisted open/closed state", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext(`renderTrack()`, ctx);
+  const html = els['page-track']._html;
+  assert.ok(/Weight History/.test(html), "Weight History section header present");
+  assert.ok(/Training Calendar/.test(html), "Training Calendar section header present");
+  assert.ok(/id="tsec-bd-weighthist" style="display:none;/.test(html), "history collapsed by default");
+  assert.ok(/id="tsec-bd-bodycomp" style="padding-top/.test(html), "body-composition open by default");
+  // Toggling flips + persists to localStorage.
+  vm.runInContext(`toggleTrackSection('weighthist')`, ctx);
+  assert.equal(vm.runInContext(`_trackSectionOpen('weighthist')`, ctx), true, "toggle opens the section");
+  assert.equal(vm.runInContext(`JSON.parse(localStorage.getItem('forge_track_sections')).weighthist`, ctx), true, "open state written to localStorage");
+  vm.runInContext(`toggleTrackSection('bodycomp')`, ctx);
+  assert.equal(vm.runInContext(`_trackSectionOpen('bodycomp')`, ctx), false, "a default-open section can be collapsed and remembered");
+});
+
 test("weighted compounds get set-to-set guidance; accessories left alone", () => {
   const { ctx } = bootApp();
   seed(ctx);
