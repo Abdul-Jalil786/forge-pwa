@@ -87,7 +87,7 @@ const WORKOUTS = {
       {id:'u3',name:'Seated Row',sets:3,reps:'8–10',rest:90,muscle:'Back',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
       {id:'u5',name:'Lat Pulldown',sets:3,reps:'10–12',rest:90,muscle:'Lats',size:'medium',fillers:['fill_hip_switch'],yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
       {id:'h5',name:'Lateral Raise',sets:2,reps:'12–15',rest:60,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
-      {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
+      {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',weighted:true,yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
       {id:'reh_2',name:'Band Pull-Apart',sets:2,reps:'15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+pull+apart+form'},
       {id:'reh_3',name:'Banded Shoulder Flexion Raise',sets:2,reps:'12',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=banded+shoulder+flexion+raise'},
     ]
@@ -116,7 +116,7 @@ const WORKOUTS = {
       {id:'u6',name:'Bicep Curl',sets:2,reps:'10–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
       {id:'u7',name:'Tricep Rope Pushdown',sets:2,reps:'12–15',rest:60,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+rope+pushdown+form'},
       {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
-      {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
+      {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',weighted:true,yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
       {id:'reh_2',name:'Band Pull-Apart',sets:2,reps:'15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+pull+apart+form'},
       {id:'reh_3',name:'Banded Shoulder Flexion Raise',sets:2,reps:'12',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=banded+shoulder+flexion+raise'},
     ]

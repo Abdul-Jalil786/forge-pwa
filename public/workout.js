@@ -2109,14 +2109,18 @@ function _wmRestAccessories(currentExId){
     if(ex.id===currentExId)return false;
     if(isTimeBased(ex))return false;
     if(typeof isCarry==='function'&&isCarry(ex))return false;
-    if(!(ex.size==='small'||ex.category==='rehab'))return false;
+    // Only rehab/band shoulder work is a rest-gap accessory — the proper isolation
+    // lifts (Pallof, Lateral Raise, Face Pull, curls, Dead Bug) are done in the main
+    // flow, not squeezed into rest. The Asian squat covers the no-band fallback.
+    if(ex.category!=='rehab')return false;
     const log=dayLog[ex.id];
     if(log&&(log.done||log.skipped))return false;
     return true;
   });
 }
-// An accessory needs no external load when it's rehab/band work — kg column hidden.
-function _wmAccessoryWeighted(ex){ return ex.category!=='rehab'; }
+// Most band work is bodyweight (no kg). A rehab move flagged `weighted` (e.g. Band
+// External Rotation done on the cable stack) gets a kg stepper.
+function _wmAccessoryWeighted(ex){ return !!(ex&&ex.weighted); }
 function _wmAccessoryRowsHTML(currentExId){
   const accs=_wmRestAccessories(currentExId);
   // Phase 63b: no session accessory left to knock out → fall back to the Asian
