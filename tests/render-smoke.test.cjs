@@ -338,29 +338,37 @@ test("logging an accessory during rest records a real set without touching the c
   assert.equal(vm.runInContext(`getExLogForDate('${T}').u4.sets.length`, ctx), 1, "resting lift's own log untouched");
 });
 
-test("rest panel shows ONE accessory at a time, then advances; completing drops it from the main flow", () => {
+test("rest panel: one accessory set per rest, locks, then resumes/advances next rest", () => {
   const { ctx, els } = bootApp();
   seed(ctx);
   const T = "2026-07-25";
   vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
   vm.runInContext(`STATE.exLog={'${T}':{u4:{sets:[{kg:50,reps:10,done:true,effort:'solid'}]}}};`, ctx);
+  // ── Rest gap 1 ──
   vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:1};`, ctx);
   assert.doesNotThrow(() => vm.runInContext(`renderWmRest()`, ctx), "rest screen renders the accessory panel");
-  const html = els['wmContent']._html;
-  assert.ok(/Knock out accessories now/.test(html), "accessory panel shown during rest");
+  let html = els['wmContent']._html;
   // Only the FIRST rehab accessory (Band External Rotation, reh_1) is the active row.
   assert.ok(/wmRestLogSet\('reh_1'\)/.test(html), "first accessory (reh_1) is the active one");
   assert.ok(!/wmRestLogSet\('reh_2'\)/.test(html), "the next accessory (reh_2) is NOT shown as an active row yet");
   assert.ok(/Then: Band Pull-Apart/.test(html), "a 'Then:' hint names what's queued next");
   assert.ok(!/wmRestLogSet\('u4'\)/.test(html), "the compound being rested is not offered as its own accessory");
-  // Complete reh_1 (2 sets) → it drops, and the next accessory (reh_2) becomes active.
+  // Log ONE set → the panel LOCKS for this rest (no second Log button).
   vm.runInContext(`document.getElementById('wm-acc-reps-reh_1').value='14'; wmRestLogSet('reh_1');`, ctx);
+  const locked = vm.runInContext(`_wmAccessoryRowsHTML('u4')`, ctx);
+  assert.ok(!/wmRestLogSet\(/.test(locked), "no Log button after logging this rest (locked)");
+  assert.ok(/next set on your next rest/.test(locked), "locked message shown after the one set");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').reh_1.sets.filter(s=>s.done).length`, ctx), 1, "exactly ONE set logged this rest");
+  // ── Rest gap 2 (new restStarted) → unlocked, SAME accessory back for set 2 ──
+  vm.runInContext(`wm.restStarted=2; renderWmRest();`, ctx);
+  html = els['wmContent']._html;
+  assert.ok(/wmRestLogSet\('reh_1'\)/.test(html), "reh_1 comes back for its next set on the next rest");
   vm.runInContext(`document.getElementById('wm-acc-reps-reh_1').value='14'; wmRestLogSet('reh_1');`, ctx);
-  assert.equal(vm.runInContext(`_wmExComplete('reh_1')`, ctx), true, "reh_1 complete after 2 sets");
-  vm.runInContext(`renderWmRest()`, ctx);
-  const html2 = els['wmContent']._html;
-  assert.ok(/wmRestLogSet\('reh_2'\)/.test(html2), "after finishing reh_1, reh_2 is now the active accessory");
-  // Completed accessory is skipped by the main-flow navigation.
+  assert.equal(vm.runInContext(`_wmExComplete('reh_1')`, ctx), true, "reh_1 done after its 2 sets across 2 rests");
+  // ── Rest gap 3 → reh_1 finished, so reh_2 is now the active accessory ──
+  vm.runInContext(`wm.restStarted=3; renderWmRest();`, ctx);
+  html = els['wmContent']._html;
+  assert.ok(/wmRestLogSet\('reh_2'\)/.test(html), "after reh_1 finishes, reh_2 becomes active");
   const rehIdx = vm.runInContext(`getWorkout('upperA').exercises.findIndex(e=>e.id==='reh_1')`, ctx);
   assert.notEqual(vm.runInContext(`_wmNextPendingIdx(${rehIdx - 1})`, ctx), rehIdx, "completed accessory is skipped when advancing");
 });
@@ -387,10 +395,11 @@ test("rest accessory defaults reference last session's reps + weight", () => {
   assert.ok(/id="wm-acc-reps-reh_1"[\s\S]*?value="14"/.test(html), "reh_1 reps default to last session's 14");
   // A size:small isolation lift (Lateral Raise / Pallof) is NOT a rest-gap accessory.
   assert.ok(!/wm-acc-reps-h5/.test(html), "Lateral Raise (size:small) is not offered as a rest accessory");
-  // Finish reh_1 → the next accessory (Band Pull-Apart, reps-only) takes over: reps default = last 20.
+  // Finish reh_1 (2 sets), then on a NEW rest gap Band Pull-Apart (reps-only) takes
+  // over with its own history-grounded default (last 20).
   vm.runInContext(`document.getElementById('wm-acc-reps-reh_1').value='14'; wmRestLogSet('reh_1');`, ctx);
   vm.runInContext(`document.getElementById('wm-acc-reps-reh_1').value='14'; wmRestLogSet('reh_1');`, ctx);
-  vm.runInContext(`renderWmRest()`, ctx);
+  vm.runInContext(`wm.restStarted=99; renderWmRest();`, ctx);
   const html2 = els['wmContent']._html;
   assert.ok(/id="wm-acc-reps-reh_2"[\s\S]*?value="20"/.test(html2), "reh_2 reps default to last session's 20 reps");
   assert.ok(/last 20/.test(html2), "shows a 'last time' reference for reh_2");

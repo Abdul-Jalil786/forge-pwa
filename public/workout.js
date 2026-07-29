@@ -2121,7 +2121,26 @@ function _wmRestAccessories(currentExId){
 // Most band work is bodyweight (no kg). A rehab move flagged `weighted` (e.g. Band
 // External Rotation done on the cable stack) gets a kg stepper.
 function _wmAccessoryWeighted(ex){ return !!(ex&&ex.weighted); }
+// Locked state after you've logged your one accessory set for THIS rest — shows
+// what you did and that it resumes next rest, with no second Log button.
+function _wmAccessoryLockedHTML(exId){
+  const w=getWorkout(wm.session);
+  const ex=(w.exercises||[]).find(e=>e.id===exId)||{name:exId};
+  const dayLog=getExLogForDate(todayStr());
+  const doneCount=((dayLog[exId]&&dayLog[exId].sets)||[]).filter(s=>s.done).length;
+  const target=_effectiveSets(ex);
+  const complete=doneCount>=target;
+  const msg=complete
+    ? `✓ ${ex.name} complete · ${doneCount}/${target} — next one on your next rest`
+    : `✓ ${ex.name} logged · ${doneCount}/${target} — next set on your next rest`;
+  return `<div style="border-top:1px solid var(--border);padding-top:12px;margin-top:10px;font-size:13px;color:var(--green);font-weight:700;line-height:1.4;">${msg}</div>`;
+}
 function _wmAccessoryRowsHTML(currentExId){
+  // One-set-per-rest lock: if you've already logged an accessory set this rest
+  // gap, hold that state (no second log) until the next rest starts.
+  if(wm.restAccLoggedId && wm.restAccGapLogged===wm.restStarted){
+    return _wmAccessoryLockedHTML(wm.restAccLoggedId);
+  }
   const accs=_wmRestAccessories(currentExId);
   // Phase 63b: no session accessory left to knock out → fall back to the Asian
   // (deep) squat hold as an optional mobility drill for the rest gap.
@@ -2264,10 +2283,15 @@ function wmRestLogSet(exId){
     if(dayLog[ex.id].exerciseStartedAt)dayLog[ex.id].totalExerciseDuration=Math.round((Date.now()-dayLog[ex.id].exerciseStartedAt)/1000);
   }
   saveExLogForDate(date,dayLog);
+  // One accessory set per rest: mark THIS rest gap as used so the panel locks
+  // (no second Log button) until the next rest, when the same accessory (if not
+  // yet finished) comes back for its next set.
+  wm.restAccGapLogged=wm.restStarted;
+  wm.restAccLoggedId=ex.id;
   const box=document.getElementById('wm-rest-acc-rows');
   const curId=(w.exercises[wm.exIdx]||{}).id;
   if(box)box.innerHTML=_wmAccessoryRowsHTML(curId);
-  showToast(doneCount>=target?`✓ ${ex.name} complete — off the end-of-session list`:`✓ ${ex.name} · set ${doneCount}/${target} logged`);
+  showToast(doneCount>=target?`✓ ${ex.name} complete`:`✓ ${ex.name} · set ${doneCount}/${target} — next set on your next rest`);
 }
 
 // Is an exercise finished for today (all sets done, or deliberately skipped)?
