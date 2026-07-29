@@ -972,6 +972,33 @@ function _progressCard(label,subtitle,current,unit,pct,color,rate,rateUnit,capti
   </div>`;
 }
 
+// Collapsible Track-page sections. Each header toggles its own body; the
+// open/closed state persists in localStorage so the user's choices stick across
+// visits. Keeps the long history lists tucked away so the page isn't one endless
+// scroll. Toggling flips display + chevron in place — no full re-render.
+const _TRACK_DEFAULT_OPEN = { bodycomp:true, progress:true };
+function _trackSectionState(){ try{ return JSON.parse(localStorage.getItem('forge_track_sections')||'{}'); }catch(e){ return {}; } }
+function _trackSectionOpen(key){ const s=_trackSectionState(); return key in s ? !!s[key] : !!_TRACK_DEFAULT_OPEN[key]; }
+function toggleTrackSection(key){
+  const s=_trackSectionState();
+  s[key]=!_trackSectionOpen(key);
+  try{ localStorage.setItem('forge_track_sections',JSON.stringify(s)); }catch(e){}
+  const bd=document.getElementById('tsec-bd-'+key), ch=document.getElementById('tsec-chev-'+key);
+  if(bd)bd.style.display=s[key]?'':'none';
+  if(ch)ch.textContent=s[key]?'▾':'▸';
+}
+// Wrap existing markup in a collapsible: _collapsibleOpen(...) + content + _collapsibleClose().
+function _collapsibleOpen(key,title,headerExtra){
+  const open=_trackSectionOpen(key);
+  return `<div style="margin-bottom:6px;">
+    <div onclick="toggleTrackSection('${key}')" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 2px;cursor:pointer;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text);">${title}</div>
+      <div style="display:flex;align-items:center;gap:12px;">${headerExtra||''}<span id="tsec-chev-${key}" style="color:var(--lime);font-size:12px;line-height:1;">${open?'▾':'▸'}</span></div>
+    </div>
+    <div id="tsec-bd-${key}" style="${open?'':'display:none;'}padding-top:12px;">`;
+}
+function _collapsibleClose(){ return `</div></div>`; }
+
 function renderTrack(){
   const p=getActive(); if(!p)return;
   const wl=getWeightLog();
@@ -1071,7 +1098,6 @@ function renderTrack(){
   const lbmDelta7  = (clbmNow != null && l7  != null) ? clbmNow - l7  : null;
   const lbmDelta14 = (clbmNow != null && l14 != null) ? clbmNow - l14 : null;
   const trendCard = `<div class="card" style="margin-bottom:14px;border-color:var(--border2);">
-    <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Body Composition · This Week vs Last</div>
     ${_trendRow('Weight',    cwNow != null ? cwNow + ' kg' : '—',    [wDelta7,   wDelta14],   _colorForFatDelta)}
     ${_trendRow('Fat mass',  cFatNow != null ? cFatNow + ' kg' : '—',[fatDelta7, fatDelta14], _colorForFatDelta)}
     ${_trendRow('Lean mass', clbmNow != null ? clbmNow + ' kg' : '—',[lbmDelta7, lbmDelta14], _colorForLBMDelta)}
@@ -1080,7 +1106,6 @@ function renderTrack(){
 
   // Phase 30: Compare two dates card
   const compareCard = `<div class="card" style="margin-bottom:14px;">
-    <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Compare Any Two Dates</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
       <div>
         <div style="font-size:10px;color:var(--text3);margin-bottom:4px;">From</div>
@@ -1094,29 +1119,13 @@ function renderTrack(){
     <div id="cmp-result"></div>
   </div>`;
 
-  document.getElementById('page-track').innerHTML=`
-    <div class="pg-title" style="margin-bottom:14px;">Progress</div>
-
-    ${trendCard}
-
-    ${compareCard}
-
-    ${_progressCard('Weight',`${_v(p.startWeight)}kg → ${_v(p.targetWeight)}kg`,cw,'kg',wPct,'var(--lime)',hasEnoughW?wRate:null,' kg',`Lost ${wLost}kg · ${wToGo}kg to go · ${wGoalStr}`,wSpark)}
-    ${_progressCard('Body Fat',`${_v(p.startBF)}% → ${_v(p.targetBF)}%`,cbf,'%',bPct,'var(--orange)',hasEnoughB?bRate:null,'%',bCaption,bSpark)}
-    ${_progressCard('Lean Mass',`current — target: hold ${_v(p.targetLBM)}kg`,clbm,'kg',lPct,'var(--blue)',hasEnoughL?lRate:null,' kg',lCaption,lSpark,lAlert)}
-    ${cvf!=null||svf!=null?_progressCard('Visceral Fat',`current → target: ${_v(p.targetVisceralFat)} or less`,cvf,'',vPct,'var(--purple)',hasEnoughV?vRate:null,'',vCaption,vSpark):''}
-
-    ${renderVO2MaxCard()}
-
-    ${renderBPCard()}
-
-    ${renderDexaCard()}
-
-    ${(()=>{
-      if(!proj)return'<div class="card" style="margin-bottom:10px;"><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">GOAL DATE</div><div style="font-size:12px;color:var(--text2);padding:12px 0;">Pending — need profile targets set</div></div>';
+  const _weightLogBtn=`<button class="btn btn-lime btn-sm" onclick="event.stopPropagation();openModal('modal-weight')">+ Log</button>`;
+  const _stepsLogBtn=`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();promptSteps()">Log Today</button>`;
+  const _goalCard=(()=>{
+      if(!proj)return'<div class="card" style="margin-bottom:10px;"><div style="font-size:12px;color:var(--text2);padding:12px 0;">Pending — need profile targets set</div></div>';
       if(!proj.goalDate){
         const reason=(wEntries.length<2||bEntries.length<2)?'Pending — need more entries':'Pending — need consistent loss trend';
-        return'<div class="card" style="margin-bottom:10px;"><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">GOAL DATE</div><div style="font-size:12px;color:var(--text2);padding:12px 0;">'+reason+'</div></div>';
+        return'<div class="card" style="margin-bottom:10px;"><div style="font-size:12px;color:var(--text2);padding:12px 0;">'+reason+'</div></div>';
       }
       const confColor=proj.confidence==='high'?'#4caf50':proj.confidence==='medium'?'#ff9800':'#f44336';
       const confLabel=proj.confidence.charAt(0).toUpperCase()+proj.confidence.slice(1);
@@ -1128,8 +1137,7 @@ function renderTrack(){
       const totalW=proj.goalDate?Math.max(1,Math.round((proj.goalDate-new Date(p.startDate+'T12:00:00'))/(7*86400000))):1;
       const progPct=Math.min(100,Math.round((elapsed/totalW)*100));
       return`<div class="card" style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
-          <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">GOAL DATE</div>
+        <div style="display:flex;justify-content:flex-end;align-items:flex-start;margin-bottom:8px;">
           <div style="font-size:10px;color:var(--text2);">${_v(p.targetWeight)}kg + ${_v(p.targetBF)}% body fat</div>
         </div>
         <div style="font-family:'Archivo Black',sans-serif;font-size:28px;color:var(--lime);letter-spacing:-1px;line-height:1;margin-bottom:6px;">${goalStr}</div>
@@ -1143,13 +1151,8 @@ function renderTrack(){
           ${bLine}
         </div>
       </div>`;
-    })()}
-
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <div class="sec-label" style="margin-bottom:0;">Weight History</div>
-      <button class="btn btn-lime btn-sm" onclick="openModal('modal-weight')">+ Log</button>
-    </div>
-    <div class="card">
+    })();
+  const _weightHistCard=`<div class="card">
       ${wl.length===0?'<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">No entries yet</div>':
         [...wl].reverse().slice(0,12).map((e,i,arr)=>{
           const prev=arr[i+1];
@@ -1163,10 +1166,8 @@ function renderTrack(){
             <div class="row-diff ${cls}">${txt}</div>
           </div>`;
         }).join('')}
-    </div>
-
-    <div class="sec-label">Body Fat</div>
-    <div class="card" style="margin-bottom:10px;">
+    </div>`;
+  const _bfHistCard=`<div class="card" style="margin-bottom:10px;">
       ${(()=>{
         const bfl=getBfLog();
         if(bfl.length===0)return '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Log body fat % with your weight entries to see trends</div>';
@@ -1182,16 +1183,8 @@ function renderTrack(){
         <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${bfl.length} entries</div>
         ${rows}`;
       })()}
-    </div>
-
-    ${renderBPHistory()}
-
-    <div class="sec-label">Steps</div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <div></div>
-      <button class="btn btn-ghost btn-sm" onclick="promptSteps()">Log Today</button>
-    </div>
-    <div class="sg sg3">
+    </div>`;
+  const _stepsCard=`<div class="sg sg3">
       <div class="sb blue"><div class="l">Today</div><div class="v">${(getTodaySteps()/1000).toFixed(1)}<span class="u">k</span></div></div>
       <div class="sb lime"><div class="l">Wk Avg</div><div class="v">${(weekSteps.reduce((s,d)=>s+d.steps,0)/7/1000).toFixed(1)}<span class="u">k</span></div></div>
       <div class="sb green"><div class="l">Days Hit</div><div class="v">${weekSteps.filter(d=>d.steps>=10000).length}<span class="u">/7</span></div></div>
@@ -1206,30 +1199,35 @@ function renderTrack(){
           <div class="step-count${d.steps>=10000?' hit':''}">${d.steps>=1000?(d.steps/1000).toFixed(1)+'k':d.steps||'—'}</div>
         </div>`;
       }).join('')}
-    </div>
-
-    <div class="sec-label">Streaks 🔥</div>
-    <div class="sg sg3">
+    </div>`;
+  const _streaksCard=`<div class="sg sg3">
       <div class="sb lime"><div class="l">Steps</div><div class="v">${stepsStreak}<span class="u">days</span></div></div>
       <div class="sb orange"><div class="l">Gym</div><div class="v">${gymStreak}<span class="u">days</span></div></div>
       <div class="sb green"><div class="l">Food Log</div><div class="v">${foodStreak}<span class="u">days</span></div></div>
-    </div>
+    </div>`;
 
-    <div class="sec-label">Am I Getting Stronger?</div>
-    ${renderStrengthTrend()}
+  const _progressBody=
+    _progressCard('Weight',`${_v(p.startWeight)}kg → ${_v(p.targetWeight)}kg`,cw,'kg',wPct,'var(--lime)',hasEnoughW?wRate:null,' kg',`Lost ${wLost}kg · ${wToGo}kg to go · ${wGoalStr}`,wSpark)
+    +_progressCard('Body Fat',`${_v(p.startBF)}% → ${_v(p.targetBF)}%`,cbf,'%',bPct,'var(--orange)',hasEnoughB?bRate:null,'%',bCaption,bSpark)
+    +_progressCard('Lean Mass',`current — target: hold ${_v(p.targetLBM)}kg`,clbm,'kg',lPct,'var(--blue)',hasEnoughL?lRate:null,' kg',lCaption,lSpark,lAlert)
+    +(cvf!=null||svf!=null?_progressCard('Visceral Fat',`current → target: ${_v(p.targetVisceralFat)} or less`,cvf,'',vPct,'var(--purple)',hasEnoughV?vRate:null,'',vCaption,vSpark):'');
 
-    ${renderLegPressSledDiag()}
+  document.getElementById('page-track').innerHTML=`
+    <div class="pg-title" style="margin-bottom:14px;">Progress</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.5;">Tap a section to open or close it — the app remembers what you keep open.</div>
 
-    <div class="sec-label">Lifting Records</div>
-    <div class="card">
-      ${renderLiftingRecords()}
-    </div>
-
-    <div class="sec-label">Strength Standards</div>
-    ${renderStrengthStandards()}
-
-    <div class="sec-label">Training Calendar</div>
-    ${renderCalendar()}
+    ${_collapsibleOpen('bodycomp','Body Composition · This Week vs Last')}${trendCard}${_collapsibleClose()}
+    ${_collapsibleOpen('progress','Progress · Weight · BF · Lean · Visceral')}${_progressBody}${_collapsibleClose()}
+    ${_collapsibleOpen('goal','Goal Date')}${_goalCard}${_collapsibleClose()}
+    ${_collapsibleOpen('compare','Compare Any Two Dates')}${compareCard}${_collapsibleClose()}
+    ${_collapsibleOpen('health','VO2 Max · Blood Pressure · DEXA')}${renderVO2MaxCard()}${renderBPCard()}${renderDexaCard()}${_collapsibleClose()}
+    ${_collapsibleOpen('weighthist','Weight History',_weightLogBtn)}${_weightHistCard}${_collapsibleClose()}
+    ${_collapsibleOpen('bfhist','Body Fat History')}${_bfHistCard}${_collapsibleClose()}
+    ${_collapsibleOpen('bphist','Blood Pressure History')}${renderBPHistory()}${_collapsibleClose()}
+    ${_collapsibleOpen('steps','Steps',_stepsLogBtn)}${_stepsCard}${_collapsibleClose()}
+    ${_collapsibleOpen('streaks','Streaks 🔥')}${_streaksCard}${_collapsibleClose()}
+    ${_collapsibleOpen('strength','Strength · Records · Standards')}${renderStrengthTrend()}${renderLegPressSledDiag()}<div class="card">${renderLiftingRecords()}</div>${renderStrengthStandards()}${_collapsibleClose()}
+    ${_collapsibleOpen('calendar','Training Calendar')}${renderCalendar()}${_collapsibleClose()}
   `;
 
   // Phase 30: render the date-compare snapshot after innerHTML
@@ -3428,8 +3426,7 @@ function renderBPHistory(){
     const ad=(a.date||'')+(a.time||''),bd=(b.date||'')+(b.time||'');
     return ad<bd?1:ad>bd?-1:0;
   }).slice(0,30);
-  return `<div class="sec-label">Blood Pressure History</div>
-    <div class="card" style="margin-bottom:10px;">
+  return `<div class="card" style="margin-bottom:10px;">
       ${sorted.map(r=>{
         const band=getBPBand(r.systolic,r.diastolic);
         const dt=`${fmtDate(r.date)}${r.time?' · '+r.time:''}`;

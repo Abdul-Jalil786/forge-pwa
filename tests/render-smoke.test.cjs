@@ -383,6 +383,65 @@ test("rest accessory defaults reference last session's reps + weight", () => {
   assert.ok(/id="wm-acc-kg-h5"[\s\S]*?value="[0-9]/.test(html), "weighted accessory pre-fills a kg default");
 });
 
+// Phase 63b: when a rest gap has no session accessory to knock out, the panel
+// falls back to the Asian (deep) squat mobility hold instead of showing nothing.
+test("rest screen falls back to the Asian squat hold when no accessory is left", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
+  // Lower B has no small/rehab accessory (l5/l1 large, l4 medium, core_suitcase is a carry) → fallback.
+  vm.runInContext(`STATE.exLog={'${T}':{l5:{sets:[{kg:120,reps:10,done:true}]}}};`, ctx);
+  vm.runInContext(`wm={active:true,session:'lowerB',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:5};`, ctx);
+  vm.runInContext(`renderWmRest()`, ctx);
+  const html = els['wmContent']._html;
+  assert.ok(/Rest-gap mobility/.test(html), "header switches to mobility when no accessory remains");
+  assert.ok(/Asian Squat Hold/.test(html), "shows the Asian squat fallback");
+  assert.ok(!/wmRestLogSet\(/.test(html), "no real-accessory log buttons when none are available");
+  // Logging the hold must not touch the countdown, and records under _fillers (not a working set).
+  const before = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
+  vm.runInContext(`wmRestMobility('done')`, ctx);
+  const after = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
+  assert.equal(before, after, "rest countdown untouched by the mobility hold");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}')._fillers.l5.gaps[0].status`, ctx), 'done', "hold recorded under _fillers, not as a working set");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').l5.sets.length`, ctx), 1, "resting lift's working sets untouched");
+});
+
+// Dev-only "Clear today's training" wipes the day's log so a test can re-run.
+test("dev clear-today wipes today's training log (dev-gated)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
+  // Not dev → no-op.
+  vm.runInContext(`window.__ENV__={isDev:false};`, ctx);
+  vm.runInContext(`STATE.exLog={'${T}':{h1:{done:true,sets:[{kg:30,reps:12,done:true}]}}};`, ctx);
+  vm.runInContext(`devClearToday();`, ctx);
+  assert.equal(vm.runInContext(`Object.keys(getExLogForDate('${T}')).length`, ctx), 1, "not cleared when isDev is false");
+  // Dev → wipes today's log (confirm() is stubbed true in the harness).
+  vm.runInContext(`window.__ENV__={isDev:true};`, ctx);
+  vm.runInContext(`devClearToday();`, ctx);
+  assert.equal(vm.runInContext(`Object.keys(getExLogForDate('${T}')).length`, ctx), 0, "today's exLog wiped when isDev");
+});
+
+// Track page sections collapse into dropdowns with state persisted per user.
+test("Track page renders collapsible sections with persisted open/closed state", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext(`renderTrack()`, ctx);
+  const html = els['page-track']._html;
+  assert.ok(/Weight History/.test(html), "Weight History section header present");
+  assert.ok(/Training Calendar/.test(html), "Training Calendar section header present");
+  assert.ok(/id="tsec-bd-weighthist" style="display:none;/.test(html), "history collapsed by default");
+  assert.ok(/id="tsec-bd-bodycomp" style="padding-top/.test(html), "body-composition open by default");
+  // Toggling flips + persists to localStorage.
+  vm.runInContext(`toggleTrackSection('weighthist')`, ctx);
+  assert.equal(vm.runInContext(`_trackSectionOpen('weighthist')`, ctx), true, "toggle opens the section");
+  assert.equal(vm.runInContext(`JSON.parse(localStorage.getItem('forge_track_sections')).weighthist`, ctx), true, "open state written to localStorage");
+  vm.runInContext(`toggleTrackSection('bodycomp')`, ctx);
+  assert.equal(vm.runInContext(`_trackSectionOpen('bodycomp')`, ctx), false, "a default-open section can be collapsed and remembered");
+});
+
 test("weighted compounds get set-to-set guidance; accessories left alone", () => {
   const { ctx } = bootApp();
   seed(ctx);
@@ -588,13 +647,17 @@ test("skincare readiness needs 4 weeks/step (tretinoin is stronger than retinol)
 test("supplements grid: weekly Mounjaro due only on injection day; today pending not missed", () => {
   const { ctx } = bootApp();
   seed(ctx);
+  // Pin "today" (like every other test in this file). getSupplementAdherence()
+  // measures the last 7 days from todayStr(), so without this the ticked Wednesday
+  // fell outside the window on any real run date and the test was date-flaky.
+  vm.runInContext(`todayStr=function(){return '2026-07-25';};`, ctx); // Saturday
   vm.runInContext(`
     STATE.profile.glp1InjectionDow=3; // Wednesday
     STATE.supplements=[{id:'creatine',name:'Creatine',frequency:'daily'},{id:'mnj',name:'Mounjaro',frequency:'weekly-wednesday'}];
-    STATE.supplementLog={'2026-07-15':{mnj:true}}; // ticked on the Wednesday in this week
+    STATE.supplementLog={'2026-07-22':{mnj:true}}; // ticked on the Wednesday inside the 7-day window
   `, ctx);
-  assert.equal(vm.runInContext("isSupplementDue(STATE.supplements[1],'2026-07-15')", ctx), true, "Mounjaro due Wed");
-  assert.equal(vm.runInContext("isSupplementDue(STATE.supplements[1],'2026-07-16')", ctx), false, "Mounjaro NOT due Thu");
+  assert.equal(vm.runInContext("isSupplementDue(STATE.supplements[1],'2026-07-22')", ctx), true, "Mounjaro due Wed");
+  assert.equal(vm.runInContext("isSupplementDue(STATE.supplements[1],'2026-07-23')", ctx), false, "Mounjaro NOT due Thu");
   const adh = vm.runInContext("getSupplementAdherence(7)", ctx);
   assert.equal(adh.byId.mnj.total, 1, "only the 1 due day (Wed) is in the denominator");
   assert.equal(adh.byId.mnj.taken, 1);

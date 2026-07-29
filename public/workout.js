@@ -36,6 +36,9 @@ function renderWorkout(){
     ${!isToday?`<button class="btn btn-ghost btn-sm" onclick="setViewDate(todayStr())">← Today</button>`:''}
   </div>`;
 
+  // DEV-ONLY: start-any-workout panel (staging). Returns '' in production.
+  html+=renderDevTestPanel();
+
   if(!renderSession){
     // Phase 56: on a rest/empty day, offer to make up an adjacent missed session
     // (or resume one already in progress). Never overwrites a scheduled session.
@@ -469,6 +472,49 @@ function _wmStartAutoSave(){
 function _wmStopAutoSave(){
   if(_wmAutoSaveInterval){clearInterval(_wmAutoSaveInterval);_wmAutoSaveInterval=null;}
 }
+
+// ── DEV-ONLY (staging) ────────────────────────────────────────────────────────
+// Start any workout on demand, ignoring the schedule, so changes can be tested
+// without waiting for a scheduled day. Both the panel and this entry point are
+// hard-gated on the server's isDev flag (window.__ENV__.isDev), so in production
+// the panel is never rendered AND this function is a no-op even if called.
+function renderDevTestPanel(){
+  if(!(window.__ENV__ && window.__ENV__.isDev) || typeof WORKOUTS!=='object') return '';
+  const btns=Object.keys(WORKOUTS).map(k=>
+    `<button class="btn btn-ghost btn-sm" style="margin:3px;font-size:11px;" onclick="devStartWorkout('${k}')">${WORKOUTS[k].name}</button>`
+  ).join('');
+  const today=(typeof todayStr==='function')?todayStr():'';
+  const logged=Object.keys((STATE.exLog||{})[today]||{}).filter(k=>k[0]!=='_').length;
+  return `<div class="card" style="border:1px dashed var(--orange);background:rgba(255,85,0,.06);margin-bottom:14px;">
+    <div style="font-size:11px;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:3px;">🧪 DEV · TEST SESSIONS</div>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:8px;line-height:1.5;">Staging only — start any session on demand (ignores the schedule). Runs the real guided flow, including the Easy / Solid / Tough effort screen.</div>
+    <div style="display:flex;flex-wrap:wrap;">${btns}</div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;font-size:11px;color:var(--red);border-color:var(--red);" onclick="devClearToday()">🧹 Clear today's training${logged?` (${logged} logged)`:''}</button>
+  </div>`;
+}
+function devStartWorkout(type){
+  if(!(window.__ENV__ && window.__ENV__.isDev)) return; // hard guard — never runs in production
+  if(!WORKOUTS[type]) return;
+  startGuidedWorkout(type);
+}
+// DEV-ONLY: wipe today's logged training (sets, session, rest-gap fillers) AND any
+// in-progress guided session, so a test can be re-run from scratch. Hard-gated on
+// isDev; never available in production.
+function devClearToday(){
+  if(!(window.__ENV__ && window.__ENV__.isDev)) return;
+  const date=todayStr();
+  if(!confirm(`Clear ALL of today's logged training (${date})? This wipes every set logged today so you can re-test. (dev only)`))return;
+  // Bin any in-progress guided session first.
+  try{ if(typeof wm==='object'&&wm){wm.active=false; if(wm.restInterval)clearInterval(wm.restInterval);} }catch(e){}
+  try{ localStorage.removeItem('forge_active_workout'); }catch(e){}
+  const wmEl=document.getElementById('workoutMode'); if(wmEl)wmEl.classList.remove('open');
+  // Wipe today's exercise log (empty object → server + local).
+  if(typeof saveExLogForDate==='function')saveExLogForDate(date,{});
+  if(typeof showToast==='function')showToast("Today's training cleared — start fresh");
+  if(typeof renderWorkout==='function')renderWorkout();
+  if(typeof renderToday==='function')renderToday();
+}
+// ──────────────────────────────────────────────────────────────────────────────
 
 function startGuidedWorkout(overrideSession,forDate){
   // Phase 41k: if there's already a minimized in-progress session for today, resume it
@@ -2073,7 +2119,9 @@ function _wmRestAccessories(currentExId){
 function _wmAccessoryWeighted(ex){ return ex.category!=='rehab'; }
 function _wmAccessoryRowsHTML(currentExId){
   const accs=_wmRestAccessories(currentExId);
-  if(!accs.length)return `<div style="font-size:12px;color:var(--green);font-weight:700;margin-top:10px;">✓ All accessories knocked out — nothing left for the end.</div>`;
+  // Phase 63b: no session accessory left to knock out → fall back to the Asian
+  // (deep) squat hold as an optional mobility drill for the rest gap.
+  if(!accs.length)return _wmMobilityFallbackHTML(currentExId);
   const date=todayStr();
   const dayLog=getExLogForDate(date);
   const prev=(typeof getPreviousSessionData==='function')?getPreviousSessionData(date,wm.session):null;
@@ -2124,12 +2172,52 @@ function _wmAccessoryRowsHTML(currentExId){
   }).join('');
 }
 function _wmAccessoryPanelHTML(currentExId){
-  if(!_wmRestAccessories(currentExId).length)return '';
+  // Phase 63b: always render — real accessories when there are any, else the
+  // deep-squat mobility fallback. Header adapts to what's shown.
+  const hasAcc=_wmRestAccessories(currentExId).length>0;
+  const title=hasAcc?'Knock out accessories now':'Rest-gap mobility';
+  const sub=hasAcc
+    ?'Do these during your rest — logged for real, so they drop off the end of the session.'
+    :'No accessories left for this session — sink into a deep (Asian) squat while you rest to open hips + ankles.';
   return `<div style="background:rgba(200,255,0,.04);border:1px solid rgba(200,255,0,.22);border-radius:12px;padding:12px 14px;margin:0 0 14px;">
-      <div style="font-size:10px;color:var(--lime);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Knock out accessories now</div>
-      <div style="font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4;">Do these during your rest — logged for real, so they drop off the end of the session.</div>
+      <div style="font-size:10px;color:var(--lime);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">${title}</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4;">${sub}</div>
       <div id="wm-rest-acc-rows">${_wmAccessoryRowsHTML(currentExId)}</div>
     </div>`;
+}
+// Phase 63b: Asian (deep) squat hold — the mobility fallback shown when a rest
+// gap has no session accessory to knock out. Optional; logged via the (dormant)
+// filler data-layer under the resting lift, so it never becomes a fake working
+// set and still shows in the end-of-session recap. Per rest gap (keyed on setIdx).
+function _wmMobilityFallbackHTML(currentExId){
+  const date=todayStr();
+  const gapIdx=wm.setIdx;
+  const entry=(typeof getFillerLog==='function')?getFillerLog(date)[currentExId]:null;
+  const prev=(entry&&Array.isArray(entry.gaps))?entry.gaps[gapIdx]:null;
+  const done=prev&&prev.status==='done', skipped=prev&&prev.status==='skipped';
+  const actions=(done||skipped)
+    ? `<span style="font-size:12px;font-weight:700;color:${done?'var(--green)':'var(--text3)'};">${done?'✓ Done':'Skipped'}</span>`
+    : `<button onclick="wmRestMobility('done')" style="padding:8px 12px;background:rgba(0,200,120,.14);border:1px solid var(--green);border-radius:8px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;">✓ Done</button>
+       <button onclick="wmRestMobility('skip')" style="padding:8px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text3);font-size:12px;cursor:pointer;">Skip</button>`;
+  return `<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div style="min-width:0;">
+          <div style="font-size:14px;color:var(--text);font-weight:700;">🧘 Asian Squat Hold</div>
+          <div style="font-size:11px;color:var(--text2);">~60s deep squat · hip + ankle mobility · optional</div>
+        </div>
+        <div id="wm-rest-mob-actions" style="display:flex;gap:6px;flex-shrink:0;">${actions}</div>
+      </div>
+    </div>`;
+}
+// Log/skip the Asian-squat mobility hold for this rest gap. Updates ONLY its own
+// action buttons — never the countdown — and stores under _fillers[restingLift].
+function wmRestMobility(status){
+  const st=status==='done'?'done':'skipped';
+  const w=getWorkout(wm.session);
+  const currentExId=(w.exercises[wm.exIdx]||{}).id;
+  if(currentExId&&typeof logFillerGap==='function')logFillerGap(todayStr(),currentExId,'fill_deep_squat',wm.setIdx,st);
+  const box=document.getElementById('wm-rest-mob-actions');
+  if(box)box.innerHTML=`<span style="font-size:12px;font-weight:700;color:${st==='done'?'var(--green)':'var(--text3)'};">${st==='done'?'✓ Done':'Skipped'}</span>`;
 }
 // Nudge a rest-accessory reps/kg field. Keys: 'reps-<exId>' or 'kg-<exId>'.
 function _wmAccStep(key,delta){
