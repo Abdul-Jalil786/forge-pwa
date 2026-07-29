@@ -3189,12 +3189,17 @@ function renderProteinDistribution(){
   const score=getProteinDistributionScore();
   return `<div class="card" style="margin-bottom:10px;">
     <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Protein Distribution Today</div>
-    <div style="display:flex;gap:6px;margin-bottom:8px;">
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
       ${rows.map(r=>{
         const st=getMealProteinStatus(r.protein);
-        return `<div style="flex:1;text-align:center;">
-          <div style="height:8px;border-radius:4px;background:${st.color};"></div>
-          <div style="font-size:10px;color:var(--text3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.name}</div>
+        const thr=(typeof PROTEIN_THRESHOLD!=='undefined')?PROTEIN_THRESHOLD:40;
+        const pct=Math.max(0,Math.min(100,Math.round((r.protein/thr)*100)));
+        const shortName=((r.name||'').split(':')[0].split('—')[0].split('(')[0].trim())||r.name;
+        return `<div style="flex:1;min-width:0;text-align:center;">
+          <div style="height:8px;border-radius:4px;background:var(--bg2);overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:${st.color};border-radius:4px;"></div>
+          </div>
+          <div style="font-size:10px;color:var(--text3);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.name}">${shortName}</div>
           <div style="font-size:12px;font-weight:700;color:${st.color};">${r.protein}g</div>
         </div>`;
       }).join('')}
