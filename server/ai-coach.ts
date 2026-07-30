@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import prisma from "./db";
 import { decrypt } from "./crypto-util";
+import { setStateKey, casUpdateState } from "./state-merge";
 import { analyzeNutrition } from "./nutrition";
 import { exerciseName, sessionTypeForDate, programmeLabel, deloadWeekInfo, SESSION_EXERCISE_IDS } from "./programme-shared";
 import { formatCorrelations, blendedLeanSeries, leanTrendRate, weeklyReport } from "./proactive";
@@ -1745,27 +1746,31 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
 }
 
 export async function saveReport(userId: string, report: GeneratedReport, type: string = "weekly"): Promise<string> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new Error("User not found");
-  const state: any = user.state || {};
-  const reports = state.coachingReports || [];
+  // Phase 64: CAS so prepending a report (+ setting the cadence clock) never
+  // clobbers a concurrent write to another key (e.g. the hourly sync running
+  // while the Sunday cron generates). Stable id/timestamp across CAS retries.
   const id = "rpt_" + Date.now();
-  reports.unshift({
-    id,
-    createdAt: new Date().toISOString(),
-    type,
-    title: report.title,
-    content: report.content,
-    dateRange: report.dateRange,
-    suggestions: report.suggestions,
-    generatedBy: "forge-byok",
+  const now = new Date().toISOString();
+  const ok = await casUpdateState(userId, (state: any) => {
+    const reports = Array.isArray(state.coachingReports) ? state.coachingReports : [];
+    reports.unshift({
+      id,
+      createdAt: now,
+      type,
+      title: report.title,
+      content: report.content,
+      dateRange: report.dateRange,
+      suggestions: report.suggestions,
+      generatedBy: "forge-byok",
+    });
+    if (reports.length > 50) reports.length = 50;
+    state.coachingReports = reports;
+    // Monthly deep dives don't reset the weekly cadence clock.
+    if (type === "monthly") state.lastMonthlyDeepDiveAt = now;
+    else state.lastCoachingReportAt = now;
+    return state;
   });
-  if (reports.length > 50) reports.length = 50;
-  state.coachingReports = reports;
-  // Monthly deep dives don't reset the weekly cadence clock.
-  if (type === "monthly") state.lastMonthlyDeepDiveAt = new Date().toISOString();
-  else state.lastCoachingReportAt = new Date().toISOString();
-  await prisma.user.update({ where: { id: userId }, data: { state } });
+  if (!ok) throw new Error("User not found");
   return id;
 }
 
@@ -2336,12 +2341,10 @@ export async function computeMaxLBM(userId: string): Promise<MaxLBMProjection> {
 }
 
 export async function saveMealPlan(userId: string, plan: GeneratedMealPlan): Promise<void> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new Error("User not found");
-  const state: any = user.state || {};
-  state.mealPlan = plan;
-  state.lastMealPlanRegenAt = new Date().toISOString();
-  await prisma.user.update({ where: { id: userId }, data: { state } });
+  // Phase 64: mealPlan is a whole-object replace + a scalar timestamp — two
+  // per-key writes instead of clobbering the whole state object.
+  await setStateKey(userId, "mealPlan", plan);
+  await setStateKey(userId, "lastMealPlanRegenAt", new Date().toISOString());
 }
 
 // --- Phase 26a: recompute macros for existing items (keeps items, fills correct macros) ---
@@ -2444,9 +2447,9 @@ export async function recomputeMealPlanMacros(userId: string): Promise<{ updated
     meal.fat     = meal.ingredients.reduce((s: number, i: any) => s + (i.fat     || 0), 0);
   }
 
-  state.mealPlan = newPlan;
-  state.lastMealPlanRegenAt = new Date().toISOString();
-  await prisma.user.update({ where: { id: userId }, data: { state } });
+  // Phase 64: per-key writes, not a whole-state clobber.
+  await setStateKey(userId, "mealPlan", newPlan);
+  await setStateKey(userId, "lastMealPlanRegenAt", new Date().toISOString());
 
   return { updated, total: slots.length, skipped };
 }

@@ -6,6 +6,7 @@ import { syncWithingsForAllUsers } from "./withings";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, hoursSinceLastPlanRegen, recomputeMealPlanMacros, generateMonthlyDeepDive } from "./ai-coach";
 import { sessionTypeForDate } from "./programme-shared";
 import { runNightlyCorrelations, runDailyScanner, isFirstSundayOfMonth } from "./proactive";
+import { casUpdateState } from "./state-merge";
 
 function ukToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -453,13 +454,17 @@ export function startCron() {
         if (!onGlp1) continue;
         const injDow = typeof pf.glp1InjectionDow === "number" ? pf.glp1InjectionDow : 3;
         if (todayDow !== injDow) continue;
-        const added = addStateNotification(state, {
-          type: "medication",
-          title: "💉 Injection due today",
-          message: "Inject after meal 2 (around 3pm). Have ginger tea ready, and Omeprazole if reflux is an issue.",
-        });
+        // Phase 64: CAS write of the notifications array (re-checks the dedup key
+        // against live data), so it never clobbers a concurrent notification-read
+        // or an hourly sync writing another key.
+        const added = await casUpdateState(user.id, (s: any) =>
+          addStateNotification(s, {
+            type: "medication",
+            title: "💉 Injection due today",
+            message: "Inject after meal 2 (around 3pm). Have ginger tea ready, and Omeprazole if reflux is an issue.",
+          }) ? s : null,
+        );
         if (added) {
-          await prisma.user.update({ where: { id: user.id }, data: { state } });
           await sendPushToUser(user.id, {
             title: "💉 Injection due today",
             body: "Inject after meal 2 (~3pm). Ginger tea ready?",
@@ -555,13 +560,15 @@ export function startCron() {
         if (gaps.length === 0) continue;
 
         const summary = gaps.length === 1 ? "1 gap" : `${gaps.length} gaps`;
-        const added = addStateNotification(state, {
-          type: "morning-recap",
-          title: `🌅 Yesterday: ${summary} to backfill`,
-          message: gaps.map((g) => `• ${g.label}`).join(" · "),
-          gaps,
-        });
-        if (added) await prisma.user.update({ where: { id: user.id }, data: { state } });
+        // Phase 64: CAS write of the notifications array (see above).
+        await casUpdateState(user.id, (s: any) =>
+          addStateNotification(s, {
+            type: "morning-recap",
+            title: `🌅 Yesterday: ${summary} to backfill`,
+            message: gaps.map((g) => `• ${g.label}`).join(" · "),
+            gaps,
+          }) ? s : null,
+        );
       }
       console.log("Daily yesterday-recap complete");
     } catch (err) {

@@ -1,5 +1,6 @@
 import prisma from "./db";
 import { readToken, writeToken, isEncryptedToken } from "./token-crypto";
+import { setStateKey, casUpdateState } from "./state-merge";
 
 const TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2";
 const MEAS_URL = "https://wbsapi.withings.net/measure";
@@ -64,23 +65,23 @@ async function ensureFreshToken(userId: string): Promise<string> {
   const access = readToken(w.accessToken);
   const refresh = readToken(w.refreshToken);
   if (!access) throw new Error("Withings connection needs refreshing — please reconnect in More settings");
-  // Refresh if expiring within 5 mins
+  // Refresh if expiring within 5 mins. Phase 64: write only the `withings` key
+  // (setStateKey), not the whole state object — a token refresh fires on every
+  // hourly sync and previously clobbered any concurrent write to another key.
   if (Date.now() > (w.expiresAt || 0) - 5 * 60 * 1000) {
     if (!refresh) throw new Error("Withings connection needs refreshing — please reconnect in More settings");
     const fresh = await refreshToken(refresh);
-    state.withings = {
+    await setStateKey(userId, "withings", {
       ...w,
       accessToken: writeToken(fresh.access_token), // encrypted at rest
       refreshToken: writeToken(fresh.refresh_token),
       expiresAt: Date.now() + fresh.expires_in * 1000,
-    };
-    await prisma.user.update({ where: { id: userId }, data: { state } });
+    });
     return fresh.access_token;
   }
-  // Lazy migration: re-encrypt any legacy plaintext tokens
+  // Lazy migration: re-encrypt any legacy plaintext tokens (own key only)
   if (!isEncryptedToken(w.accessToken) || (w.refreshToken && !isEncryptedToken(w.refreshToken))) {
-    state.withings = { ...w, accessToken: writeToken(access), refreshToken: refresh ? writeToken(refresh) : w.refreshToken };
-    await prisma.user.update({ where: { id: userId }, data: { state } });
+    await setStateKey(userId, "withings", { ...w, accessToken: writeToken(access), refreshToken: refresh ? writeToken(refresh) : w.refreshToken });
   }
   return access;
 }
@@ -99,12 +100,6 @@ export async function syncWithingsForUser(userId: string): Promise<{ updated: nu
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   const json: any = await res.json();
   if (json.status !== 0) return { updated: 0, error: JSON.stringify(json) };
-
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  const state: any = user?.state || {};
-  const weightLog = state.weightLog || [];
-  const bfLog = state.bfLog || [];
-  const bodyComp = state.bodyComp || {};
 
   const byDate: Record<string, any> = {};
   for (const grp of json.body.measuregrps || []) {
@@ -132,43 +127,50 @@ export async function syncWithingsForUser(userId: string): Promise<{ updated: nu
     }
   }
 
-  // Migrate legacy entries without source tag to 'withings'
-  for (const e of weightLog) { if (!e.source) e.source = "withings"; }
-  for (const e of bfLog) { if (!e.source) e.source = "withings"; }
-
+  // Phase 64: apply into LIVE state via compare-and-swap. weightLog/bfLog are
+  // arrays that the manual `/api/state/weight` endpoint also writes, so a naive
+  // whole-state write could clobber a manual weigh-in logged during the hourly
+  // sync. CAS re-reads + re-applies on a lost race, and keeps manual-wins intact.
   let updated = 0;
-  for (const [date, meas] of Object.entries(byDate)) {
-    if (meas.weight) {
-      const existing = weightLog.findIndex((e: any) => e.date === date);
-      if (existing >= 0) {
-        if (weightLog[existing].source === "manual") { /* skip — manual wins */ }
-        else { weightLog[existing].weight = meas.weight; weightLog[existing].source = "withings"; updated++; }
-      } else {
-        weightLog.push({ date, weight: meas.weight, source: "withings" });
-        updated++;
+  await casUpdateState(userId, (state: any) => {
+    const weightLog: any[] = Array.isArray(state.weightLog) ? state.weightLog : [];
+    const bfLog: any[] = Array.isArray(state.bfLog) ? state.bfLog : [];
+    const bodyComp: Record<string, any> = (state.bodyComp && typeof state.bodyComp === "object") ? state.bodyComp : {};
+    // Migrate legacy entries without source tag to 'withings'
+    for (const e of weightLog) { if (!e.source) e.source = "withings"; }
+    for (const e of bfLog) { if (!e.source) e.source = "withings"; }
+    updated = 0; // recomputed fresh on each CAS attempt
+    for (const [date, meas] of Object.entries(byDate)) {
+      if (meas.weight) {
+        const existing = weightLog.findIndex((e: any) => e.date === date);
+        if (existing >= 0) {
+          if (weightLog[existing].source === "manual") { /* skip — manual wins */ }
+          else { weightLog[existing].weight = meas.weight; weightLog[existing].source = "withings"; updated++; }
+        } else {
+          weightLog.push({ date, weight: meas.weight, source: "withings" });
+          updated++;
+        }
       }
-    }
-    if (meas.bf) {
-      const existing = bfLog.findIndex((e: any) => e.date === date);
-      if (existing >= 0) {
-        if (bfLog[existing].source === "manual") { /* skip */ }
-        else { bfLog[existing].bf = meas.bf; bfLog[existing].source = "withings"; updated++; }
-      } else {
-        bfLog.push({ date, bf: meas.bf, source: "withings" });
-        updated++;
+      if (meas.bf) {
+        const existing = bfLog.findIndex((e: any) => e.date === date);
+        if (existing >= 0) {
+          if (bfLog[existing].source === "manual") { /* skip */ }
+          else { bfLog[existing].bf = meas.bf; bfLog[existing].source = "withings"; updated++; }
+        } else {
+          bfLog.push({ date, bf: meas.bf, source: "withings" });
+          updated++;
+        }
       }
+      bodyComp[date] = meas;
     }
-    bodyComp[date] = meas;
-  }
-
-  weightLog.sort((a: any, b: any) => a.date.localeCompare(b.date));
-  bfLog.sort((a: any, b: any) => a.date.localeCompare(b.date));
-
-  state.weightLog = weightLog;
-  state.bfLog = bfLog;
-  state.bodyComp = bodyComp;
-  state.withings = { ...state.withings, lastSync: new Date().toISOString() };
-  await prisma.user.update({ where: { id: userId }, data: { state } });
+    weightLog.sort((a: any, b: any) => a.date.localeCompare(b.date));
+    bfLog.sort((a: any, b: any) => a.date.localeCompare(b.date));
+    state.weightLog = weightLog;
+    state.bfLog = bfLog;
+    state.bodyComp = bodyComp;
+    state.withings = { ...state.withings, lastSync: new Date().toISOString() };
+    return state;
+  });
   return { updated };
 }
 

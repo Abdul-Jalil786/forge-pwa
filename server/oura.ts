@@ -1,5 +1,6 @@
 import prisma from "./db";
 import { readToken, isEncryptedToken, writeToken } from "./token-crypto";
+import { mergeStateMap, setStateKey } from "./state-merge";
 
 const BASE = "https://api.ouraring.com/v2/usercollection";
 
@@ -35,8 +36,8 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
   if (!storedToken) return { updated: 0, error: "No Oura token configured" };
   const token = readToken(storedToken);
   if (!token) return { updated: 0, error: "Oura connection needs refreshing — please reconnect in More settings" };
-  // Lazy migration: re-encrypt any legacy plaintext PAT (persisted by the success-path update below)
-  if (!isEncryptedToken(storedToken)) state.ouraToken = writeToken(token);
+  // Lazy migration of a legacy plaintext PAT is persisted via its own key at the
+  // end of a successful sync (not by rewriting the whole state object).
 
   const today = new Date();
   const start = new Date(); start.setDate(start.getDate() - 7);
@@ -55,12 +56,21 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       ouraGet(token, "vO2_max", params).catch(() => ({ data: [] })),
     ]);
 
-    const sleepLog = state.sleepLog || {};
-    const stepsLog = state.stepsLog || {};
-    const recovery = state.recovery || {};
-    const calorieLog = state.calorieLog || {};
-    const ouraWorkouts = state.ouraWorkouts || {};
-    const vo2maxLog = state.vo2maxLog || {};
+    const existingSleep = state.sleepLog || {};
+    const existingWorkouts = state.ouraWorkouts || {};
+
+    // Phase 64: race-safe writes. Build PARTIAL maps containing only the entries
+    // this sync writes, then merge each per-key into the LIVE column (jsonb ||).
+    // The old code copied state.<key>, mutated it, and rewrote the whole state
+    // object — which clobbered any concurrent write to a sibling key/date (e.g. a
+    // meal the user logged during the hourly sync).
+    const sleepPartial: Record<string, any> = {};
+    const stepsPartial: Record<string, number> = {};
+    const recoveryPartial: Record<string, any> = {};
+    const caloriePartial: Record<string, any> = {};
+    const workoutsPartial: Record<string, any[]> = {};
+    const workoutDaysTouched = new Set<string>();
+    const vo2Partial: Record<string, any> = {};
 
     // Sleep score -> quality 1-4
     const scoreByDay: Record<string, number> = {};
@@ -105,7 +115,7 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     // For each day: if we have valid sleep duration, store it. Otherwise delete any stale entry.
     // Skip days where user logged manually — manual wins.
     for (const day of allDays) {
-      if (sleepLog[day]?.source === "manual") continue;
+      if (existingSleep[day]?.source === "manual") continue; // manual entries win — never overwritten
       if (durationByDay[day]) {
         const hours = Math.round((durationByDay[day] / 3600) * 10) / 10;
         const s = stagesByDay[day];
@@ -115,7 +125,7 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
           lightMin: Math.round(s.light / 60),
           awakeMin: Math.round(s.awake / 60),
         } : undefined;
-        sleepLog[day] = { hours, quality: scoreByDay[day] ? mapSleepQuality(scoreByDay[day]) : 3, source: "oura", ...(stages || {}), ...(bedtimeByDay[day] != null ? { bedtime: Math.round(bedtimeByDay[day] * 100) / 100 } : {}) };
+        sleepPartial[day] = { hours, quality: scoreByDay[day] ? mapSleepQuality(scoreByDay[day]) : 3, source: "oura", ...(stages || {}), ...(bedtimeByDay[day] != null ? { bedtime: Math.round(bedtimeByDay[day] * 100) / 100 } : {}) };
         updated++;
       }
       // No-data branch removed — never delete existing entries on a sync that doesn't return that day.
@@ -128,12 +138,12 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       if (typeof e.steps === "number") {
         // Phase 41: manual step entries override Oura sync
         if (!manualSteps[e.day]) {
-          stepsLog[e.day] = e.steps;
+          stepsPartial[e.day] = e.steps;
           updated++;
         }
       }
       if (typeof e.total_calories === "number" || typeof e.active_calories === "number") {
-        calorieLog[e.day] = {
+        caloriePartial[e.day] = {
           total: e.total_calories ?? null,
           active: e.active_calories ?? null,
           target: e.target_calories ?? null,
@@ -145,21 +155,21 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     // Readiness + HRV
     for (const e of readiness.data || []) {
       const day = e.day;
-      recovery[day] = {
+      recoveryPartial[day] = {
         readiness: e.score ?? null,
         hrv: e.contributors?.hrv_balance ?? null,
         restingHR: e.contributors?.resting_heart_rate ?? null,
       };
     }
 
-    // Workouts (auto-detected + manually tagged)
+    // Workouts (auto-detected + manually tagged). A shallow jsonb merge replaces a
+    // whole day's array, so build each touched day's FULL array (existing snapshot
+    // + new deduped) and only write days that actually gained a workout.
     for (const w of workouts.data || []) {
       const day = w.day;
-      if (!ouraWorkouts[day]) ouraWorkouts[day] = [];
-      // Avoid duplicates by id
-      const existing = ouraWorkouts[day].find((x: any) => x.id === w.id);
-      if (existing) continue;
-      ouraWorkouts[day].push({
+      if (!workoutsPartial[day]) workoutsPartial[day] = Array.isArray(existingWorkouts[day]) ? [...existingWorkouts[day]] : [];
+      if (workoutsPartial[day].some((x: any) => x.id === w.id)) continue; // dedupe by id
+      workoutsPartial[day].push({
         id: w.id,
         activity: w.activity,
         intensity: w.intensity,
@@ -168,31 +178,33 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
         end: w.end_datetime,
         calories: w.calories,
       });
+      workoutDaysTouched.add(day);
       updated++;
     }
+    // Only merge days that actually gained a workout (skip pure-duplicate days).
+    const workoutsToWrite: Record<string, any[]> = {};
+    for (const day of workoutDaysTouched) workoutsToWrite[day] = workoutsPartial[day];
 
     // Phase 41h: VO2 max — keep the most recent reading per day
     for (const e of (vo2Resp.data || [])) {
       if (!e?.day || typeof e?.vo2_max !== "number") continue;
-      vo2maxLog[e.day] = { vo2: Math.round(e.vo2_max * 10) / 10, timestamp: e.timestamp || null };
+      vo2Partial[e.day] = { vo2: Math.round(e.vo2_max * 10) / 10, timestamp: e.timestamp || null };
       updated++;
     }
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        state: {
-          ...state,
-          sleepLog,
-          stepsLog,
-          recovery,
-          calorieLog,
-          ouraWorkouts,
-          vo2maxLog,
-          ouraLastSync: new Date().toISOString(),
-        },
-      },
-    });
+    // Phase 64: write each key on its own (atomic merge of only the changed
+    // days), never the whole state object. Concurrent writes to other keys/dates
+    // survive. No cross-key invariant here, so no transaction needed — a crash
+    // mid-write self-heals on the next hourly sync.
+    await mergeStateMap(userId, "sleepLog", sleepPartial);
+    await mergeStateMap(userId, "stepsLog", stepsPartial);
+    await mergeStateMap(userId, "recovery", recoveryPartial);
+    await mergeStateMap(userId, "calorieLog", caloriePartial);
+    await mergeStateMap(userId, "ouraWorkouts", workoutsToWrite);
+    await mergeStateMap(userId, "vo2maxLog", vo2Partial);
+    await setStateKey(userId, "ouraLastSync", new Date().toISOString());
+    // Lazy migration: re-encrypt a legacy plaintext PAT via its own key.
+    if (!isEncryptedToken(storedToken)) await setStateKey(userId, "ouraToken", writeToken(token));
     return { updated };
   } catch (err: any) {
     console.error(`Oura sync failed for user ${userId}:`, err);
