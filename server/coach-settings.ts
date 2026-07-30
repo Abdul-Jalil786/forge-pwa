@@ -4,7 +4,7 @@ import prisma from "./db";
 import { requireAuth, requireOwnerCheck } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection, buildContext } from "./ai-coach";
-import { answerQuestion, estimateFood, extractHealthRecord } from "./ask";
+import { answerQuestion, estimateFood, extractHealthRecord, chatAnswer, ChatTurn } from "./ask";
 import { chargeAiBudget, AI_DAILY_LIMIT } from "./ai-budget";
 
 const router = Router();
@@ -233,6 +233,31 @@ router.post("/ask", requireAuth, requireOwnerCheck, aiBudget(), async (req: Requ
   } catch (err: any) {
     console.error("Ask Forge error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to answer" });
+  }
+});
+
+// Phase 65: Conversational coach — owner-only, advisory, multi-turn chat over the
+// same assembled context as Ask Forge. Client sends the full thread each turn;
+// server prepends the context as the system prompt. aiBudget applies (Haiku).
+router.post("/chat", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+  try {
+    const raw = Array.isArray(req.body?.messages) ? req.body.messages : null;
+    if (!raw || raw.length === 0) { res.status(400).json({ error: "messages required" }); return; }
+    if (raw.length > 24) { res.status(400).json({ error: "Conversation too long — start a new chat" }); return; }
+    const messages: ChatTurn[] = [];
+    for (const m of raw) {
+      const role = m?.role === "assistant" ? "assistant" : "user";
+      const content = typeof m?.content === "string" ? m.content.trim() : "";
+      if (!content) { res.status(400).json({ error: "Every message needs content" }); return; }
+      if (content.length > 500) { res.status(400).json({ error: "Keep each message under 500 characters" }); return; }
+      messages.push({ role, content });
+    }
+    if (messages[messages.length - 1].role !== "user") { res.status(400).json({ error: "Last message must be from the user" }); return; }
+    const reply = await chatAnswer(req.userId as string, messages);
+    res.json({ success: true, reply });
+  } catch (err: any) {
+    console.error("Coach chat error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to reply" });
   }
 });
 

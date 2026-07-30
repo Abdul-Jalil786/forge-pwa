@@ -814,6 +814,34 @@ router.put("/exercise-notes", requireAuth, async (req: Request, res: Response) =
   }
 });
 
+// Phase 65: conversational coach thread — whole-array atomic write (jsonb_set).
+// Its own key, so it's race-safe against every other write. Capped to keep the
+// state blob bounded; the client trims to the last N turns before persisting.
+router.put("/coach-chat", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const v = req.body?.value;
+    if (!Array.isArray(v)) { res.status(400).json({ error: "array required" }); return; }
+    if (v.length > 40) { res.status(400).json({ error: "too many messages" }); return; }
+    const clean = v.map((m: any) => ({
+      role: m?.role === "assistant" ? "assistant" : "user",
+      content: String(m?.content ?? "").slice(0, 4000),
+      at: typeof m?.at === "string" ? m.at.slice(0, 40) : undefined,
+    }));
+    const json = JSON.stringify(clean);
+    if (json.length > 80000) { res.status(413).json({ error: "too large" }); return; }
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(COALESCE(state, '{}')::jsonb, '{coachChat}', ${json}::jsonb, true),
+          "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put coach-chat error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 41o: DEXA body-composition scans (full-array PUT pattern, like bp-log)
 router.put("/dexa-scans", requireAuth, async (req: Request, res: Response) => {
   try {

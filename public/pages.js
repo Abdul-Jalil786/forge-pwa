@@ -2557,17 +2557,18 @@ function renderCoach(){
     ${renderCoachTransformationCard()}
 
     ${(typeof isOwner==='function'&&isOwner())?`
-    <div class="sec-label">Ask Forge</div>
+    <div class="sec-label">Chat with Forge</div>
     <div class="card" style="margin-bottom:10px;">
-      <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px;">Ask anything about your own data — answers come only from what Forge has logged.</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px;">Talk to your coach about your own data — training, food, sleep, recovery. It answers only from what Forge has logged, and remembers the conversation. Advice only; changes still come through your weekly report.</div>
+      <div id="coach-chat-thread" style="max-height:360px;overflow-y:auto;margin-bottom:10px;">${typeof _coachChatThreadHTML==='function'?_coachChatThreadHTML():''}</div>
       <div style="display:flex;gap:8px;margin-bottom:10px;">
-        <input id="ask-input" type="text" maxlength="500" placeholder="e.g. Is my lean mass holding?" style="flex:1;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;" onkeydown="if(event.key==='Enter')askForge()">
-        <button class="btn btn-lime btn-sm" style="padding:10px 16px;" onclick="askForge()">Ask</button>
+        <input id="chat-input" type="text" maxlength="500" placeholder="e.g. How's my lean mass trending?" style="flex:1;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;" onkeydown="if(event.key==='Enter')sendCoachChat()">
+        <button class="btn btn-lime btn-sm" style="padding:10px 16px;" onclick="sendCoachChat()">Send</button>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
-        ${["How much of my loss was fat vs muscle?","Is my waist moving even when the scale isn't?","Am I getting stronger for my size?"].map(q=>`<button onclick="askForge('${q.replace(/'/g,"\\'")}')" style="font-size:10px;padding:6px 10px;background:transparent;border:1px solid var(--border);border-radius:12px;color:var(--text2);cursor:pointer;">${q}</button>`).join('')}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        ${["How much of my loss was fat vs muscle?","Is my waist moving even when the scale isn't?","Am I getting stronger for my size?"].map(q=>`<button onclick="sendCoachChat('${q.replace(/'/g,"\\'")}')" style="font-size:10px;padding:6px 10px;background:transparent;border:1px solid var(--border);border-radius:12px;color:var(--text2);cursor:pointer;">${q}</button>`).join('')}
+        ${((STATE.coachChat||[]).length)?`<span onclick="clearCoachChat()" style="margin-left:auto;font-size:10px;color:var(--text3);text-decoration:underline;cursor:pointer;">Clear chat</span>`:''}
       </div>
-      <div id="ask-answers"></div>
     </div>`:''}
 
     <div class="sec-label">Weekly Report Card</div>

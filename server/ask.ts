@@ -401,3 +401,52 @@ export async function answerQuestion(userId: string, question: string): Promise<
     action: String(a.action || "").slice(0, 300),
   };
 }
+
+// Phase 65: conversational coach — a threaded, advisory chat over the SAME
+// assembled context as the weekly report + Ask Forge. Multi-turn (memory),
+// plain-text reply, Haiku. No structured Apply actions in v1 (those stay in the
+// weekly report). The big, identical-per-turn context goes in `system`.
+export type ChatTurn = { role: "user" | "assistant"; content: string };
+
+const CHAT_SYSTEM = `You are Forge, {name}'s personal fitness & nutrition coach, talking with them directly in a chat.
+
+Below you have their real training, nutrition, sleep, recovery, body-composition and (if present) blood-marker data. Use it.
+
+How to talk:
+- Like a knowledgeable coach texting a client: warm, direct, concise. Usually 2-5 sentences; go longer only when they ask for detail.
+- Ground every answer in THEIR actual numbers — cite the real figures and dates from the data. Never invent data you don't have; if the answer isn't in the context, say so plainly.
+- It's a conversation: use the earlier messages, answer follow-ups naturally.
+- Put jargon in plain English, e.g. "HRV (overnight recovery signal)".
+
+Boundaries:
+- You give ADVICE only — you can't change their plan, targets or reminders from chat. If they want a change actually applied, tell them it'll come through in their weekly report's Apply buttons (or they can set it in the app).
+- Never give a definitive medical diagnosis; frame any health flag as "consistent with X — worth raising with your GP".`;
+
+export async function chatAnswer(userId: string, messages: ChatTurn[]): Promise<string> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  if (!state.coachingKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(state.coachingKey); }
+  catch { throw new Error("Failed to decrypt stored API key"); }
+
+  const name = (state.profile && state.profile.name) || "the user";
+  const context = buildContext(state);
+  const history = buildFullHistory(state);
+  const system = `${CHAT_SYSTEM.replace("{name}", name)}\n\n===== THEIR DATA =====\n${context}\n${history}`;
+
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: HAIKU_MODEL,
+    max_tokens: 800,
+    system,
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+  });
+  const text = response.content
+    .filter((b: any) => b.type === "text")
+    .map((b: any) => b.text)
+    .join("\n")
+    .trim();
+  return text || "Sorry — I couldn't put a reply together just now. Try asking again?";
+}
