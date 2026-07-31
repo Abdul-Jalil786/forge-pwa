@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 import prisma from "./db";
 import { requireAuth } from "./auth";
+import { casUpdateState } from "./state-merge";
+import { stripServerOnlyFields } from "./state";
 
 const router = Router();
 
@@ -218,40 +220,50 @@ function applyReminders(state: any, payload: any) {
 
 router.post("/:rid/apply/:sid", requireAuth, async (req: Request, res: Response) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.userId } });
-    if (!user) { res.status(404).json({ error: "User not found" }); return; }
-    const state: any = user.state || {};
-    const reports = state.coachingReports || [];
-    const report = reports.find((r: any) => r.id === req.params.rid);
-    if (!report) { res.status(404).json({ error: "Report not found" }); return; }
-    const sug = (report.suggestions || []).find((s: any) => s.id === req.params.sid);
-    if (!sug) { res.status(404).json({ error: "Suggestion not found" }); return; }
-    if (sug.applied || sug.dismissed) { res.status(409).json({ error: "Already actioned" }); return; }
-
-    try {
-      switch (sug.type) {
-        case "macros": applyMacros(state, sug.payload || {}); break;
-        case "reminders": applyReminders(state, sug.payload || {}); break;
-        case "skincare": applySkincare(state, sug.payload || {}); break;
-        case "skincare-phase": applySkincarePhase(state, sug.payload || {}); break;
-        case "training-swap": applyTrainingSwap(state, sug.payload || {}); break;
-        case "injury-flag": applyInjuryFlag(state, sug.payload || {}); break;
-        case "fasting-note": applyFastingNote(state, sug.payload || {}); break;
-        case "supplement-reminder": applySupplementReminder(state, sug.payload || {}); break;
-        case "nutrition-adjust": applyNutritionAdjust(state, sug.payload || {}); break;
-        case "note": break;
-        default: res.status(400).json({ error: "Unknown suggestion type" }); return;
+    // Phase 64: apply touches a runtime-variable set of keys (profile, reminders,
+    // mealPlan, injuries, notifications, …) plus the suggestion's applied flag, so
+    // it's the genuine multi-key case → compare-and-swap. Validation + mutation run
+    // inside the swap (re-checked on a lost race, which also gives idempotency);
+    // `err` carries any 4xx outcome back out.
+    // A container (not a bare `let`) so the closure's assignment survives TS
+    // control-flow narrowing after the casUpdateState call.
+    const ctl: { err: { status: number; body: any } | null; applied: any } = { err: null, applied: null };
+    const wrote = await casUpdateState(req.userId as string, (state: any) => {
+      ctl.err = null; ctl.applied = null; // reset per CAS attempt
+      const reports = state.coachingReports || [];
+      const report = reports.find((r: any) => r.id === req.params.rid);
+      if (!report) { ctl.err = { status: 404, body: { error: "Report not found" } }; return null; }
+      const sug = (report.suggestions || []).find((s: any) => s.id === req.params.sid);
+      if (!sug) { ctl.err = { status: 404, body: { error: "Suggestion not found" } }; return null; }
+      if (sug.applied || sug.dismissed) { ctl.err = { status: 409, body: { error: "Already actioned" } }; return null; }
+      try {
+        switch (sug.type) {
+          case "macros": applyMacros(state, sug.payload || {}); break;
+          case "reminders": applyReminders(state, sug.payload || {}); break;
+          case "skincare": applySkincare(state, sug.payload || {}); break;
+          case "skincare-phase": applySkincarePhase(state, sug.payload || {}); break;
+          case "training-swap": applyTrainingSwap(state, sug.payload || {}); break;
+          case "injury-flag": applyInjuryFlag(state, sug.payload || {}); break;
+          case "fasting-note": applyFastingNote(state, sug.payload || {}); break;
+          case "supplement-reminder": applySupplementReminder(state, sug.payload || {}); break;
+          case "nutrition-adjust": applyNutritionAdjust(state, sug.payload || {}); break;
+          case "note": break;
+          default: ctl.err = { status: 400, body: { error: "Unknown suggestion type" } }; return null;
+        }
+      } catch (e: any) {
+        ctl.err = { status: 400, body: { error: "Invalid suggestion payload: " + (e?.message || "error") } };
+        return null;
       }
-    } catch (e: any) {
-      res.status(400).json({ error: "Invalid suggestion payload: " + (e?.message || "error") });
-      return;
-    }
-
-    sug.applied = true;
-    sug.appliedAt = new Date().toISOString();
-    state.coachingReports = reports;
-    await prisma.user.update({ where: { id: req.userId }, data: { state } });
-    res.json({ success: true, state });
+      sug.applied = true;
+      sug.appliedAt = new Date().toISOString();
+      state.coachingReports = reports;
+      ctl.applied = state;
+      return state;
+    });
+    if (ctl.err) { res.status(ctl.err.status).json(ctl.err.body); return; }
+    if (!wrote) { res.status(404).json({ error: "User not found" }); return; }
+    // Strip server-only secrets before echoing the applied state to the client.
+    res.json({ success: true, state: stripServerOnlyFields(ctl.applied) });
   } catch (err) {
     console.error("Apply suggestion error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -260,18 +272,21 @@ router.post("/:rid/apply/:sid", requireAuth, async (req: Request, res: Response)
 
 router.post("/:rid/dismiss/:sid", requireAuth, async (req: Request, res: Response) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.userId } });
-    if (!user) { res.status(404).json({ error: "User not found" }); return; }
-    const state: any = user.state || {};
-    const reports = state.coachingReports || [];
-    const report = reports.find((r: any) => r.id === req.params.rid);
-    if (!report) { res.status(404).json({ error: "Report not found" }); return; }
-    const sug = (report.suggestions || []).find((s: any) => s.id === req.params.sid);
-    if (!sug) { res.status(404).json({ error: "Suggestion not found" }); return; }
-    sug.dismissed = true;
-    sug.dismissedAt = new Date().toISOString();
-    state.coachingReports = reports;
-    await prisma.user.update({ where: { id: req.userId }, data: { state } });
+    const ctl: { err: { status: number; body: any } | null } = { err: null };
+    await casUpdateState(req.userId as string, (state: any) => {
+      ctl.err = null;
+      const reports = state.coachingReports || [];
+      const report = reports.find((r: any) => r.id === req.params.rid);
+      if (!report) { ctl.err = { status: 404, body: { error: "Report not found" } }; return null; }
+      const sug = (report.suggestions || []).find((s: any) => s.id === req.params.sid);
+      if (!sug) { ctl.err = { status: 404, body: { error: "Suggestion not found" } }; return null; }
+      if (sug.dismissed) return null; // already dismissed — idempotent, no write
+      sug.dismissed = true;
+      sug.dismissedAt = new Date().toISOString();
+      state.coachingReports = reports;
+      return state;
+    });
+    if (ctl.err) { res.status(ctl.err.status).json(ctl.err.body); return; }
     res.json({ success: true });
   } catch (err) {
     console.error("Dismiss suggestion error:", err);

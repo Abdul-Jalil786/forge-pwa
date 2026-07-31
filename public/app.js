@@ -2504,6 +2504,65 @@ function _renderAskHistory(){
   }).join('');
 }
 
+// ---- Phase 65: conversational coach chat (owner only, persisted in STATE.coachChat) ----
+let _chatBusy=false;
+
+function _coachChatThreadHTML(){
+  const thread=(STATE.coachChat||[]);
+  if(!thread.length)return `<div style="padding:18px 6px;font-size:12px;color:var(--text3);text-align:center;line-height:1.7;">👋 Ask me anything about your training, food, sleep or recovery.<br>I only use your own logged data.</div>`;
+  return thread.map(m=>{
+    const mine=m.role==='user';
+    const body=mine?_esc(m.content):(typeof formatCoachingReport==='function'?formatCoachingReport(m.content):_esc(m.content));
+    return `<div style="display:flex;justify-content:${mine?'flex-end':'flex-start'};margin:8px 0;">
+      <div style="max-width:86%;padding:9px 12px;border-radius:12px;font-size:13px;line-height:1.55;${mine?'background:rgba(200,255,0,.14);border:1px solid rgba(200,255,0,.3);color:var(--text);border-bottom-right-radius:3px;':'background:var(--bg2);border:1px solid var(--border);color:var(--text2);border-bottom-left-radius:3px;'}">${body}</div>
+    </div>`;
+  }).join('');
+}
+function _renderChatThread(thinking){
+  const box=document.getElementById('coach-chat-thread');
+  if(!box)return;
+  box.innerHTML=_coachChatThreadHTML()+(thinking?`<div style="display:flex;justify-content:flex-start;margin:8px 0;"><div style="padding:9px 12px;border-radius:12px;font-size:13px;background:var(--bg2);border:1px solid var(--border);color:var(--text3);">⏳ Thinking…</div></div>`:'');
+  box.scrollTop=box.scrollHeight;
+}
+async function sendCoachChat(preset){
+  if(_chatBusy)return;
+  const inp=document.getElementById('chat-input');
+  const text=(preset||(inp?inp.value:'')||'').trim();
+  if(!text){showToast('Type a message first');return;}
+  _chatBusy=true;
+  if(!Array.isArray(STATE.coachChat))STATE.coachChat=[];
+  STATE.coachChat.push({role:'user',content:text.slice(0,500),at:new Date().toISOString()});
+  if(inp)inp.value='';
+  _renderChatThread(true);
+  try{
+    const jwt=localStorage.getItem('forge_token');
+    // Send the recent thread (cap matches server); ensure it starts on a user turn.
+    let msgs=STATE.coachChat.slice(-12).map(m=>({role:m.role,content:m.content}));
+    if(msgs.length&&msgs[0].role==='assistant')msgs=msgs.slice(1);
+    const res=await fetch('/api/coach/chat',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},body:JSON.stringify({messages:msgs})});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||('Error '+res.status));
+    STATE.coachChat.push({role:'assistant',content:String(data.reply||'').slice(0,4000),at:new Date().toISOString()});
+    if(STATE.coachChat.length>40)STATE.coachChat=STATE.coachChat.slice(-40);
+    _renderChatThread(false);
+    saveFieldToServer('/api/state/coach-chat',{value:STATE.coachChat});
+  }catch(e){
+    STATE.coachChat.pop(); // revert the optimistic user turn — keep the thread clean + alternating
+    _renderChatThread(false);
+    if(inp&&!preset)inp.value=text;
+    showToast((e&&e.message)?String(e.message).slice(0,90):'Chat failed — try again');
+  }finally{
+    _chatBusy=false;
+  }
+}
+function clearCoachChat(){
+  if(!(STATE.coachChat||[]).length)return;
+  if(!confirm('Clear this conversation?'))return;
+  STATE.coachChat=[];
+  saveFieldToServer('/api/state/coach-chat',{value:[]});
+  if(typeof renderCoach==='function')renderCoach();
+}
+
 // Phase 45: "What my coach sees" — raw weekly-report context, no AI call
 async function openContextPreview(){
   let el=document.getElementById('ctx-preview');
