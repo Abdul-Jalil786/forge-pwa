@@ -1427,6 +1427,20 @@ async function saveFoodPrefs(){
   }
 }
 
+// Phase 67: "About me" free-text the coach always reads.
+async function saveAboutMe(){
+  const text = (document.getElementById('am-text')?.value || '').slice(0, 2000);
+  if(!STATE.profile) STATE.profile = {};
+  STATE.profile.aboutMe = { text, updatedAt: new Date().toISOString() };
+  updateLocalCache();
+  try{
+    await saveFieldToServer('/api/state/profile/about-me', { text });
+    showToast('Saved ✓ — your coach will read this');
+  }catch(e){
+    showToast(e.message || 'Failed to save');
+  }
+}
+
 // ---- AI COACH (BYOK) ----
 function _esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
@@ -1718,6 +1732,8 @@ async function savePhaseEdit(){
   STATE.profile=STATE.profile||{};
   STATE.profile.activePhase=ap;
   STATE.profile.phase=phase.toLowerCase();
+  // Phase 67: keep personal.phase in sync — the AI coach reads it from there.
+  STATE.profile.personal=Object.assign({},STATE.profile.personal,{phase:phase.toLowerCase()});
   STATE.profile.targetWeight=goalWeight;
   if(ap.targetBFHigh!=null)STATE.profile.targetBF=ap.targetBFHigh;
   if(typeof updateLocalCache==='function')updateLocalCache();
