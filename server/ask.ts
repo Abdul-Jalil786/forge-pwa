@@ -440,7 +440,13 @@ export async function chatAnswer(userId: string, messages: ChatTurn[]): Promise<
   const response = await client.messages.create({
     model: HAIKU_MODEL,
     max_tokens: 800,
-    system,
+    // Prompt caching (Phase 65a): the system prefix (CHAT_SYSTEM + full context +
+    // history) is byte-identical across turns of a thread, so cache it. Follow-up
+    // turns within the 5-min ephemeral TTL read it at ~0.1x instead of reprocessing
+    // the whole context. Haiku's min cacheable prefix is 4096 tokens; below that
+    // this is a silent no-op (no error), above it's a real hit — the owner's rich
+    // context clears it comfortably. Message history stays after the breakpoint.
+    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
   });
   const text = response.content
