@@ -130,9 +130,16 @@ test("More page renders the Coach Settings section + key controls", () => {
     "Coach Settings", "Health Conditions", "Coach Targets",
     "ct-protfloor", "ct-permeal", "ct-deficit", "ct-water-rest", "ct-steps",
     "cs-dob", "hc-free", "cs-injday", "cs-ew-start", "cs-ew-end",
+    // Phase 67: "About me" free-text for the coach
+    "Tell Your Coach About You", "am-text", "saveAboutMe()",
   ]) {
     assert.ok(html.includes(needle), `Coach Settings missing control/label: ${needle}`);
   }
+});
+
+test("saveAboutMe handler is defined", () => {
+  const { ctx } = bootApp();
+  assert.equal(typeof ctx.saveAboutMe, "function", "saveAboutMe not defined");
 });
 
 test("Coach Settings save/remove handlers are all defined", () => {

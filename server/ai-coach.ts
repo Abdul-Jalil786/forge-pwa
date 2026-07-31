@@ -914,10 +914,22 @@ export function buildContext(state: any): string {
   const lines: string[] = [];
   lines.push(`Today (UK): ${today}`);
   lines.push("");
+  // Phase 67: free-text personalization the user wrote about themselves. Placed
+  // first so the model treats it as governing context for the whole review.
+  const aboutMe = (profile.aboutMe && typeof profile.aboutMe.text === "string") ? profile.aboutMe.text.trim() : "";
+  if (aboutMe) {
+    lines.push("ABOUT THIS PERSON (in their own words — weight this heavily):");
+    lines.push(`  ${aboutMe.replace(/\n+/g, "\n  ")}`);
+    lines.push("");
+  }
   lines.push("DEMOGRAPHICS + GOAL FRAMING:");
   lines.push(`  Age: ${effectiveAge ?? "(not set)"} · Height: ${personal.heightCm ?? "?"}cm · Sex (for BMR): ${personal.sex ?? "(not set)"} · Ethnicity: ${personal.ethnicity ?? "(not set)"}`);
   lines.push(`  Activity outside gym: ${personal.activityLevel ?? "(not set)"}`);
-  lines.push(`  CURRENT PHASE: ${personal.phase ?? "(not specified — default behaviour: assume fat-loss cut)"}`);
+  // Phase 67: read phase with a fallback chain — the prominent goal/phase banner
+  // writes profile.phase / profile.activePhase.phase, not personal.phase, so a
+  // banner-set goal previously showed as "(not specified)".
+  const effectivePhase = (personal.phase ?? profile.phase ?? (profile.activePhase && profile.activePhase.phase)) || null;
+  lines.push(`  CURRENT PHASE: ${effectivePhase ? String(effectivePhase).toLowerCase() : "(not specified — default behaviour: assume fat-loss cut)"}`);
   if (personal.targetLBMStretch) lines.push(`  STRETCH LBM GOAL: ${personal.targetLBMStretch}kg lean body mass (vs default target ${profile.targetLBM ?? "?"}kg). User wants to build muscle, not just lose fat — frame coaching toward the LBM ceiling.`);
   if (tdee) lines.push(`  Estimated BMR: ${tdee.bmr} kcal · TDEE (Mifflin-St Jeor × activity factor, excludes training): ${tdee.tdee} kcal/day`);
   else lines.push(`  TDEE estimate unavailable (demographics incomplete — coach should flag this if accuracy matters)`);
@@ -996,6 +1008,15 @@ export function buildContext(state: any): string {
   lines.push(`  Plan start: ${profile.startDate || profile.planStartDate || "?"}`);
   lines.push(`  Daily targets: gym=${profile.calsGym ?? "?"}kcal, rest=${profile.calsRest ?? "?"}kcal`);
   lines.push(`  Macros: P=${macros.protein ?? "?"}g, C=${macros.carbs ?? "?"}g, F=${macros.fat ?? "?"}g`);
+  // Phase 67: surface the goal numbers set via the goal/phase banner
+  // (profile.activePhase) — these were previously never read by the coach.
+  const ap = profile.activePhase;
+  if (ap && typeof ap === "object") {
+    const bfRange = (ap.targetBFLow != null || ap.targetBFHigh != null)
+      ? `${ap.targetBFLow ?? "?"}–${ap.targetBFHigh ?? "?"}% BF`
+      : "?";
+    lines.push(`  ACTIVE PHASE PLAN (user-set goal): ${ap.phase ?? "?"} · goal weight ${ap.goalWeight ?? "?"}kg · target ${bfRange} · calories ${ap.calorieTarget ?? "?"}kcal (floor ${ap.calorieFloor ?? "?"}) · protein floor ${ap.proteinFloor ?? "?"}g · from ${ap.startWeight ?? "?"}kg since ${ap.startDate ?? "?"}`);
+  }
   // Phase 57: render the eating window from profile.eatingWindow (object or string).
   const ew = profile.eatingWindow;
   if (ew) {

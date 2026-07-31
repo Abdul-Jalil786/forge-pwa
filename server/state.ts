@@ -508,20 +508,28 @@ router.put("/profile/active-phase", requireAuth, async (req: Request, res: Respo
     const gw = JSON.stringify(goalWeight);
     const tbf = JSON.stringify(targetBFHigh != null ? targetBFHigh : null);
 
+    // Phase 67: also mirror phase into profile.personal.phase — the field the AI
+    // coach reads. Ensure {profile} and {profile,personal} exist before the leaf sets.
     await prisma.$executeRaw`
       UPDATE "User"
       SET state = jsonb_set(
         jsonb_set(
           jsonb_set(
             jsonb_set(
-              jsonb_set(COALESCE(state,'{}')::jsonb, '{profile}', COALESCE(state->'profile','{}'), true),
-              '{profile,activePhase}', ${apJson}::jsonb, true
+              jsonb_set(
+                jsonb_set(
+                  jsonb_set(COALESCE(state,'{}')::jsonb, '{profile}', COALESCE(state->'profile','{}'), true),
+                  '{profile,personal}', COALESCE(state->'profile'->'personal','{}'), true
+                ),
+                '{profile,activePhase}', ${apJson}::jsonb, true
+              ),
+              '{profile,phase}', ${phaseLower}::jsonb, true
             ),
-            '{profile,phase}', ${phaseLower}::jsonb, true
+            '{profile,targetWeight}', ${gw}::jsonb, true
           ),
-          '{profile,targetWeight}', ${gw}::jsonb, true
+          '{profile,targetBF}', ${tbf}::jsonb, true
         ),
-        '{profile,targetBF}', ${tbf}::jsonb, true
+        '{profile,personal,phase}', ${phaseLower}::jsonb, true
       ),
       "updatedAt" = NOW()
       WHERE id = ${req.userId}
@@ -651,6 +659,31 @@ router.put("/profile/food-prefs", requireAuth, async (req: Request, res: Respons
     res.json({ success: true });
   } catch (err) {
     console.error("Put food-prefs error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Phase 67: "About me" — free-text the user writes for the AI coach to always read.
+router.put("/profile/about-me", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { text } = req.body || {};
+    if (text != null && typeof text !== "string") { res.status(400).json({ error: "text must be a string" }); return; }
+    const clean = typeof text === "string" ? text.slice(0, 2000) : "";
+    const valueJson = JSON.stringify({ text: clean, updatedAt: new Date().toISOString() });
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+        '{profile,aboutMe}',
+        ${valueJson}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put about-me error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

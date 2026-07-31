@@ -3173,6 +3173,18 @@ function renderMore(){
 
     ${renderStretchHistory()}
 
+    <div class="sec-label">Tell Your Coach About You</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        Anything you want the AI Coach to always keep in mind — your goals in your own words, how you like to be coached, life circumstances, injuries or conditions, what "doing well" means to you. This is read on every chat and weekly review.
+      </div>
+      <textarea id="am-text" maxlength="2000" rows="5" oninput="var c=document.getElementById('am-count');if(c)c.textContent=this.value.length+' / 2000';" placeholder="e.g. I'm a 52yo South Asian male in a fat-loss cut, sleep 3–4am so my Oura recovery reads low — judge me on training feel not just readiness. Keep advice direct and numbers-first. Diabetic (HbA1c watch) so low-GI is non-negotiable." style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:6px;">${_esc((STATE.profile&&STATE.profile.aboutMe&&STATE.profile.aboutMe.text)||'')}</textarea>
+      <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:12px;">
+        <span id="am-count" style="font-size:10px;color:var(--text3);">${(((STATE.profile&&STATE.profile.aboutMe&&STATE.profile.aboutMe.text)||'').length)} / 2000</span>
+      </div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" onclick="saveAboutMe()">Save</button>
+    </div>
+
     <div class="sec-label">Food Preferences</div>
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
