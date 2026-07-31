@@ -999,7 +999,210 @@ function _collapsibleOpen(key,title,headerExtra){
 }
 function _collapsibleClose(){ return `</div></div>`; }
 
+// ============================================================
+// TRACK CHARTS (Phase 66) — hand-drawn SVG line charts w/ hover
+// Chart series colours are dataviz-validated literals (NOT the app
+// --blue/--orange, which fail CVD/lightness checks): Lean #2f7fd6,
+// Fat #e0680f, Weight = brand lime #c8ff00.
+// ============================================================
+const _TCHART_LEAN = '#2f7fd6';
+const _TCHART_FAT  = '#e0680f';
+const _TCHART_W    = '#c8ff00';
+let _tchartReg = {};
+function _tchartScaler(dom,range){ const m=(range[1]-range[0])/((dom[1]-dom[0])||1); return v=>range[0]+(v-dom[0])*m; }
+function _tchartPts(arr,X,Y){ return arr.map(p=>X(p.x)+','+Y(p.y)).join(' '); }
+function _niceTicks(min,max,approx){
+  if(!(max>min)){ max=min+1; }
+  const range=max-min, raw=range/Math.max(1,approx);
+  const mag=Math.pow(10,Math.floor(Math.log10(raw)||0));
+  const norm=raw/mag, step=(norm<1.5?1:norm<3?2:norm<7?5:10)*mag;
+  const t0=Math.floor(min/step)*step, t1=Math.ceil(max/step)*step, ticks=[];
+  for(let t=t0;t<=t1+1e-9;t+=step)ticks.push(Math.round(t*100)/100);
+  return {ticks,min:t0,max:t1};
+}
+function _monthTicks(startDate,maxDay){
+  const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const s=new Date(startDate+'T12:00:00');
+  const ticks=[{d:0,l:MON[s.getMonth()]}];
+  let d=new Date(s.getFullYear(),s.getMonth()+1,1);
+  for(let i=0;i<48;i++){
+    const day=Math.round((d-s)/86400000);
+    if(day>maxDay)break;
+    ticks.push({d:day,l:MON[d.getMonth()]});
+    d=new Date(d.getFullYear(),d.getMonth()+1,1);
+  }
+  return ticks;
+}
+// Bucket date-keyed entries into weekly averages from startDate → clean, de-noised line.
+function _weeklyBuckets(entries,valKeys,startDate){
+  const keys=Array.isArray(valKeys)?valKeys:[valKeys];
+  const s=new Date(startDate+'T12:00:00'), buckets={};
+  entries.forEach(e=>{
+    const day=Math.round((new Date(e.date+'T12:00:00')-s)/86400000);
+    if(day<0)return;
+    const wk=Math.floor(day/7);
+    (buckets[wk]=buckets[wk]||[]).push({day,e});
+  });
+  return Object.keys(buckets).map(Number).sort((a,b)=>a-b).map(wk=>{
+    const arr=buckets[wk];
+    const out={day:Math.round(arr.reduce((a,x)=>a+x.day,0)/arr.length), date:arr[arr.length-1].e.date};
+    keys.forEach(k=>{ out[k]=Math.round(arr.reduce((a,x)=>a+x.e[k],0)/arr.length*10)/10; });
+    return out;
+  });
+}
+function _tchartHTML(cfg){
+  const W=430,H=210,padL=34,padR=14,padT=14,padB=24;
+  const X=_tchartScaler(cfg.xDom,[padL,W-padR]), Y=_tchartScaler(cfg.yDom,[H-padB,padT]);
+  let s='<svg class="tchart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="'+(cfg.aria||'')+'">';
+  s+='<g class="grid">'; cfg.yTicks.forEach(t=>{ const y=Y(t); s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'"/>'; }); s+='</g>';
+  s+='<g class="axis">';
+  cfg.yTicks.forEach(t=>{ s+='<text x="'+(padL-6)+'" y="'+(Y(t)+3)+'" text-anchor="end">'+t+'</text>'; });
+  (cfg.xTicks||[]).forEach(t=>{ s+='<text x="'+X(t.d)+'" y="'+(H-7)+'" text-anchor="middle">'+t.l+'</text>'; });
+  s+='</g>';
+  if(cfg.band){ const top=cfg.band.hi.map(p=>X(p.x)+','+Y(p.y)).join(' '); const bot=cfg.band.lo.slice().reverse().map(p=>X(p.x)+','+Y(p.y)).join(' '); s+='<polygon points="'+top+' '+bot+'" fill="rgba(200,255,0,.10)"/>'; }
+  if(cfg.target!=null){ const ty=Y(cfg.target); s+='<g class="target"><line x1="'+padL+'" y1="'+ty+'" x2="'+(W-padR)+'" y2="'+ty+'"/><text x="'+(padL+4)+'" y="'+(ty-5)+'" text-anchor="start">TARGET '+cfg.target+(cfg.targetUnit||'')+'</text></g>'; }
+  if(cfg.area){ const s0=cfg.series[0].data; const line=_tchartPts(s0,X,Y); const a='M '+X(s0[0].x)+' '+(H-padB)+' L '+line.split(' ').join(' L ')+' L '+X(s0[s0.length-1].x)+' '+(H-padB)+' Z'; const gid='tag-'+cfg.wrap; s+='<defs><linearGradient id="'+gid+'" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="'+cfg.series[0].color+'" stop-opacity=".15"/><stop offset="1" stop-color="'+cfg.series[0].color+'" stop-opacity="0"/></linearGradient></defs><path d="'+a.replace(/,/g,' ')+'" fill="url(#'+gid+')"/>'; }
+  if(cfg.proj&&cfg.proj.length){ s+='<polyline points="'+_tchartPts(cfg.proj,X,Y)+'" fill="none" stroke="'+(cfg.projColor||_TCHART_W)+'" stroke-width="2" stroke-dasharray="1 5" stroke-linecap="round" opacity=".85"/>'; }
+  cfg.series.forEach(se=>{
+    s+='<polyline points="'+_tchartPts(se.data,X,Y)+'" fill="none" stroke="'+se.color+'" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>';
+    const e=se.data[se.data.length-1];
+    s+='<circle cx="'+X(e.x)+'" cy="'+Y(e.y)+'" r="4" fill="'+se.color+'" stroke="var(--bg)" stroke-width="2"/>';
+    if(se.label){ s+='<text class="serieslabel" x="'+(X(e.x)-7)+'" y="'+(Y(e.y)-8)+'" text-anchor="end" fill="'+se.color+'">'+se.label+'</text>'; }
+  });
+  s+='<g class="cross" id="cr-'+cfg.wrap+'"><line x1="0" y1="'+padT+'" x2="0" y2="'+(H-padB)+'"/>';
+  cfg.series.forEach(se=>{ s+='<circle r="4.5" fill="var(--bg)" stroke="'+se.color+'" stroke-width="2.4"/>'; });
+  s+='</g></svg>';
+  _tchartReg[cfg.wrap]={W,H,padL,padR,padB,padT,xDom:cfg.xDom,yDom:cfg.yDom,hover:cfg.hover||[]};
+  return '<div class="tchart-wrap" id="'+cfg.wrap+'"><div class="tchart-tip" id="'+cfg.wrap+'-tip"></div>'+s+'</div>';
+}
+function _initTrackCharts(){
+  Object.keys(_tchartReg).forEach(id=>{
+    const wrap=document.getElementById(id); if(!wrap)return;
+    const R=_tchartReg[id], svgEl=wrap.querySelector('svg'), cross=wrap.querySelector('#cr-'+id), tip=document.getElementById(id+'-tip');
+    if(!svgEl||!cross||!tip)return;
+    const crossDots=cross.querySelectorAll('circle'), ln=cross.querySelector('line');
+    const X=_tchartScaler(R.xDom,[R.padL,R.W-R.padR]), Y=_tchartScaler(R.yDom,[R.H-R.padB,R.padT]);
+    function move(clientX){
+      const r=svgEl.getBoundingClientRect(), px=(clientX-r.left)/r.width*R.W, hp=R.hover;
+      if(!hp.length)return; let best=0,bd=1e9;
+      for(let q=0;q<hp.length;q++){ const dx=Math.abs(X(hp[q].x)-px); if(dx<bd){bd=dx;best=q;} }
+      const p=hp[best], cx=X(p.x);
+      cross.style.opacity=1; ln.setAttribute('x1',cx); ln.setAttribute('x2',cx);
+      p.rows.forEach((row,ri)=>{ if(crossDots[ri]){ crossDots[ri].setAttribute('cx',cx); crossDots[ri].setAttribute('cy',Y(row.y)); } });
+      let html='<div class="d">'+p.label+'</div>';
+      p.rows.forEach(row=>{ html+='<div class="row"><span class="dot" style="background:'+row.color+'"></span>'+row.name+' '+row.y+row.unit+'</div>'; });
+      tip.innerHTML=html; tip.style.opacity=1;
+      const tx=cx/R.W*r.width, ty=Y(p.rows[0].y)/R.H*r.height;
+      tip.style.left=Math.max(46,Math.min(r.width-46,tx))+'px'; tip.style.top=ty+'px';
+    }
+    function end(){ cross.style.opacity=0; tip.style.opacity=0; }
+    svgEl.addEventListener('pointermove',e=>move(e.clientX));
+    svgEl.addEventListener('pointerdown',e=>move(e.clientX));
+    svgEl.addEventListener('pointerleave',end);
+    svgEl.addEventListener('touchmove',e=>{ if(e.touches[0])move(e.touches[0].clientX); },{passive:true});
+    svgEl.addEventListener('touchend',end);
+  });
+}
+// Weight trajectory-to-goal chart (line + weekly buckets + dashed projection + confidence band + target line)
+function _trackWeightChart(){
+  const p=getActive(); if(!p||!p.startDate)return '';
+  const raw=getJourneyEntries('weight'); if(raw.length<3)return '';
+  const start=p.startDate, s=new Date(start+'T12:00:00');
+  const pts=_weeklyBuckets(raw,'weight',start); if(pts.length<2)return '';
+  const proj=getProjections();
+  const target=(p.targetWeight!=null)?p.targetWeight:null;
+  const lastPt=pts[pts.length-1];
+  let projLine=null, band=null, maxDay=lastPt.day;
+  if(proj&&proj.wDate&&target!=null&&proj.weightRate>0&&lastPt.weight>target){
+    const goalDay=Math.round((proj.wDate-s)/86400000);
+    if(goalDay>lastPt.day){
+      const steps=Math.max(1,Math.round((goalDay-lastPt.day)/7));
+      projLine=[]; const hi=[],lo=[];
+      for(let k=0;k<=steps;k++){
+        const day=lastPt.day+(goalDay-lastPt.day)*(k/steps);
+        const y=Math.round((lastPt.weight+(target-lastPt.weight)*(k/steps))*10)/10;
+        const sp=k*0.18;
+        projLine.push({x:day,y}); hi.push({x:day,y:y+sp}); lo.push({x:day,y:y-sp});
+      }
+      band={hi,lo}; maxDay=goalDay;
+    }
+  }
+  const ys=pts.map(x=>x.weight).concat(target!=null?[target]:[]);
+  const yt=_niceTicks(Math.min(...ys)-1,Math.max(...ys)+1,5);
+  const cfg={
+    wrap:'tchart-weight', aria:'Weight over time trending toward target',
+    xDom:[0,Math.max(maxDay,1)], yDom:[yt.min,yt.max], yTicks:yt.ticks,
+    xTicks:_monthTicks(start,Math.max(maxDay,1)),
+    target:target, targetUnit:'kg', area:true, proj:projLine, projColor:_TCHART_W, band,
+    series:[{color:_TCHART_W, data:pts.map(x=>({x:x.day,y:x.weight}))}],
+    hover:pts.map(x=>({x:x.day,label:fmtDate(x.date),rows:[{name:'Weight',color:_TCHART_W,y:x.weight,unit:'kg'}]}))
+  };
+  let readout='';
+  if(proj&&proj.goalDate&&target!=null){
+    const fd=d=>d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    const wks=proj.weeksToWeight;
+    const rangeStr=proj.range?`${fd(proj.range.early)} – ${fd(proj.range.late)} · ${proj.confidence} confidence`:'';
+    readout=`<div style="margin-top:12px;padding:11px 12px;border-radius:12px;background:var(--s2);border:1px solid var(--border);">
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:1.1px;color:var(--text3);font-weight:800;">Projected goal (${target}kg)</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:19px;color:var(--lime);margin:3px 0;letter-spacing:-.3px;">≈ ${fd(proj.wDate)}</div>
+      ${wks?`<div style="font-size:11.5px;color:var(--text2);">At your recent rate you reach target in about ${wks} weeks.</div>`:''}
+      ${rangeStr?`<div style="font-size:10px;color:var(--text3);margin-top:3px;">range ${rangeStr}</div>`:''}
+    </div>`;
+  }
+  return _tchartHTML(cfg)+readout;
+}
+// Body composition chart (lean mass vs fat mass, both from aligned weight×bf so lean+fat=weight)
+function _trackCompChart(){
+  const p=getActive(); if(!p||!p.startDate)return '';
+  const start=p.startDate;
+  const wl=getJourneyEntries('weight'), bl=getBfLog();
+  const aligned=wl.map(we=>{
+    const bfe=bl.filter(b=>b.date<=we.date).pop(); if(!bfe)return null;
+    const lean=Math.round(we.weight*(1-bfe.bf/100)*10)/10;
+    const fat=Math.round((we.weight-lean)*10)/10;
+    return {date:we.date, lean, fat};
+  }).filter(Boolean);
+  if(aligned.length<3)return '';
+  const pts=_weeklyBuckets(aligned,['lean','fat'],start); if(pts.length<2)return '';
+  const vals=pts.flatMap(x=>[x.lean,x.fat]);
+  const yt=_niceTicks(Math.min(...vals)-2,Math.max(...vals)+2,3);
+  const maxDay=pts[pts.length-1].day;
+  const cfg={
+    wrap:'tchart-comp', aria:'Lean mass holding while fat mass falls',
+    xDom:[0,Math.max(maxDay,1)], yDom:[yt.min,yt.max], yTicks:yt.ticks,
+    xTicks:_monthTicks(start,Math.max(maxDay,1)),
+    series:[
+      {color:_TCHART_LEAN, label:'Lean', data:pts.map(x=>({x:x.day,y:x.lean}))},
+      {color:_TCHART_FAT,  label:'Fat',  data:pts.map(x=>({x:x.day,y:x.fat}))}
+    ],
+    hover:pts.map(x=>({x:x.day,label:fmtDate(x.date),rows:[
+      {name:'Lean',color:_TCHART_LEAN,y:x.lean,unit:'kg'},
+      {name:'Fat', color:_TCHART_FAT, y:x.fat, unit:'kg'}
+    ]}))
+  };
+  // Anchor the "since start" note to the profile's true start values when set
+  // (matches the Progress cards); else fall back to the first charted bucket.
+  const first=pts[0], last=pts[pts.length-1];
+  let baseLean=first.lean, baseFat=first.fat, baseDate=first.date;
+  if(p.startWeight!=null&&p.startBF!=null){
+    baseLean=Math.round(p.startWeight*(1-p.startBF/100)*10)/10;
+    baseFat=Math.round((p.startWeight-baseLean)*10)/10;
+    baseDate=start;
+  }
+  const wDrop=Math.round(((baseLean+baseFat)-(last.lean+last.fat))*10)/10;
+  const fatDrop=Math.round((baseFat-last.fat)*10)/10;
+  const leanDrop=Math.round((baseLean-last.lean)*10)/10;
+  let note='';
+  if(wDrop>0.3){
+    const fatPct=Math.round((fatDrop/wDrop)*100);
+    note=`<div style="font-size:11.5px;color:var(--text2);margin-top:11px;line-height:1.5;">Down <b style="color:var(--text);">${wDrop}kg</b> since ${fmtDate(baseDate)} — <b style="color:var(--text);">${Math.max(0,Math.min(100,fatPct))}% of it was fat</b> (${fatDrop>=0?'−':'+'}${Math.abs(fatDrop)}kg fat, ${leanDrop>=0?'−':'+'}${Math.abs(leanDrop)}kg lean).</div>`;
+  }
+  const legend=`<div class="tchart-legend"><div class="item"><span class="sw" style="background:${_TCHART_LEAN}"></span>Lean mass</div><div class="item"><span class="sw" style="background:${_TCHART_FAT}"></span>Fat mass</div></div>`;
+  return legend+_tchartHTML(cfg)+note;
+}
+
 function renderTrack(){
+  _tchartReg={};
   const p=getActive(); if(!p)return;
   const wl=getWeightLog();
   const cw=getCurrentWeight();
@@ -1216,8 +1419,8 @@ function renderTrack(){
     <div class="pg-title" style="margin-bottom:14px;">Progress</div>
     <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.5;">Tap a section to open or close it — the app remembers what you keep open.</div>
 
-    ${_collapsibleOpen('bodycomp','Body Composition · This Week vs Last')}${trendCard}${_collapsibleClose()}
-    ${_collapsibleOpen('progress','Progress · Weight · BF · Lean · Visceral')}${_progressBody}${_collapsibleClose()}
+    ${_collapsibleOpen('bodycomp','Body Composition · Lean vs Fat')}${_trackCompChart()}${trendCard}${_collapsibleClose()}
+    ${_collapsibleOpen('progress','Progress · Weight · BF · Lean · Visceral')}${_trackWeightChart()}${_progressBody}${_collapsibleClose()}
     ${_collapsibleOpen('goal','Goal Date')}${_goalCard}${_collapsibleClose()}
     ${_collapsibleOpen('compare','Compare Any Two Dates')}${compareCard}${_collapsibleClose()}
     ${_collapsibleOpen('health','VO2 Max · Blood Pressure · DEXA')}${renderVO2MaxCard()}${renderBPCard()}${renderDexaCard()}${_collapsibleClose()}
@@ -1232,6 +1435,8 @@ function renderTrack(){
 
   // Phase 30: render the date-compare snapshot after innerHTML
   renderCompareSnapshot();
+  // Phase 66: wire up the interactive charts' hover/touch
+  _initTrackCharts();
 }
 
 // Phase 30: compute a snapshot of key metrics on a given date (or nearest before)
