@@ -223,12 +223,23 @@ function getWorkout(sessionKey){
   if(!w)return w;
   return {...w, exercises: sessionExercises(sessionKey)};
 }
+// Phase 69: standalone mobility drills — real time-based exercises that are NOT
+// part of any training-day flow (never in a WORKOUTS template, so they never
+// appear in the guided-session exercise list or the rest-accessory rotation), but
+// ARE registered in getAllExercises so computeSessionVolume / getBestLift /
+// progression resolve them as timed and count their {seconds} sets as work.
+// `mobility:true` keeps them out of the Track strength trend/records lists.
+// `capSeconds` stops suggestTime climbing past the cap (see suggestTime).
+const MOBILITY_DRILLS = [
+  { id:'mob_deepsquat', name:'Deep Squat Hold', metric:'time', reps:'60-65s', sets:1, capSeconds:120, mobility:true, category:'rehab' },
+];
 // Union of every exercise across all program templates, deduped by id.
 function getAllExercises(){
   const seen=new Set(),out=[];
   Object.values(WORKOUTS).forEach(w=>(w.exercises||[]).forEach(e=>{
     if(!seen.has(e.id)){seen.add(e.id);out.push(e);}
   }));
+  MOBILITY_DRILLS.forEach(e=>{ if(!seen.has(e.id)){seen.add(e.id);out.push(e);} });
   return out;
 }
 
@@ -2235,6 +2246,20 @@ const STRETCH_ROUTINES = {
         cue:"Square the hips — ease in over the hold" },
     ],
   },
+  // Phase 69: rest-gap mobility — a single deep-squat hold done between sets during
+  // a workout. Its own routine type so an in-rest completion credits THIS tile only,
+  // never the morning/evening/flexibility routines. Ticked from the workout rest UI
+  // (markStretchDone + saveStretchSession), not a separate guided overlay.
+  restMobility: {
+    id:'restMobility', title:'Rest-Gap Mobility', subtitle:'Deep-squat holds done between sets in your workout',
+    totalMinutes:2, bestTime:'During workout rest gaps',
+    stretches:[
+      { id:'rm_deep_squat', name:'Deep Squat Hold', duration:60, unit:'seconds', sides:false,
+        instructions:"Sink into a full-depth bodyweight (Asian) squat during your rest, heels down, and breathe.",
+        benefit:"Opens hips, knees and ankles at depth between sets — free mobility work.",
+        cue:"Breathe — push the knees out gently with the elbows" },
+    ],
+  },
 };
 
 // Owner-only gate for the stretching feature (jay@afjltd.co.uk).
@@ -2309,19 +2334,21 @@ function getStretchStreak(type){
 }
 function getStretchCompliance(days){
   const log=pGet('stretchLog',{});
-  let mDone=0,eDone=0,fDone=0;
+  let mDone=0,eDone=0,fDone=0,rmDone=0;
   for(let i=0;i<days;i++){
     const d=new Date();d.setDate(d.getDate()-i);
     const entry=log[_ukDate(d)]||{};
     if(entry.morning&&entry.morning.completed)mDone++;
     if(entry.evening&&entry.evening.completed)eDone++;
     if(entry.flexibility&&entry.flexibility.completed)fDone++; // Phase 52
+    if(entry.restMobility&&entry.restMobility.completed)rmDone++; // Phase 69
   }
   const total=days;
   return {
     morning:{done:mDone,total,pct:Math.round((mDone/total)*100)},
     evening:{done:eDone,total,pct:Math.round((eDone/total)*100)},
     flexibility:{done:fDone,total,pct:Math.round((fDone/total)*100)}, // Phase 52
+    restMobility:{done:rmDone,total,pct:Math.round((rmDone/total)*100)}, // Phase 69
     combined:{done:mDone+eDone,total:total*2,pct:Math.round(((mDone+eDone)/(total*2))*100)},
   };
 }

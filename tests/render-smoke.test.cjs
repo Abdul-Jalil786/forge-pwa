@@ -155,6 +155,55 @@ test("More page sections are collapsible (Phase 68)", () => {
   }
 });
 
+// ---- Phase 69: in-rest Deep Squat mobility drill ----
+test("Phase 69: Deep Squat is a registered timed drill, logs {seconds}, counts as seconds-volume", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  assert.equal(q(`getAllExercises().some(e=>e.id==='mob_deepsquat')`), true, "mob_deepsquat registered in getAllExercises");
+  assert.equal(q(`isTimeBased(getAllExercises().find(e=>e.id==='mob_deepsquat'))`), true, "mob_deepsquat is time-based (metric:'time')");
+  // a logged {seconds} set counts as seconds-volume (not kg×reps)
+  assert.equal(q(`computeSessionVolume({mob_deepsquat:{sets:[{seconds:60,done:true,viaRest:true},{seconds:70,done:true,viaRest:true}]}})`), 130, "60+70 = 130s volume");
+  // it is NOT surfaced in the strength records/trends lists (mobility flag)
+  assert.equal(q(`getAllExercises().filter(e=>!e.mobility).some(e=>e.id==='mob_deepsquat')`), false, "mobility drill excluded from strength lists");
+});
+
+test("Phase 69: Deep Squat gets a DURATION suggestion (never weight/kg), climbs, and caps at 120s", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  // topped the 60-65s range (held >=65) -> climbs +5, timed, no kg
+  const up = JSON.parse(q(`JSON.stringify(suggestWeight('mob_deepsquat',{log:{mob_deepsquat:{sets:[{seconds:65,done:true}]}}},0))`));
+  assert.equal(up.timed, true, "suggestion is timed");
+  assert.ok(up.kg == null, "no kg in a timed suggestion: " + JSON.stringify(up));
+  assert.equal(up.seconds, 70, "climbs 65 -> 70 when range topped");
+  assert.equal(up.dir, "up");
+  // below the range top -> holds at last, does not climb
+  const hold = JSON.parse(q(`JSON.stringify(suggestWeight('mob_deepsquat',{log:{mob_deepsquat:{sets:[{seconds:60,done:true}]}}},0))`));
+  assert.equal(hold.seconds, 60, "holds at 60 until the range is topped");
+  // at the 120s cap -> holds, never suggests more
+  const capped = JSON.parse(q(`JSON.stringify(suggestWeight('mob_deepsquat',{log:{mob_deepsquat:{sets:[{seconds:120,done:true}]}}},0))`));
+  assert.equal(capped.seconds, 120, "capped at 120s");
+  assert.equal(capped.dir, null, "no increase past the 120s cap");
+});
+
+test("Phase 69: restMobility completion credits restMobility ONLY + its own X/7 tile", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  q(`STATE.stretchLog={}`);
+  const T = q(`todayStr()`);
+  q(`markStretchDone('${T}','restMobility','rm_deep_squat'); saveStretchSession('${T}','restMobility');`);
+  assert.equal(q(`STATE.stretchLog['${T}'].restMobility.completed`), true, "restMobility flipped completed");
+  assert.equal(q(`STATE.stretchLog['${T}'].morning===undefined`), true, "morning NOT created/credited");
+  assert.equal(q(`STATE.stretchLog['${T}'].evening===undefined`), true, "evening NOT credited");
+  assert.equal(q(`STATE.stretchLog['${T}'].flexibility===undefined`), true, "flexibility NOT credited");
+  const c = JSON.parse(q(`JSON.stringify(getStretchCompliance(7))`));
+  assert.equal(c.restMobility.done, 1, "restMobility shows 1/7");
+  assert.equal(c.morning.done, 0, "morning stays 0/7");
+  assert.equal(c.restMobility.total, 7, "restMobility has its own /7");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
@@ -425,28 +474,37 @@ test("rest accessory defaults reference last session's reps + weight", () => {
   assert.ok(/last 20/.test(html2), "shows a 'last time' reference for reh_2");
 });
 
-// Phase 63b: when a rest gap has no session accessory to knock out, the panel
-// falls back to the Asian (deep) squat mobility hold instead of showing nothing.
-test("rest screen falls back to the Asian squat hold when no accessory is left", () => {
+// Phase 69: when a rest gap has no session accessory to knock out, the panel
+// falls back to the Deep Squat mobility hold — now a REAL timed drill that logs a
+// {seconds} working set and ticks the restMobility tracker (replaces the old
+// Phase-63b Asian-squat filler that wrote to the non-counting _fillers store).
+test("rest screen falls back to the Deep Squat mobility hold (Phase 69)", () => {
   const { ctx, els } = bootApp();
   seed(ctx);
   const T = "2026-07-25";
   vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
   // Lower B has no small/rehab accessory (l5/l1 large, l4 medium, core_suitcase is a carry) → fallback.
-  vm.runInContext(`STATE.exLog={'${T}':{l5:{sets:[{kg:120,reps:10,done:true}]}}};`, ctx);
+  vm.runInContext(`STATE.exLog={'${T}':{l5:{sets:[{kg:120,reps:10,done:true}]}}}; STATE.stretchLog={};`, ctx);
   vm.runInContext(`wm={active:true,session:'lowerB',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:5};`, ctx);
   vm.runInContext(`renderWmRest()`, ctx);
   const html = els['wmContent']._html;
   assert.ok(/Rest-gap mobility/.test(html), "header switches to mobility when no accessory remains");
-  assert.ok(/Asian Squat Hold/.test(html), "shows the Asian squat fallback");
+  assert.ok(/Deep Squat Hold/.test(html), "shows the Deep Squat timed drill");
   assert.ok(!/wmRestLogSet\(/.test(html), "no real-accessory log buttons when none are available");
-  // Logging the hold must not touch the countdown, and records under _fillers (not a working set).
+  // Finish a hold (simulate ~40s elapsed). Must not touch the rest countdown.
   const before = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
-  vm.runInContext(`wmRestMobility('done')`, ctx);
+  vm.runInContext(`wm._mobStartedAt = Date.now()-40000; wmRestMobilityDone();`, ctx);
   const after = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
   assert.equal(before, after, "rest countdown untouched by the mobility hold");
-  assert.equal(vm.runInContext(`getExLogForDate('${T}')._fillers.l5.gaps[0].status`, ctx), 'done', "hold recorded under _fillers, not as a working set");
+  // A REAL working set now — {seconds}, tagged viaRest, under mob_deepsquat.
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').mob_deepsquat.sets.length`, ctx), 1, "one real timed set logged");
+  assert.ok(vm.runInContext(`getExLogForDate('${T}').mob_deepsquat.sets[0].seconds >= 1`, ctx), "set stores seconds");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').mob_deepsquat.sets[0].viaRest`, ctx), true, "tagged viaRest");
   assert.equal(vm.runInContext(`getExLogForDate('${T}').l5.sets.length`, ctx), 1, "resting lift's working sets untouched");
+  // Ticks the restMobility tracker ONLY (owner seed = stretch user); legacy _fillers not written.
+  assert.equal(vm.runInContext(`STATE.stretchLog['${T}'].restMobility.completed`, ctx), true, "restMobility tile flipped");
+  assert.equal(vm.runInContext(`STATE.stretchLog['${T}'].morning===undefined`, ctx), true, "morning not touched");
+  assert.equal(vm.runInContext(`!getExLogForDate('${T}')._fillers`, ctx), true, "no _fillers written (superseded)");
 });
 
 // Dev-only "Clear today's training" wipes the day's log so a test can re-run.

@@ -1192,6 +1192,15 @@ function suggestTime(exId,exObj,prevSession,setIdx,opts){
   const prevSummary=sets.map(s=>fmtSec(s.seconds)).join(', ');
   const effort=prevSession.log[exId].effort||sets[sets.length-1]?.effort;
   const allHitPrescribed=sets.every(s=>parseInt(s.seconds)>=upper);
+  // Phase 69: optional per-exercise duration ceiling (e.g. mobility holds cap at
+  // 120s). Uncapped exercises (plank, wall-sit) keep cap=Infinity → unchanged.
+  const cap=(exObj&&exObj.capSeconds)?exObj.capSeconds:Infinity;
+  // climb to `target`, clamped at the cap. At/over the cap → stop suggesting more.
+  const climb=(target,note)=>{
+    const n=Math.min(target,cap);
+    if(n<=lastSec)return{seconds:cap===Infinity?lastSec:cap,reason:`Hold ${fmtSec(cap===Infinity?lastSec:cap)} — at your ${cap===Infinity?'':cap+'s '}${cap===Infinity?'level':'mobility cap'}`,dir:null,timed:true,capped:cap!==Infinity};
+    return{seconds:n,reason:note(n),dir:'up',timed:true};
+  };
 
   if(opts?.lowRecovery){
     return{seconds:lastSec,reason:`Hold ${fmtSec(lastSec)} — low recovery (${opts.recoveryReason}). Focus on form.`,dir:null,timed:true,recovery:'low'};
@@ -1202,16 +1211,16 @@ function suggestTime(exId,exObj,prevSession,setIdx,opts){
   }
   // Easy/Solid AND held the full prescribed time -> add time (easy = bigger jump).
   if(allHitPrescribed&&effort==='easy'){
-    return{seconds:lastSec+10,reason:`Try ${fmtSec(lastSec+10)} — beat last ${fmtSec(lastSec)} (felt easy)`,dir:'up',timed:true};
+    return climb(lastSec+10,(n)=>`Try ${fmtSec(n)} — beat last ${fmtSec(lastSec)} (felt easy)`);
   }
   if(allHitPrescribed&&effort==='solid'){
-    return{seconds:lastSec+5,reason:`Try ${fmtSec(lastSec+5)} — beat last ${fmtSec(lastSec)} (solid)`,dir:'up',timed:true};
+    return climb(lastSec+5,(n)=>`Try ${fmtSec(n)} — beat last ${fmtSec(lastSec)} (solid)`);
   }
   // Didn't reach prescribed time, or unrated -> hold and repeat. No single-session deload.
   if(!allHitPrescribed){
     return{seconds:lastSec,reason:`Hold ${fmtSec(lastSec)} — match last (last: ${prevSummary})`,dir:null,timed:true};
   }
-  return{seconds:lastSec+5,reason:`Try ${fmtSec(lastSec+5)} — beat last ${fmtSec(lastSec)}`,dir:'up',timed:true};
+  return climb(lastSec+5,(n)=>`Try ${fmtSec(n)} — beat last ${fmtSec(lastSec)}`);
 }
 
 function renderWmOutline(){
@@ -2056,6 +2065,7 @@ function renderWmRest(){
   `;
   document.getElementById('wmContent').innerHTML=html;
   if(wm.restInterval)clearInterval(wm.restInterval);
+  if(wm._mobInterval){clearInterval(wm._mobInterval);wm._mobInterval=null;} // Phase 69: independent mobility timer
   wm.restInterval=setInterval(updateWmRest,200);
   updateWmRest();
 }
@@ -2212,39 +2222,87 @@ function _wmAccessoryPanelHTML(currentExId){
       <div id="wm-rest-acc-rows">${_wmAccessoryRowsHTML(currentExId)}</div>
     </div>`;
 }
-// Phase 63b: Asian (deep) squat hold — the mobility fallback shown when a rest
-// gap has no session accessory to knock out. Optional; logged via the (dormant)
-// filler data-layer under the resting lift, so it never becomes a fake working
-// set and still shows in the end-of-session recap. Per rest gap (keyed on setIdx).
+// Phase 69: rest-gap Deep Squat mobility hold — a REAL timed drill (replaces the
+// dead Phase-63b _fillers filler). Shown when a rest gap has no session accessory
+// left. Optional. Runs a count-up stopwatch on its OWN interval (wm._mobInterval),
+// independent of the rest countdown, so it never gates or touches the next set. On
+// "Done" it logs a {seconds,done} set into the mob_deepsquat exercise (counts as
+// seconds-volume, progresses by duration via suggestTime) AND — for stretch users
+// — ticks the restMobility 0/7 tracker tile (and nothing else).
+const MOB_DRILL_ID='mob_deepsquat';
+const MOB_STRETCH_TYPE='restMobility';
+const MOB_STRETCH_ID='rm_deep_squat';
+function _mobDrill(){ return (typeof getAllExercises==='function')?getAllExercises().find(e=>e.id===MOB_DRILL_ID):null; }
+// Most recent PRIOR day (any session type) that logged the hold — suggestTime's
+// progression reference, since the drill can be done on any training day.
+function _mobPrevSession(date){
+  const log=(typeof getExLog==='function')?getExLog():{};
+  const dates=Object.keys(log).filter(d=>d<date&&log[d]&&log[d][MOB_DRILL_ID]&&Array.isArray(log[d][MOB_DRILL_ID].sets)&&log[d][MOB_DRILL_ID].sets.some(s=>s&&s.seconds)).sort();
+  if(!dates.length)return null;
+  const d=dates[dates.length-1];
+  return {log:{[MOB_DRILL_ID]:log[d][MOB_DRILL_ID]}};
+}
 function _wmMobilityFallbackHTML(currentExId){
   const date=todayStr();
-  const gapIdx=wm.setIdx;
-  const entry=(typeof getFillerLog==='function')?getFillerLog(date)[currentExId]:null;
-  const prev=(entry&&Array.isArray(entry.gaps))?entry.gaps[gapIdx]:null;
-  const done=prev&&prev.status==='done', skipped=prev&&prev.status==='skipped';
-  const actions=(done||skipped)
-    ? `<span style="font-size:12px;font-weight:700;color:${done?'var(--green)':'var(--text3)'};">${done?'✓ Done':'Skipped'}</span>`
-    : `<button onclick="wmRestMobility('done')" style="padding:8px 12px;background:rgba(0,200,120,.14);border:1px solid var(--green);border-radius:8px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;">✓ Done</button>
-       <button onclick="wmRestMobility('skip')" style="padding:8px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text3);font-size:12px;cursor:pointer;">Skip</button>`;
+  const drill=_mobDrill();
+  const loggedThisRest=wm._mobLoggedRest===wm.restStarted&&wm.restStarted!=null;
+  const sug=(drill&&typeof suggestTime==='function')?suggestTime(MOB_DRILL_ID,drill,_mobPrevSession(date),0):null;
+  const pb=(typeof getBestLift==='function')?getBestLift(MOB_DRILL_ID):null;
+  const target=sug?sug.seconds:60;
+  const hint=sug?sug.reason:'Hold a deep squat ~60s';
+  const pbStr=(pb&&pb.seconds)?` · PB ${fmtSec(pb.seconds)}`:'';
+  const actions=loggedThisRest
+    ? `<span id="wm-mob-state" style="font-size:12px;font-weight:700;color:${wm._mobLastStatus==='done'?'var(--green)':'var(--text3)'};">${wm._mobLastStatus==='done'?`✓ Held ${fmtSec(wm._mobLastSeconds||0)}`:'Skipped'}</span>`
+    : `<button id="wm-mob-btn" onclick="wmRestMobilityStart()" style="padding:8px 12px;background:rgba(0,200,120,.14);border:1px solid var(--green);border-radius:8px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;">▶ Start hold</button>
+       <button onclick="wmRestMobilitySkip()" style="padding:8px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text3);font-size:12px;cursor:pointer;">Skip</button>`;
   return `<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="min-width:0;">
-          <div style="font-size:14px;color:var(--text);font-weight:700;">🧘 Asian Squat Hold</div>
-          <div style="font-size:11px;color:var(--text2);">~60s deep squat · hip + ankle mobility · optional</div>
-        </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+        <div style="font-size:14px;color:var(--text);font-weight:700;">🧘 Deep Squat Hold</div>
+        <div style="font-size:11px;color:var(--text2);flex-shrink:0;">target ${fmtSec(target)}${pbStr} · optional</div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4;">${hint}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;">
+        <div id="wm-mob-timer" style="font-family:'Archivo Black',sans-serif;font-size:30px;color:var(--lime);letter-spacing:-1px;line-height:1;">${loggedThisRest&&wm._mobLastStatus==='done'?fmtSec(wm._mobLastSeconds||0):'0:00'}</div>
         <div id="wm-rest-mob-actions" style="display:flex;gap:6px;flex-shrink:0;">${actions}</div>
       </div>
     </div>`;
 }
-// Log/skip the Asian-squat mobility hold for this rest gap. Updates ONLY its own
-// action buttons — never the countdown — and stores under _fillers[restingLift].
-function wmRestMobility(status){
-  const st=status==='done'?'done':'skipped';
-  const w=getWorkout(wm.session);
-  const currentExId=(w.exercises[wm.exIdx]||{}).id;
-  if(currentExId&&typeof logFillerGap==='function')logFillerGap(todayStr(),currentExId,'fill_deep_squat',wm.setIdx,st);
+// Start the deep-squat count-up on its own interval (never the rest countdown).
+function wmRestMobilityStart(){
+  if(wm._mobInterval){clearInterval(wm._mobInterval);wm._mobInterval=null;}
+  wm._mobStartedAt=Date.now();
+  wm._mobInterval=setInterval(()=>{
+    const el=document.getElementById('wm-mob-timer');
+    if(el)el.textContent=fmtSec(Math.floor((Date.now()-wm._mobStartedAt)/1000));
+  },200);
+  const btn=document.getElementById('wm-mob-btn');
+  if(btn){btn.textContent='✓ Done';btn.setAttribute('onclick','wmRestMobilityDone()');btn.style.background='rgba(200,255,0,.14)';btn.style.borderColor='var(--lime)';btn.style.color='var(--lime)';}
+}
+// Log the hold as a real {seconds} working set + tick the restMobility tile.
+function wmRestMobilityDone(){
+  const seconds=wm._mobStartedAt?Math.floor((Date.now()-wm._mobStartedAt)/1000):0;
+  if(wm._mobInterval){clearInterval(wm._mobInterval);wm._mobInterval=null;}
+  wm._mobStartedAt=0;
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  if(!dayLog[MOB_DRILL_ID]||!Array.isArray(dayLog[MOB_DRILL_ID].sets))dayLog[MOB_DRILL_ID]={sets:[]};
+  dayLog[MOB_DRILL_ID].sets.push({seconds,done:true,doneAt:Date.now(),setCompletedAt:Date.now(),viaRest:true});
+  saveExLogForDate(date,dayLog);
+  // Tick the restMobility 0/7 tile — restMobility type ONLY (never morning/evening/flexibility).
+  if(typeof isStretchUser==='function'&&isStretchUser()){
+    if(typeof markStretchDone==='function')markStretchDone(date,MOB_STRETCH_TYPE,MOB_STRETCH_ID);
+    if(typeof saveStretchSession==='function')saveStretchSession(date,MOB_STRETCH_TYPE);
+  }
+  wm._mobLoggedRest=wm.restStarted; wm._mobLastStatus='done'; wm._mobLastSeconds=seconds;
   const box=document.getElementById('wm-rest-mob-actions');
-  if(box)box.innerHTML=`<span style="font-size:12px;font-weight:700;color:${st==='done'?'var(--green)':'var(--text3)'};">${st==='done'?'✓ Done':'Skipped'}</span>`;
+  if(box)box.innerHTML=`<span id="wm-mob-state" style="font-size:12px;font-weight:700;color:var(--green);">✓ Held ${fmtSec(seconds)}</span>`;
+}
+function wmRestMobilitySkip(){
+  if(wm._mobInterval){clearInterval(wm._mobInterval);wm._mobInterval=null;}
+  wm._mobStartedAt=0;
+  wm._mobLoggedRest=wm.restStarted; wm._mobLastStatus='skipped';
+  const box=document.getElementById('wm-rest-mob-actions');
+  if(box)box.innerHTML=`<span id="wm-mob-state" style="font-size:12px;font-weight:700;color:var(--text3);">Skipped</span>`;
 }
 // Nudge a rest-accessory reps/kg field. Keys: 'reps-<exId>' or 'kg-<exId>'.
 function _wmAccStep(key,delta){
@@ -2317,6 +2375,7 @@ function _wmNextPendingIdx(from){
 function _wmFirstPendingIdx(){ return _wmNextPendingIdx(-1); }
 
 function wmStartNextSet(){
+  if(wm._mobInterval){clearInterval(wm._mobInterval);wm._mobInterval=null;} // Phase 69: stop any running mobility hold timer
   const elapsed=Math.floor((Date.now()-wm.restStarted)/1000);
   const w=getWorkout(wm.session);
   const ex=w.exercises[wm.exIdx];
