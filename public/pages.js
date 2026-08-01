@@ -1727,7 +1727,7 @@ function _liftTrend(ex){
 }
 
 function renderStrengthTrend(){
-  const trends=getAllExercises().map(_liftTrend).filter(Boolean);
+  const trends=getAllExercises().filter(e=>!e.mobility).map(_liftTrend).filter(Boolean); // Phase 69: mobility drills aren't strength
   if(trends.length===0){
     return `<div class="card"><div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Do the same lift twice and I'll show you whether you're going up.</div></div>`;
   }
@@ -1787,7 +1787,7 @@ function renderLegPressSledDiag(){
 }
 
 function renderLiftingRecords(){
-  const allEx=getAllExercises();
+  const allEx=getAllExercises().filter(e=>!e.mobility); // Phase 69: mobility drills excluded from strength records
   const records=allEx.map(ex=>{const b=getBestLift(ex.id);return{ex,best:b};}).filter(r=>r.best);
   if(records.length===0)return'<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Log sets in workouts to see personal bests</div>';
   return records.map(r=>{
@@ -3807,6 +3807,7 @@ function renderStretchHistory(){
   const mStreak=getStretchStreak('morning');
   const eStreak=getStretchStreak('evening');
   const fStreak=getStretchStreak('flexibility'); // Phase 52
+  const rmStreak=getStretchStreak('restMobility'); // Phase 69
   const log=pGet('stretchLog',{});
   const total=Object.values(log).reduce((s,d)=>s+((d.morning?.completed?1:0)+(d.evening?.completed?1:0)),0);
   const today=todayStr();
@@ -3844,10 +3845,11 @@ function renderStretchHistory(){
   }
   return `<div class="sec-label">Stretching · Mobility</div>
   <div class="card" style="margin-bottom:10px;">
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;">
       <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Morning · 7d</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:${c.morning.pct>=70?'var(--green)':c.morning.pct>=40?'var(--orange)':'var(--red)'};">${c.morning.done}<span style="font-size:11px;">/7</span></div><div style="font-size:10px;color:var(--text3);">🔥 ${mStreak} day streak</div></div>
       <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Evening · 7d</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:${c.evening.pct>=70?'var(--green)':c.evening.pct>=40?'var(--orange)':'var(--red)'};">${c.evening.done}<span style="font-size:11px;">/7</span></div><div style="font-size:10px;color:var(--text3);">🔥 ${eStreak} day streak</div></div>
       <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Flexibility · 7d</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:${c.flexibility.pct>=70?'var(--green)':c.flexibility.pct>=40?'var(--orange)':'var(--red)'};">${c.flexibility.done}<span style="font-size:11px;">/7</span></div><div style="font-size:10px;color:var(--text3);">🔥 ${fStreak} day streak</div></div>
+      <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Rest-Gap · 7d</div><div style="font-family:'Archivo Black',sans-serif;font-size:18px;color:${c.restMobility.pct>=70?'var(--green)':c.restMobility.pct>=40?'var(--orange)':'var(--red)'};">${c.restMobility.done}<span style="font-size:11px;">/7</span></div><div style="font-size:10px;color:var(--text3);">🔥 ${rmStreak} day · deep squats in-set</div></div>
     </div>
     <div style="font-size:9px;color:var(--text3);margin-bottom:3px;">🌅🌙 Morning + Evening</div>
     <div style="display:flex;gap:6px;margin-bottom:6px;">
