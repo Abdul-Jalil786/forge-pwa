@@ -999,6 +999,30 @@ function _collapsibleOpen(key,title,headerExtra){
 }
 function _collapsibleClose(){ return `</div></div>`; }
 
+// Phase 68: same collapsible-dropdown pattern for the More page, with its own
+// storage bucket + id prefix so its open/closed state is independent of Track.
+const _MORE_DEFAULT_OPEN = {}; // all sections collapsed by default
+function _moreSectionState(){ try{ return JSON.parse(localStorage.getItem('forge_more_sections')||'{}'); }catch(e){ return {}; } }
+function _moreSectionOpen(key){ const s=_moreSectionState(); return key in s ? !!s[key] : !!_MORE_DEFAULT_OPEN[key]; }
+function toggleMoreSection(key){
+  const s=_moreSectionState();
+  s[key]=!_moreSectionOpen(key);
+  try{ localStorage.setItem('forge_more_sections',JSON.stringify(s)); }catch(e){}
+  const bd=document.getElementById('msec-bd-'+key), ch=document.getElementById('msec-chev-'+key);
+  if(bd)bd.style.display=s[key]?'':'none';
+  if(ch)ch.textContent=s[key]?'▾':'▸';
+}
+function _mOpen(key,title,headerExtra){
+  const open=_moreSectionOpen(key);
+  return `<div style="margin-bottom:6px;">
+    <div onclick="toggleMoreSection('${key}')" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 2px;cursor:pointer;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text);">${title}</div>
+      <div style="display:flex;align-items:center;gap:12px;">${headerExtra||''}<span id="msec-chev-${key}" style="color:var(--lime);font-size:12px;line-height:1;">${open?'▾':'▸'}</span></div>
+    </div>
+    <div id="msec-bd-${key}" style="${open?'':'display:none;'}padding-top:12px;">`;
+}
+function _mClose(){ return `</div></div>`; }
+
 // ============================================================
 // TRACK CHARTS (Phase 66) — hand-drawn SVG line charts w/ hover
 // Chart series colours are dataviz-validated literals (NOT the app
@@ -2967,16 +2991,16 @@ function renderMore(){
       </button>
     </div>
 
-    <div class="sec-label">AI Coach (Anthropic key)</div>
+    ${_mOpen('coachkey','AI Coach (Anthropic key)')}
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
         Paste your own Anthropic API key. Forge generates a weekly review every Sunday 9am using your key (Opus 4.7). Costs ~$0.25–$0.75 per report. Key is encrypted at rest.
       </div>
       <div id="coach-status" style="font-size:12px;color:var(--text3);margin-bottom:10px;">Loading…</div>
       <div id="coach-controls"></div>
-    </div>
+    </div>${_mClose()}
 
-    <div class="sec-label">Personal Profile (for the AI Coach)</div>
+    ${_mOpen('personal','Personal Profile (for the AI Coach)')}
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
         The AI Coach uses this to compute your actual TDEE and tailor advice. Especially important if you're on medications that affect appetite or weight (e.g. GLP-1).
@@ -3041,10 +3065,10 @@ function renderMore(){
       </div>
       <button class="btn btn-lime btn-sm" style="width:100%;margin-bottom:8px;" onclick="savePersonalProfile()">Save Personal Profile</button>
       <button class="btn btn-ghost btn-sm" style="width:100%;font-size:11px;" onclick="askCoachMaxLBM()">🧠 Compute my realistic max LBM (AI)</button>
-    </div>
+    </div>${_mClose()}
 
     ${isOwner()?`
-    <div class="sec-label">Coach Settings</div>
+    ${_mOpen('coachset','Coach Settings')}
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:6px;">
         The facts the AI Coach uses to tailor advice. Changes take effect on your <strong>next generated report or Ask Forge answer</strong>.
@@ -3137,19 +3161,19 @@ function renderMore(){
       </div>
       <div id="cs-dob-note" style="font-size:10px;color:var(--orange);margin-top:3px;line-height:1.4;"></div>
       <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.4;">Ethnicity (used for the visceral-fat threshold — South Asian ≥7 vs ≥10) is set in <strong>Personal Profile</strong> above.</div>
-    </div>
+    </div>${_mClose()}
     `:''}
 
-    <div class="sec-label">Medications</div>
+    ${_mOpen('meds','Medications')}
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
         Tell the AI Coach what you're on. GLP-1 meds (Mounjaro, Ozempic, Wegovy) change weight-loss interpretation significantly. Statins, metformin, insulin etc. also relevant.
       </div>
       <div id="meds-list" style="margin-bottom:10px;"></div>
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openMedEdit(null)">+ Add Medication</button>
-    </div>
+    </div>${_mClose()}
 
-    <div class="sec-label">Blood Markers</div>
+    ${_mOpen('bloodmarkers','Blood Markers')}
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
         Latest blood panel results. The AI Coach uses out-of-range markers to ground its advice (e.g. HbA1c diabetic-range = low-GI is non-negotiable).
@@ -3157,10 +3181,10 @@ function renderMore(){
       </div>
       <div id="blm-list" style="margin-bottom:10px;"></div>
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openBloodMarkerEdit(null)">+ Add Marker</button>
-    </div>
+    </div>${_mClose()}
 
     ${isOwner()?`
-    <div class="sec-label">Skin Care Routine</div>
+    ${_mOpen('skincare','Skin Care Routine')}
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
         Your AM/PM products. The checklist on the Today page shows what's due each day. The AI Coach reviews your routine weekly — ramps retinol frequency as your skin builds tolerance. Each product shows its last-7-days history and 30-day compliance.
@@ -3168,12 +3192,12 @@ function renderMore(){
       <div id="skin-products-list" style="margin-bottom:10px;">${renderSkinProductsList()}</div>
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openSkinProductEdit(null)">+ Add Product</button>
     </div>
-    ${renderSkinRoutineRules()}
+    ${renderSkinRoutineRules()}${_mClose()}
     `:''}
 
     ${renderStretchHistory()}
 
-    <div class="sec-label">Tell Your Coach About You</div>
+    ${_mOpen('aboutme','Tell Your Coach About You')}
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
         Anything you want the AI Coach to always keep in mind — your goals in your own words, how you like to be coached, life circumstances, injuries or conditions, what "doing well" means to you. This is read on every chat and weekly review.
@@ -3183,9 +3207,9 @@ function renderMore(){
         <span id="am-count" style="font-size:10px;color:var(--text3);">${(((STATE.profile&&STATE.profile.aboutMe&&STATE.profile.aboutMe.text)||'').length)} / 2000</span>
       </div>
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="saveAboutMe()">Save</button>
-    </div>
+    </div>${_mClose()}
 
-    <div class="sec-label">Food Preferences</div>
+    ${_mOpen('foodprefs','Food Preferences')}
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
         Tell the AI Coach what you don't eat. Used when generating your weekly meal plan and suggesting swaps.
@@ -3205,25 +3229,25 @@ function renderMore(){
         <option value="manual">Only when I tap regenerate</option>
       </select>
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="saveFoodPrefs()">Save Preferences</button>
-    </div>
+    </div>${_mClose()}
 
-    <div class="sec-label">Oura Ring</div>
+    ${_mOpen('oura','Oura Ring')}
     <div class="card" style="margin-bottom:10px;">
       <div id="oura-status" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">Loading...</div>
       <div id="oura-controls" style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-lime btn-sm" style="flex:1;min-width:140px;" onclick="connectOura()">Connect Oura</button>
       </div>
-    </div>
+    </div>${_mClose()}
 
-    <div class="sec-label">Withings Scale</div>
+    ${_mOpen('withings','Withings Scale')}
     <div class="card" style="margin-bottom:10px;">
       <div id="withings-status" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">Loading...</div>
       <div id="withings-controls" style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-lime btn-sm" style="flex:1;min-width:140px;" onclick="connectWithings()">Connect Withings</button>
       </div>
-    </div>
+    </div>${_mClose()}
 
-    <div class="sec-label">Manage Supplements</div>
+    ${_mOpen('supplements','Manage Supplements')}
     <div class="card" style="margin-bottom:10px;">
       ${(()=>{
         const supps=getSupplements();
@@ -3239,29 +3263,29 @@ function renderMore(){
           </div>`).join('');
       })()}
       <button class="btn btn-lime btn-sm" style="width:100%;margin-top:10px;" onclick="openAddSupplement()">+ Add Supplement</button>
-    </div>
+    </div>${_mClose()}
 
-    <div class="sec-label">Training Schedule</div>
+    ${_mOpen('trainsched','Training Schedule')}
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
         Your training start time for each day. Shown on the Today card. Leave a day blank if you don't normally train then.
       </div>
       <div id="session-times-grid"></div>
       <button class="btn btn-lime btn-sm" style="width:100%;margin-top:12px;" onclick="saveSessionTimesFromUI()">Save Schedule</button>
-    </div>
+    </div>${_mClose()}
 
-    <div class="sec-label">Injury Management</div>
+    ${_mOpen('injuries','Injury Management')}
     <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
         Flag an injury and pick the lifts it affects. Forge automatically reduces those loads (mild −20%, moderate −35%, severe = hold &amp; see a doctor) and the AI Coach factors active injuries into its weekly review.
       </div>
       <div id="injury-list" style="margin-bottom:10px;"></div>
       <button class="btn btn-lime btn-sm" style="width:100%;" onclick="openInjuryEdit(null)">+ Flag an Injury</button>
-    </div>
+    </div>${_mClose()}
 
     ${renderStageGuide()}
 
-    <div class="sec-label">Profile Settings</div>
+    ${_mOpen('profileset','Profile Settings')}
     <div class="card">
       <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${p.name}</div>
       <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">Start: ${p.startWeight}kg · Target: ${p.targetWeight}kg @ ${p.targetBF||15}% BF</div>
@@ -3271,10 +3295,10 @@ function renderMore(){
       <button class="btn btn-red btn-sm" style="width:100%;margin-bottom:8px;background:rgba(255,59,59,.2);" onclick="confirmReset()">Reset All Data</button>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px;" onclick="logOut()">Log Out</button>
       <button class="btn btn-red btn-sm" style="width:100%;" onclick="deleteAccount()">Delete Account</button>
-    </div>
+    </div>${_mClose()}
 
     ${(typeof isOwner==='function'&&isOwner())?`
-    <div class="sec-label" style="margin-top:18px;">Forge Admin · Stats</div>
+    ${_mOpen('admin','Forge Admin · Stats')}
     <div class="card" style="margin-bottom:10px;">
       <div id="admin-stats-body" style="font-size:12px;color:var(--text2);">Loading…</div>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px;" onclick="loadAdminStats()">↻ Refresh</button>
@@ -3282,7 +3306,7 @@ function renderMore(){
       <button class="btn btn-lime btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="generateInviteLink()">✉️ Generate invite link</button>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="openContextPreview()">🔍 What my coach sees</button>
       <div id="invite-list" style="margin-top:10px;"></div>
-    </div>`:''}
+    </div>${_mClose()}`:''}
   `;
 
   loadOuraStatus();
