@@ -142,6 +142,19 @@ test("saveAboutMe handler is defined", () => {
   assert.equal(typeof ctx.saveAboutMe, "function", "saveAboutMe not defined");
 });
 
+test("More page sections are collapsible (Phase 68)", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  ctx.renderMore();
+  const html = els["page-more"]._html;
+  assert.ok(html.includes("toggleMoreSection("), "More sections not wrapped in collapsibles");
+  assert.equal(typeof ctx.toggleMoreSection, "function", "toggleMoreSection not defined");
+  // A representative sample of section keys should be present as collapsible headers.
+  for (const key of ["coachkey", "personal", "meds", "bloodmarkers", "aboutme", "foodprefs", "oura", "withings", "injuries", "profileset"]) {
+    assert.ok(html.includes(`toggleMoreSection('${key}')`), `missing collapsible section: ${key}`);
+  }
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
