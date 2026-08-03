@@ -1811,6 +1811,32 @@ async function seedJayDeloadCadenceV1() {
   }
 }
 
+// Phase 70c: seed Naveed's deload cadence — same as Jay (this week = deload, then
+// every 8 weeks from Mon 2026-08-03). Naveed is on the 5-day fixed split, whose
+// built-in deload would otherwise fall on Aug 17-23; the program-agnostic config
+// takes precedence (deloadConfig wins over the 5-day schedule in _deloadInfoFor),
+// so this overrides that to match Jay. Guarded so it runs once; changeable in-app.
+async function seedNaveedDeloadCadenceV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "mohammed.naveed@birmingham.gov.uk" } });
+    if (!user) { console.log("[migration] Naveed deload cadence: no account (skipped)"); return; }
+    const state: any = user.state || {};
+    if (state.deloadCadenceNaveedV1) return;
+    if (!state.profile) state.profile = {};
+    state.profile.deloadConfig = {
+      enabled: true,
+      everyWeeks: 8,
+      anchorMonday: "2026-08-03",
+      updatedAt: new Date().toISOString(),
+    };
+    state.deloadCadenceNaveedV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Naveed deload cadence seeded (every 8 weeks from 2026-08-03)");
+  } catch (err) {
+    console.error("[migration] seedNaveedDeloadCadenceV1 failed:", err);
+  }
+}
+
 // ── DEV-ONLY (staging): seeded test account ──────────────────────────────────
 // Creates a ready-to-use test@afjltd.co.uk with representative data so the app
 // can be exercised without touching real data or manually registering. Guarded
@@ -1983,6 +2009,7 @@ const server = app.listen(PORT, async () => {
   await seedJayTargetOverridesV1();
   await seedJayTapeReminderV1();
   await seedJayDeloadCadenceV1();
+  await seedNaveedDeloadCadenceV1();
   await seedJayMealPlanV9();
   await seedJayMealPlanV10();
   await seedAbdulCutV1();
