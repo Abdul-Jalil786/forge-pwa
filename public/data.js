@@ -1194,6 +1194,34 @@ function saveSessionTimes(times){
   saveFieldToServer('/api/state/profile/session-times',{sessionTimes:times});
 }
 
+// Phase 70: user-configured deload cadence (program-agnostic). Shape:
+// profile.deloadConfig = {enabled, everyWeeks, anchorMonday}. anchorMonday is the
+// Monday of the first deload week; the deload repeats every `everyWeeks` weeks.
+function getDeloadConfig(){
+  const c=(STATE.profile&&STATE.profile.deloadConfig)||null;
+  return (c&&typeof c==='object')?c:{enabled:false,everyWeeks:8,anchorMonday:null};
+}
+// Monday (YYYY-MM-DD) of the week containing dateStr (Mon-first).
+function _mondayOf(dateStr){
+  const d=new Date((dateStr||todayStr())+'T12:00:00');
+  const dow=d.getDay(); // 0=Sun..6=Sat
+  const back=(dow===0)?6:(dow-1);
+  d.setDate(d.getDate()-back);
+  return d.toISOString().slice(0,10);
+}
+function saveDeloadConfig(cfg){
+  if(!STATE.profile)STATE.profile={};
+  const clean={
+    enabled:!!cfg.enabled,
+    everyWeeks:Math.max(1,Math.min(52,parseInt(cfg.everyWeeks)||8)),
+    anchorMonday:cfg.anchorMonday||null,
+  };
+  STATE.profile.deloadConfig=clean;
+  updateLocalCache();
+  saveFieldToServer('/api/state/profile/deload-config',{deloadConfig:clean});
+  return clean;
+}
+
 // Phase 47: per-exercise running notes (user-written; coach training-swap also
 // writes here). Shape: state.exerciseNotes[exId] = {note, addedAt, source}.
 function getExerciseNote(exId){
@@ -1935,11 +1963,17 @@ function computeSessionScore(date,sessionType){
   for(const [d,log] of Object.entries(exLog)){
     if(d>=date||d<cutoffStr)continue;
     if(getSessionTypeForDate(d)!==sessionType)continue;
+    // Phase 70: deload weeks are ~60% by design — exclude them from the baseline
+    // so they don't drag the 4-week average and make normal weeks read inflated.
+    if(typeof _isDeloadDate==='function'&&_isDeloadDate(d))continue;
     const v=computeSessionVolume(log);
     if(v>0)vols.push(v);
   }
   const avg4w=vols.length?Math.round(vols.reduce((a,b)=>a+b,0)/vols.length):null;
   const pct=avg4w?Math.round((volume/avg4w)*100):null;
+  // Phase 70: flag when the scored session is itself a deload — consumers (recap,
+  // coach) treat a low deload score as planned recovery, not regression.
+  const isDeload=(typeof _isDeloadDate==='function')&&_isDeloadDate(date);
   const effortMix={easy:0,solid:0,tough:0,rated:0};
   for(const [exId,ex] of Object.entries(dayLog)){
     if(exId.startsWith('_')||!ex||!Array.isArray(ex.sets))continue;
@@ -1948,7 +1982,7 @@ function computeSessionScore(date,sessionType){
       if(e==='easy'||e==='solid'||e==='tough'){effortMix[e]++;effortMix.rated++;}
     }
   }
-  return {volume,avg4w,pct,effortMix,sessions4w:vols.length};
+  return {volume,avg4w,pct,effortMix,sessions4w:vols.length,deload:isDeload};
 }
 
 // ---- S2: Fasting window ----

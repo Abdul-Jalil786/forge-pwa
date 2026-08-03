@@ -773,7 +773,37 @@ function _scheduledDeload(dateStr){
   if(typeof FORGE_PROGRAMME==='undefined'||!FORGE_PROGRAMME.deloadWeekInfo)return null;
   return FORGE_PROGRAMME.deloadWeekInfo(STATE.profile.programmeStartDate,dateStr);
 }
-function _isDeloadDate(dateStr){ const d=_scheduledDeload(dateStr); return !!(d&&d.isDeload); }
+// Phase 70: user-configured deload cadence — program-agnostic, decoupled from the
+// training rotation. profile.deloadConfig = {enabled, everyWeeks, anchorMonday}.
+// A deload week recurs every `everyWeeks` weeks from `anchorMonday` (a Monday),
+// forward only. Returns {weekIdx,everyWeeks,isDeload} or null when not configured.
+function _manualDeloadInfo(dateStr){
+  if(typeof STATE==='undefined'||!STATE.profile)return null;
+  const cfg=STATE.profile.deloadConfig;
+  if(!cfg||!cfg.enabled||!cfg.anchorMonday||!dateStr)return null;
+  const every=parseInt(cfg.everyWeeks)||8;
+  if(every<1)return null;
+  const start=new Date(cfg.anchorMonday+'T12:00:00');
+  const target=new Date(dateStr+'T12:00:00');
+  const days=Math.floor((target-start)/86400000);
+  if(days<0)return null; // before the anchor week: cadence hasn't started
+  const weekIdx=Math.floor(days/7);
+  return { weekIdx, everyWeeks:every, isDeload:(weekIdx%every)===0 };
+}
+// Unified resolver: an explicit user config (when enabled) wins over the built-in
+// 5-day-program schedule, so a manual cadence fully governs when it's set.
+function _deloadInfoFor(dateStr){
+  const m=_manualDeloadInfo(dateStr);
+  if(m)return m;
+  return _scheduledDeload(dateStr);
+}
+// Is any deload cadence active for this user (config OR built-in 5-day program)?
+function _deloadActiveForUser(){
+  if(typeof STATE==='undefined'||!STATE.profile)return false;
+  const cfg=STATE.profile.deloadConfig;
+  return !!((cfg&&cfg.enabled)||STATE.profile.programId==='upper-lower-5d-fixed');
+}
+function _isDeloadDate(dateStr){ const d=_deloadInfoFor(dateStr); return !!(d&&d.isDeload); }
 function isDeloadWeekToday(){ return _isDeloadDate(typeof todayStr==='function'?todayStr():null); }
 // Prescribed set count for TODAY: a scheduled deload week caps weighted lifts at
 // 2 sets. Rehab / cardio / timed holds keep their template set count.
@@ -1056,13 +1086,14 @@ function _suggestWeightCore(exId, prevSession, setIdx, opts){
     }
   }
 
-  // Phase 60: scheduled-deload overlay (5-day split). HIGHEST precedence —
-  // overrides double-progression AND reactive stall-deload. Deload-week sessions
-  // are excluded from the progression reference, so the week AFTER a deload
-  // builds off the last real (non-deload) working weight, not the 60% load.
+  // Phase 60 + 70: scheduled-deload overlay. HIGHEST precedence — overrides
+  // double-progression AND reactive stall-deload. Applies to the built-in 5-day
+  // schedule OR a user-configured cadence (profile.deloadConfig, Phase 70).
+  // Deload-week sessions are excluded from the progression reference, so the week
+  // AFTER a deload builds off the last real (non-deload) working weight, not 60%.
   const _forDate=(opts&&opts.forDate)||(typeof todayStr==='function'?todayStr():null);
-  const _dlToday=_forDate?_scheduledDeload(_forDate):null;
-  const _fiveDay=!!(typeof STATE!=='undefined'&&STATE.profile&&STATE.profile.programId==='upper-lower-5d-fixed');
+  const _dlToday=_forDate?_deloadInfoFor(_forDate):null;
+  const _fiveDay=_deloadActiveForUser();
   const _cands=[]; if(prevSession&&prevSession.date)_cands.push(prevSession);
   if(opts&&Array.isArray(opts.prevSessions))for(const s of opts.prevSessions){ if(s&&s.date&&!_cands.some(c=>c.date===s.date))_cands.push(s); }
   const _nonDeload=_fiveDay?_cands.filter(s=>!_isDeloadDate(s.date)):_cands;

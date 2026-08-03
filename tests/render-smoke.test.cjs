@@ -267,6 +267,54 @@ test("5-day post-deload: progression references the last NON-deload weight, not 
   assert.ok(sug.kg > 24, `must build off 40kg not the 24kg deload (got ${sug.kg}kg)`);
 });
 
+test("Phase 70: configured deload cadence works on ANY program (not just 5-day)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // Default seed is upper-lower-4d. Enable an 8-week cadence anchored to a Monday.
+  vm.runInContext(`STATE.profile.deloadConfig={enabled:true,everyWeeks:8,anchorMonday:'2026-08-03'};`, ctx);
+  const q = (e) => vm.runInContext(e, ctx);
+  // Anchor week (Aug 3–9) is a deload; next at week 8 (Sep 28); week 1 (Aug 10) is not.
+  assert.equal(q(`_isDeloadDate('2026-08-05')`), true, "anchor week is a deload");
+  assert.equal(q(`_isDeloadDate('2026-08-10')`), false, "week 1 is not a deload");
+  assert.equal(q(`_isDeloadDate('2026-09-28')`), true, "8 weeks on is a deload again");
+  assert.equal(q(`_isDeloadDate('2026-07-30')`), false, "dates before the anchor are never deload");
+  // Progression drops to 60% + 2 sets that week, program-agnostic.
+  const prev = { date: "2026-07-27", log: { u4: { sets: [{ kg: 40, reps: 11, effort: "solid" }, { kg: 40, reps: 10, effort: "solid" }] } } };
+  const sug = q(`suggestWeight('u4', ${JSON.stringify(prev)}, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), prevSessions:[${JSON.stringify(prev)}], forDate:'2026-08-05' })`);
+  assert.equal(sug.deload, true, "deload flagged on a 4-day program via config");
+  assert.equal(sug.setsOverride, 2, "set count overridden to 2");
+  assert.equal(sug.kg, 24, "60% of 40kg = 24kg");
+});
+
+test("Phase 70: deload config disabled → no deload on any date", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.deloadConfig={enabled:false,everyWeeks:8,anchorMonday:'2026-08-03'};`, ctx);
+  assert.equal(vm.runInContext(`_isDeloadDate('2026-08-05')`, ctx), false, "disabled config never marks a deload");
+  const prev = { date: "2026-07-27", log: { u4: { sets: [{ kg: 40, reps: 12, effort: "solid" }] } } };
+  const sug = vm.runInContext(`suggestWeight('u4', ${JSON.stringify(prev)}, undefined, { exObj: WORKOUTS.upperA.exercises.find(e=>e.id==='u4'), prevSessions:[${JSON.stringify(prev)}], forDate:'2026-08-05' })`, ctx);
+  assert.ok(!sug || !sug.scheduledDeload, "no deload overlay when config disabled");
+});
+
+test("Phase 70: deload weeks are excluded from the 4-week volume baseline", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`
+    STATE.profile.deloadConfig={enabled:true,everyWeeks:8,anchorMonday:'2026-08-03'};
+    STATE.trainingStartDate='2026-07-27';
+    STATE.exLog={
+      '2026-07-27':{u4:{sets:[{kg:40,reps:10}]}},
+      '2026-07-31':{u4:{sets:[{kg:40,reps:10}]}},
+      '2026-08-04':{u4:{sets:[{kg:24,reps:10}]}}
+    };
+  `, ctx);
+  // Aug 4 is a deload week (24kg×10=240) and must NOT drag the average of the two
+  // real 40kg×10=400 weeks. Score a normal upper day (Aug 12).
+  const score = vm.runInContext(`computeSessionScore('2026-08-12','upper')`, ctx);
+  assert.equal(score.avg4w, 400, "deload week excluded → baseline stays at the real 400, not 347");
+  assert.equal(score.sessions4w, 2, "only the two non-deload sessions count");
+});
+
 test("progression is rep-range-aware per day (undulating split: Leg Press 8–10 vs 10–12)", () => {
   const { ctx } = bootApp();
   seed(ctx);

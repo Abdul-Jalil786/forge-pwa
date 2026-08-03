@@ -767,6 +767,48 @@ router.put("/profile/session-times", requireAuth, async (req: Request, res: Resp
   }
 });
 
+// Phase 70: user-configured deload cadence (program-agnostic). Subfield of profile.
+// { enabled, everyWeeks (1-52), anchorMonday (YYYY-MM-DD, a Monday) }.
+router.put("/profile/deload-config", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { deloadConfig } = req.body || {};
+    if (!deloadConfig || typeof deloadConfig !== "object" || Array.isArray(deloadConfig)) {
+      res.status(400).json({ error: "deloadConfig must be an object" }); return;
+    }
+    let everyWeeks = parseInt(deloadConfig.everyWeeks, 10);
+    if (!Number.isFinite(everyWeeks)) everyWeeks = 8;
+    everyWeeks = Math.max(1, Math.min(52, everyWeeks));
+    let anchorMonday: string | null = null;
+    if (deloadConfig.anchorMonday != null) {
+      if (typeof deloadConfig.anchorMonday !== "string" || !DATE_RE.test(deloadConfig.anchorMonday)) {
+        res.status(400).json({ error: "anchorMonday must be YYYY-MM-DD" }); return;
+      }
+      anchorMonday = deloadConfig.anchorMonday;
+    }
+    const valueJson = JSON.stringify({
+      enabled: !!deloadConfig.enabled,
+      everyWeeks,
+      anchorMonday,
+      updatedAt: new Date().toISOString(),
+    });
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+        '{profile,deloadConfig}',
+        ${valueJson}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put deload-config error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.put("/sleep/:date", requireAuth, async (req: Request, res: Response) => {
   try {
     const date = req.params.date as string;
