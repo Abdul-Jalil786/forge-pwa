@@ -3272,6 +3272,14 @@ function renderMore(){
       </div>
       <div id="session-times-grid"></div>
       <button class="btn btn-lime btn-sm" style="width:100%;margin-top:12px;" onclick="saveSessionTimesFromUI()">Save Schedule</button>
+    </div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-weight:700;font-size:14px;margin-bottom:6px;">Deload weeks</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+        A deload is a planned lighter week (~60% load, 2 sets) to recover and come back stronger. Turn this on to auto-schedule one every few weeks — Forge drops the loads that week and keeps it out of your progress stats so it never reads as going backwards.
+      </div>
+      <div id="deload-config-ui"></div>
+      <button class="btn btn-lime btn-sm" style="width:100%;margin-top:12px;" onclick="saveDeloadConfigFromUI()">Save Deload Cadence</button>
     </div>${_mClose()}
 
     ${_mOpen('injuries','Injury Management')}
@@ -3318,6 +3326,7 @@ function renderMore(){
   renderMedsList();
   renderBloodMarkersList();
   loadSessionTimesUI();
+  if(typeof loadDeloadConfigUI==='function')loadDeloadConfigUI();
   renderInjuryList();
   if(typeof isOwner==='function'&&isOwner()&&typeof loadAdminStats==='function')loadAdminStats();
   if(typeof isOwner==='function'&&isOwner()&&typeof loadInviteList==='function')loadInviteList();

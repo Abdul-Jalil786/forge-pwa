@@ -1262,6 +1262,77 @@ function saveSessionTimesFromUI(){
   renderToday();
 }
 
+// ---- DELOAD CADENCE (Phase 70) ----
+function _thisMonday(){
+  const d=new Date((typeof todayStr==='function'?todayStr():new Date().toISOString().slice(0,10))+'T12:00:00');
+  const dow=d.getDay();
+  const back=(dow===0)?6:(dow-1);
+  d.setDate(d.getDate()-back);
+  return d.toISOString().slice(0,10);
+}
+function loadDeloadConfigUI(){
+  const box=document.getElementById('deload-config-ui');
+  if(!box)return;
+  const cfg=(typeof getDeloadConfig==='function')?getDeloadConfig():{enabled:false,everyWeeks:8,anchorMonday:null};
+  const anchor=cfg.anchorMonday||_thisMonday();
+  const every=cfg.everyWeeks||8;
+  const nextInfo=cfg.enabled?_deloadNextText(anchor,every):'';
+  box.innerHTML=`
+    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;">
+      <span style="font-size:13px;font-weight:600;">Auto-schedule deloads</span>
+      <input type="checkbox" id="dl-enabled" ${cfg.enabled?'checked':''} onchange="_deloadPreview()" style="width:20px;height:20px;accent-color:var(--lime);" />
+    </label>
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:1;font-size:13px;font-weight:600;">Every</div>
+      <input type="number" id="dl-every" min="1" max="52" value="${every}" onchange="_deloadPreview()" oninput="_deloadPreview()" style="width:64px;padding:6px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;text-align:center;" />
+      <div style="font-size:13px;color:var(--text2);">weeks</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:1;font-size:13px;font-weight:600;">First deload week (Mon)</div>
+      <input type="date" id="dl-anchor" value="${anchor}" onchange="_deloadPreview()" style="padding:6px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" />
+    </div>
+    <div id="dl-preview" style="font-size:12px;color:var(--lime);margin-top:10px;line-height:1.5;">${nextInfo}</div>`;
+}
+function _deloadNextText(anchorStr,every){
+  try{
+    const today=(typeof todayStr==='function'?todayStr():new Date().toISOString().slice(0,10));
+    const start=new Date(anchorStr+'T12:00:00');
+    const t=new Date(today+'T12:00:00');
+    const days=Math.floor((t-start)/86400000);
+    if(days<0){
+      const wk=Math.ceil(-days/7);
+      return `First deload week starts ${anchorStr} (in ${wk} week${wk===1?'':'s'}).`;
+    }
+    const weekIdx=Math.floor(days/7);
+    if(weekIdx%every===0)return `This week IS a deload week. Next one in ${every} weeks.`;
+    const until=(every-(weekIdx%every))%every;
+    return `On track. Next deload in ${until} week${until===1?'':'s'}.`;
+  }catch{ return ''; }
+}
+function _deloadPreview(){
+  const enabled=document.getElementById('dl-enabled');
+  const every=document.getElementById('dl-every');
+  const anchor=document.getElementById('dl-anchor');
+  const prev=document.getElementById('dl-preview');
+  if(!prev)return;
+  if(enabled&&!enabled.checked){ prev.textContent='Deloads off — Forge will not schedule any lighter weeks.'; return; }
+  const e=Math.max(1,Math.min(52,parseInt(every&&every.value)||8));
+  prev.textContent=_deloadNextText((anchor&&anchor.value)||_thisMonday(),e);
+}
+function saveDeloadConfigFromUI(){
+  const enabled=document.getElementById('dl-enabled');
+  const every=document.getElementById('dl-every');
+  const anchor=document.getElementById('dl-anchor');
+  const cfg={
+    enabled:!!(enabled&&enabled.checked),
+    everyWeeks:Math.max(1,Math.min(52,parseInt(every&&every.value)||8)),
+    anchorMonday:(anchor&&anchor.value)||_thisMonday(),
+  };
+  if(typeof saveDeloadConfig==='function')saveDeloadConfig(cfg);
+  showToast(cfg.enabled?'Deload cadence saved ✓':'Deloads turned off');
+  if(typeof renderToday==='function')renderToday();
+}
+
 // ---- INJURY MANAGEMENT (Phase 38) ----
 let _injuryEdit=null; // { id: string | null }
 function _allWorkoutExercises(){

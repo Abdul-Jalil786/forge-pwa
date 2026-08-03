@@ -1031,9 +1031,23 @@ export function buildContext(state: any): string {
   // (single source — no hardcoded "Upper/Rest/Lower/Rest").
   const prog = programmeLabel(profile.programId);
   lines.push(`  Programme: ${prog.name} — ${prog.pattern}. The split is fixed; suggest volume/intensity tweaks within it, not split changes.${state.trainingStartDate ? ` Training anchor: ${state.trainingStartDate}.` : ""}`);
-  // Phase 60: deload cycle — tell the coach when this user is inside a planned
-  // 60%/2-set deload week, so a light week isn't misread as regression.
-  if (profile.programId === "upper-lower-5d-fixed" && profile.programmeStartDate) {
+  // Phase 60 + 70: deload cycle — tell the coach when this user is inside a
+  // planned ~60%/2-set deload week, so a light week isn't misread as regression.
+  // A user-configured cadence (profile.deloadConfig, Phase 70) takes precedence
+  // over the built-in 5-day-program schedule.
+  const dc = profile.deloadConfig;
+  if (dc && dc.enabled && dc.anchorMonday) {
+    const every = Math.max(1, parseInt(dc.everyWeeks, 10) || 8);
+    const start = new Date(dc.anchorMonday + "T12:00:00");
+    const target = new Date(ukToday() + "T12:00:00");
+    const days = Math.floor((target.getTime() - start.getTime()) / 86400000);
+    if (days >= 0) {
+      const weekIdx = Math.floor(days / 7);
+      const isDeload = weekIdx % every === 0;
+      const untilNext = (every - (weekIdx % every)) % every;
+      lines.push(`  Deload cadence: every ${every} weeks (user-set, anchored ${dc.anchorMonday}).${isDeload ? " THIS IS A SCHEDULED DELOAD WEEK (planned ~60% load, 2 sets). Expect lower volume/weights; that is by design, not regression." : ` Next deload in ${untilNext} week${untilNext === 1 ? "" : "s"} (normal progression this week).`}`);
+    }
+  } else if (profile.programId === "upper-lower-5d-fixed" && profile.programmeStartDate) {
     const dl = deloadWeekInfo(profile.programmeStartDate, ukToday());
     if (dl) lines.push(`  Deload cycle: week ${dl.weekInCycle + 1} of 5${dl.isDeload ? " — THIS IS A SCHEDULED DELOAD WEEK (planned ~60% load, 2 sets). Expect lower volume/weights; that is by design, not regression." : " (normal progression week)."}`);
   }

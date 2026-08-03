@@ -1786,6 +1786,31 @@ async function seedJayTapeReminderV1() {
   }
 }
 
+// Phase 70: seed Jay's deload cadence — the week of Mon 2026-08-03 is a deload,
+// then every 8 weeks from there. Program-agnostic config (profile.deloadConfig);
+// the progression engine drops loads that week and the analytics exclude it.
+// Guarded so it runs once; the user can change it from More → Training Schedule.
+async function seedJayDeloadCadenceV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.deloadCadenceSeededV1) return;
+    if (!state.profile) state.profile = {};
+    state.profile.deloadConfig = {
+      enabled: true,
+      everyWeeks: 8,
+      anchorMonday: "2026-08-03",
+      updatedAt: new Date().toISOString(),
+    };
+    state.deloadCadenceSeededV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay deload cadence seeded (every 8 weeks from 2026-08-03)");
+  } catch (err) {
+    console.error("[migration] seedJayDeloadCadenceV1 failed:", err);
+  }
+}
+
 // ── DEV-ONLY (staging): seeded test account ──────────────────────────────────
 // Creates a ready-to-use test@afjltd.co.uk with representative data so the app
 // can be exercised without touching real data or manually registering. Guarded
@@ -1957,6 +1982,7 @@ const server = app.listen(PORT, async () => {
   await setJaySkinPhase3();
   await seedJayTargetOverridesV1();
   await seedJayTapeReminderV1();
+  await seedJayDeloadCadenceV1();
   await seedJayMealPlanV9();
   await seedJayMealPlanV10();
   await seedAbdulCutV1();
