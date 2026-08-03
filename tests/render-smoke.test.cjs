@@ -315,6 +315,22 @@ test("Phase 70: deload weeks are excluded from the 4-week volume baseline", () =
   assert.equal(score.sessions4w, 2, "only the two non-deload sessions count");
 });
 
+test("Phase 70b: _effectiveSets reads the VIEWED date, and the day view shows a deload banner", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.profile.deloadConfig={enabled:true,everyWeeks:8,anchorMonday:'2026-08-03'};`, ctx);
+  const q = (e) => vm.runInContext(e, ctx);
+  const u4 = `WORKOUTS.upperA.exercises.find(e=>e.id==='u4')`;
+  // A weighted lift caps at 2 sets on a deload date, keeps its template count on a normal date.
+  assert.equal(q(`_effectiveSets(${u4},'2026-08-05')`), 2, "deload week → 2 sets");
+  assert.ok(q(`_effectiveSets(${u4},'2026-08-12')`) > 2, "normal week → full template sets");
+  // The day-view row for a future deload date shows "2 sets", not the template count.
+  const row = q(`buildExItem(${u4}, {}, null, true, '2026-08-05')`);
+  assert.ok(/2 sets ×/.test(row), "future deload day view renders 2 sets");
+  const rowNormal = q(`buildExItem(${u4}, {}, null, true, '2026-08-12')`);
+  assert.ok(!/2 sets ×/.test(rowNormal), "future normal day view keeps full sets");
+});
+
 test("progression is rep-range-aware per day (undulating split: Leg Press 8–10 vs 10–12)", () => {
   const { ctx } = bootApp();
   seed(ctx);

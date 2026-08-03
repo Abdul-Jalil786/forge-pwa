@@ -102,6 +102,13 @@ function renderWorkout(){
     html+=`<div class="card info" style="margin-bottom:10px;text-align:center;font-size:13px;color:var(--text2);padding:14px;">View only — log this on ${dateObj.toLocaleDateString('en-GB',{weekday:'long'})}.</div>`;
   }
 
+  // Phase 70: deload banner on the day view — keyed on the VIEWED date, so a
+  // previewed deload week is explained (reduced sets + ~60% load) even before you
+  // start it, and a normal week viewed during a deload week shows nothing.
+  if(typeof _isDeloadDate==='function' && _isDeloadDate(date)){
+    html+=`<div style="background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.4);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--orange);line-height:1.5;">🔄 <strong>Deload week</strong> — planned recovery. Loads drop to ~60% and sets to 2 for the main lifts. Move well, leave reps in the tank; you come back stronger next week.</div>`;
+  }
+
   html+=`<div class="pb-wrap">
       <div class="pb-head"><span class="pb-lbl">Session Progress</span><span class="pb-pct">${pct}%</span></div>
       <div class="pb"><div class="pb-fill" style="width:${pct}%"></div></div>
@@ -266,7 +273,7 @@ function buildExItem(ex,dayLog,prevSession,readonly,refDate){
   const data=dayLog[ex.id]||{};
   const done=!!data.done;
   const timed=isTimeBased(ex);
-  const sets=data.sets||Array(_effectiveSets(ex)).fill(null).map(()=>timed?{seconds:''}:{kg:'',reps:''});
+  const sets=data.sets||Array(_effectiveSets(ex,refDate)).fill(null).map(()=>timed?{seconds:''}:{kg:'',reps:''});
   const best=getBestLift(ex.id);
   const bestStr=best?(timed?`PB: ${fmtSec(best.seconds)}`:`PB: ${best.kg}kg`):'';
   const bestDetail=best?(timed?`🏆 Personal Best: ${fmtSec(best.seconds)} on ${fmtDate(best.date)}`:`🏆 Personal Best: ${best.kg}kg on ${fmtDate(best.date)}`):'';
@@ -313,7 +320,7 @@ function buildExItem(ex,dayLog,prevSession,readonly,refDate){
       </div>
       <div class="ex-info">
         <div class="ex-name">${ex.name}</div>
-        <div class="ex-meta">${_effectiveSets(ex)} sets × ${ex.reps} · Rest ${ex.rest}s${bestStr?' · '+bestStr:''}</div>
+        <div class="ex-meta">${_effectiveSets(ex,refDate)} sets × ${ex.reps} · Rest ${ex.rest}s${bestStr?' · '+bestStr:''}</div>
         ${lastLine}
       </div>
       <div class="ex-tag">${ex.muscle}</div>
@@ -379,7 +386,7 @@ function toggleExDone(exId){
   const w=getWorkout(session);
   const ex=w.exercises.find(e=>e.id===exId); if(!ex)return;
   const dayLog=getExLogForDate(date);
-  if(!dayLog[exId])dayLog[exId]={done:false,sets:Array(_effectiveSets(ex)).fill(null).map(()=>isTimeBased(ex)?{seconds:''}:{kg:'',reps:''})};
+  if(!dayLog[exId])dayLog[exId]={done:false,sets:Array(_effectiveSets(ex,date)).fill(null).map(()=>isTimeBased(ex)?{seconds:''}:{kg:'',reps:''})};
   dayLog[exId].done=!dayLog[exId].done;
   saveExLogForDate(date,dayLog);
   renderWorkout();
@@ -805,11 +812,14 @@ function _deloadActiveForUser(){
 }
 function _isDeloadDate(dateStr){ const d=_deloadInfoFor(dateStr); return !!(d&&d.isDeload); }
 function isDeloadWeekToday(){ return _isDeloadDate(typeof todayStr==='function'?todayStr():null); }
-// Prescribed set count for TODAY: a scheduled deload week caps weighted lifts at
-// 2 sets. Rehab / cardio / timed holds keep their template set count.
-function _effectiveSets(ex){
+// Prescribed set count for a session: a deload week caps weighted lifts at 2
+// sets. Rehab / cardio / timed holds keep their template set count. Pass the
+// date being rendered so a previewed future/past day reflects THAT week's deload
+// state (Phase 70); omit it and it falls back to today (guided mode is today-only).
+function _effectiveSets(ex,dateStr){
   if(!ex)return 3;
-  if(isDeloadWeekToday()&&!_isRehabOrCardio(ex)&&!isTimeBased(ex))return 2;
+  const deload=dateStr?_isDeloadDate(dateStr):isDeloadWeekToday();
+  if(deload&&!_isRehabOrCardio(ex)&&!isTimeBased(ex))return 2;
   return ex.sets;
 }
 // Rehab + cardio are exempt from load progression AND scheduled deload.
