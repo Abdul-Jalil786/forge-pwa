@@ -1956,6 +1956,33 @@ async function seedFarukhPlanV1() {
   }
 }
 
+// Farukh's deload cadence — same 8-week rhythm as Jay/Naveed, PHASE-ALIGNED to
+// their deload weeks, but anchored to Mon 2026-09-28 (one of Jay's deload weeks,
+// 8 weeks past his 2026-08-03 anchor). Farukh started 2026-08-06 with no lifting
+// history, so a deload this week would have no baseline to take 60% of and would
+// just confuse; his first deload lands ~7 weeks out after he's built working
+// weights, then falls on the same weeks as Jay's. Guarded; editable in-app.
+async function seedFarukhDeloadCadenceV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "farrukhalijameel@gmail.com" } });
+    if (!user) { console.log("[migration] Farukh deload cadence: no account (skipped)"); return; }
+    const state: any = user.state || {};
+    if (state.deloadCadenceFarukhV1) return;
+    if (!state.profile) state.profile = {};
+    state.profile.deloadConfig = {
+      enabled: true,
+      everyWeeks: 8,
+      anchorMonday: "2026-09-28",
+      updatedAt: new Date().toISOString(),
+    };
+    state.deloadCadenceFarukhV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Farukh deload cadence seeded (every 8 weeks from 2026-09-28)");
+  } catch (err) {
+    console.error("[migration] seedFarukhDeloadCadenceV1 failed:", err);
+  }
+}
+
 // ── DEV-ONLY (staging): seeded test account ──────────────────────────────────
 // Creates a ready-to-use test@afjltd.co.uk with representative data so the app
 // can be exercised without touching real data or manually registering. Guarded
@@ -2130,6 +2157,7 @@ const server = app.listen(PORT, async () => {
   await seedJayDeloadCadenceV1();
   await seedNaveedDeloadCadenceV1();
   await seedFarukhPlanV1();
+  await seedFarukhDeloadCadenceV1();
   await seedJayMealPlanV9();
   await seedJayMealPlanV10();
   await seedAbdulCutV1();
