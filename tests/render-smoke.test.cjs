@@ -331,6 +331,66 @@ test("Phase 70b: _effectiveSets reads the VIEWED date, and the day view shows a 
   assert.ok(!/2 sets ×/.test(rowNormal), "future normal day view keeps full sets");
 });
 
+test("Phase 71: _rangeActivityStats aggregates sleep/steps/food/training over a range", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // 4-day window 2026-07-20..23 with deliberate gaps.
+  vm.runInContext(`
+    STATE.sleepLog={'2026-07-20':{hours:8},'2026-07-21':{hours:6},'2026-07-23':{hours:7}};
+    STATE.stepsLog={'2026-07-20':10000,'2026-07-21':8000};
+    STATE.foods={'2026-07-20':[{cals:2000}],'2026-07-21':[{cals:2200},{cals:300}],'2026-07-23':[{cals:2000}]};
+    STATE.calorieLog={'2026-07-20':{total:2500},'2026-07-21':{total:2600},'2026-07-23':{total:2400}};
+    STATE.exLog={
+      '2026-07-20':{u4:{sets:[{kg:50,reps:10},{kg:50,reps:10}]},_session:{totalDuration:3600}},
+      '2026-07-21':{u4:{sets:[{kg:50,reps:10},{kg:50,reps:10}]}},
+      '2026-07-22':{reh_1:{sets:[{kg:5,reps:15}]}}
+    };
+  `, ctx);
+  const R = vm.runInContext(`_rangeActivityStats('2026-07-20','2026-07-23')`, ctx);
+  assert.equal(R.spanDays, 4, "inclusive span");
+  // Sleep: 3 nights (8,6,7) → total 21, avg 7.0
+  assert.deepEqual([R.sleep.days, R.sleep.total, R.sleep.avg], [3, 21, 7]);
+  // Steps: 2 days (10000,8000) → total 18000, avg 9000
+  assert.deepEqual([R.steps.days, R.steps.total, R.steps.avg], [2, 18000, 9000]);
+  // Eaten: 3 days (2000,2500,2000) → total 6500, avg 2167
+  assert.deepEqual([R.eaten.days, R.eaten.total, R.eaten.avg], [3, 6500, 2167]);
+  // Balance: 3 days (-500,-100,-400) → avg -333 (a deficit)
+  assert.deepEqual([R.balance.days, R.balance.avg], [3, -333]);
+  // Training: only the two u4 days count; the rehab-only day (reh_1) is excluded.
+  assert.equal(R.training.sessions, 2, "rehab-only day not counted");
+  assert.equal(R.training.volumeTotal, 2000, "2 sessions × 50×10×2 = 2000");
+  assert.equal(R.training.volumeAvg, 1000);
+  // Duration only recorded on one day → timeDays 1.
+  assert.deepEqual([R.training.timeDays, R.training.timeTotalSec], [1, 3600]);
+  // Reversed pickers still work (swap internally).
+  const Rrev = vm.runInContext(`_rangeActivityStats('2026-07-23','2026-07-20')`, ctx);
+  assert.equal(Rrev.training.sessions, 2, "reversed range swaps and still aggregates");
+  // Empty range → nulls, no throw.
+  const Rempty = vm.runInContext(`_rangeActivityStats('2026-09-01','2026-09-03')`, ctx);
+  assert.equal(Rempty.sleep.avg, null);
+  assert.equal(Rempty.training.sessions, 0);
+});
+
+test("Phase 71: renderCompareSnapshot drops per-date Sleep/Steps/TDEE for a range block", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext(`
+    STATE.sleepLog={'2026-07-20':{hours:8},'2026-07-21':{hours:6}};
+    STATE.stepsLog={'2026-07-20':10000};
+    STATE.foods={'2026-07-20':[{cals:2000}]};
+    STATE.calorieLog={'2026-07-20':{total:2500}};
+    STATE.exLog={'2026-07-20':{u4:{sets:[{kg:50,reps:10}]},_session:{totalDuration:3600}}};
+  `, ctx);
+  vm.runInContext(`document.getElementById('cmp-date-a').value='2026-07-20';document.getElementById('cmp-date-b').value='2026-07-23';document.getElementById('cmp-result');`, ctx);
+  assert.doesNotThrow(() => vm.runInContext(`renderCompareSnapshot()`, ctx));
+  const html = vm.runInContext(`document.getElementById('cmp-result').innerHTML`, ctx);
+  assert.ok(/Over this range/.test(html), "range block header present");
+  assert.ok(/h\/night/.test(html), "sleep shown as avg/night");
+  assert.ok(/kg·reps/.test(html), "training volume row present");
+  assert.ok(/deficit/.test(html), "energy balance line present");
+  assert.ok(/Weight/.test(html), "body-comp A/B table retained");
+});
+
 test("progression is rep-range-aware per day (undulating split: Leg Press 8–10 vs 10–12)", () => {
   const { ctx } = bootApp();
   seed(ctx);
