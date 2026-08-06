@@ -1494,6 +1494,71 @@ function _snapshotAtDate(date){
   };
 }
 
+// Phase 71: aggregate the "activity" metrics across a From→To range instead of
+// snapshotting two single days (which is noise for sleep/steps/food). Pure — reads
+// STATE only. Averages are over days-WITH-data (count returned) so sparse logging
+// is visible, not hidden. Strength sessions exclude rehab/cardio/mobility-only days.
+function _rangeActivityStats(fromDate, toDate){
+  let from = fromDate, to = toDate;
+  if(from && to && from > to){ const t = from; from = to; to = t; } // tolerate reversed pickers
+  const empty = { spanDays:0,
+    sleep:{avg:null,total:0,days:0}, steps:{avg:null,total:0,days:0},
+    eaten:{avg:null,total:0,days:0}, tdee:{avg:null,total:0,days:0},
+    balance:{avg:null,days:0},
+    training:{sessions:0,volumeTotal:0,volumeAvg:null,timeTotalSec:0,timeAvgSec:null,timeDays:0} };
+  if(!from || !to) return empty;
+  const sleep = STATE.sleepLog || {}, steps = STATE.stepsLog || {},
+        cals = STATE.calorieLog || {}, foods = STATE.foods || {}, exLog = STATE.exLog || {};
+  let slSum=0, slDays=0, stSum=0, stDays=0, eSum=0, eDays=0, tdSum=0, tdDays=0,
+      balSum=0, balDays=0, sessions=0, volTot=0, timeTot=0, timeDays=0;
+  let cur = new Date(from + 'T12:00:00');
+  const end = new Date(to + 'T12:00:00');
+  let span = 0, guard = 0;
+  while(cur <= end && guard++ < 2000){
+    span++;
+    // Local date components (cur is local noon, stepped by calendar days) — TZ-safe,
+    // matches the app's YYYY-MM-DD keys without a UTC round-trip.
+    const d = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+    // Sleep hours (object with .hours) / Steps (bare number)
+    const sh = sleep[d] && sleep[d].hours; if(sh > 0){ slSum += sh; slDays++; }
+    const st = steps[d]; if(typeof st === 'number' && st > 0){ stSum += st; stDays++; }
+    // Calories eaten (sum of foods[d][].cals) / TDEE burned (calorieLog[d].total)
+    const eaten = (foods[d] || []).reduce((s,f)=>s + (parseFloat(f.cals) || 0), 0);
+    if(eaten > 0){ eSum += eaten; eDays++; }
+    const tdee = cals[d] && cals[d].total; if(tdee > 0){ tdSum += tdee; tdDays++; }
+    if(eaten > 0 && tdee > 0){ balSum += (eaten - tdee); balDays++; }
+    // Strength session: a logged non-`_` lift with values that isn't rehab/cardio/mobility
+    const el = exLog[d] || {};
+    let isStrength = false;
+    for(const k of Object.keys(el)){
+      if(k.startsWith('_')) continue;
+      const ex = el[k];
+      if(!ex || !Array.isArray(ex.sets) || !ex.sets.some(s=>s.kg||s.reps||s.seconds)) continue;
+      const exObj = (typeof getAllExercises==='function') ? getAllExercises().find(e=>e.id===k) : null;
+      if(exObj && ((typeof _isRehabOrCardio==='function' && _isRehabOrCardio(exObj)) || exObj.mobility)) continue;
+      isStrength = true; break;
+    }
+    if(isStrength){
+      sessions++;
+      if(typeof computeSessionVolume==='function') volTot += computeSessionVolume(el);
+      const dur = el._session && el._session.totalDuration;
+      if(dur > 0){ timeTot += dur; timeDays++; }
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  const _avg = (sum, n, dp) => n ? Math.round((sum / n) * Math.pow(10,dp)) / Math.pow(10,dp) : null;
+  return {
+    spanDays: span,
+    sleep: { avg:_avg(slSum,slDays,1), total:Math.round(slSum), days:slDays },
+    steps: { avg:_avg(stSum,stDays,0), total:Math.round(stSum), days:stDays },
+    eaten: { avg:_avg(eSum,eDays,0),  total:Math.round(eSum),  days:eDays },
+    tdee:  { avg:_avg(tdSum,tdDays,0), total:Math.round(tdSum), days:tdDays },
+    balance: { avg:_avg(balSum,balDays,0), days:balDays },
+    training: { sessions, volumeTotal:Math.round(volTot), volumeAvg:_avg(volTot,sessions,0),
+      timeTotalSec:Math.round(timeTot), timeAvgSec:_avg(timeTot,timeDays,0), timeDays },
+  };
+}
+
 function renderCompareSnapshot(){
   const a = document.getElementById('cmp-date-a')?.value;
   const b = document.getElementById('cmp-date-b')?.value;
@@ -1518,6 +1583,34 @@ function renderCompareSnapshot(){
       <div style="font-family:'Archivo Black',sans-serif;color:var(--text);">${_fmt(vB, dp, unit)}</div>
       <div style="text-align:right;">${_delta(vA, vB, dp, unit, invertGood)}</div>
     </div>`;
+  // Phase 71: activity metrics (sleep/steps/food/training) aggregated across the
+  // whole From→To range — a single day is meaningless for these, so we don't
+  // snapshot the endpoints. Body-comp rows above stay as the true A/B comparison.
+  const R = _rangeActivityStats(a, b);
+  const _n = v => (v == null ? '—' : v.toLocaleString());
+  const _rng = (label, headline, sub, color) => `
+    <div style="display:grid;grid-template-columns:88px 1fr;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;align-items:baseline;">
+      <div style="color:var(--text3);">${label}</div>
+      <div>
+        <span style="font-family:'Archivo Black',sans-serif;color:${color || 'var(--text)'};">${headline}</span>
+        ${sub ? `<span style="color:var(--text3);font-size:11px;margin-left:8px;">${sub}</span>` : ''}
+      </div>
+    </div>`;
+  const _hm = sec => { const m = Math.round(sec/60), h = Math.floor(m/60), mm = m%60; return h ? `${h}h ${mm}m` : `${mm}m`; };
+  const sleepRow = R.sleep.days ? _rng('Sleep', `${R.sleep.avg}h/night`, `${R.sleep.total}h total · ${R.sleep.days} nights`) : _rng('Sleep', '—', 'no data in range');
+  const stepsRow = R.steps.days ? _rng('Steps', `${_n(R.steps.avg)}/day`, `${_n(R.steps.total)} total · ${R.steps.days} days`) : _rng('Steps', '—', 'no data in range');
+  const eatenRow = R.eaten.days ? _rng('Eaten', `${_n(R.eaten.avg)} kcal/day`, `${_n(R.eaten.total)} total · ${R.eaten.days} days`) : _rng('Eaten', '—', 'no food logged');
+  const tdeeRow  = R.tdee.days  ? _rng('Burned', `${_n(R.tdee.avg)} kcal/day`, `TDEE · ${R.tdee.days} days`) : _rng('Burned', '—', 'no Oura data');
+  let balanceRow;
+  if(R.balance.days && R.balance.avg != null){
+    const deficit = R.balance.avg < 0;
+    balanceRow = _rng('Balance', `${deficit ? '−' : '+'}${_n(Math.abs(R.balance.avg))} kcal/day`, `${deficit ? 'deficit' : 'surplus'} · ${R.balance.days} days`, deficit ? 'var(--green)' : 'var(--orange)');
+  } else {
+    balanceRow = _rng('Balance', '—', 'needs food + Oura');
+  }
+  const sessRow = _rng('Sessions', `${R.training.sessions}`, `strength workouts · ${R.spanDays} days`);
+  const volRow  = R.training.sessions ? _rng('Volume', `${_n(R.training.volumeTotal)} kg·reps`, `${_n(R.training.volumeAvg)}/session`) : _rng('Volume', '—', 'no sessions');
+  const timeRow = R.training.timeDays ? _rng('Time', `${_hm(R.training.timeTotalSec)} total`, `${Math.round(R.training.timeAvgSec/60)} min/session · ${R.training.timeDays} timed`) : _rng('Time', '—', 'not recorded');
   out.innerHTML = `
     <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr;gap:8px;padding-bottom:6px;border-bottom:1px solid var(--border2);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">
       <div></div><div>${a}</div><div>${b}</div><div style="text-align:right;">Δ</div>
@@ -1528,9 +1621,8 @@ function renderCompareSnapshot(){
     ${_row('Fat mass',   A.fat,       B.fat,       1, 'kg')}
     ${_row('Muscle',     A.muscle,    B.muscle,    1, 'kg', true)}
     ${_row('Visceral',   A.visceral,  B.visceral,  1, '')}
-    ${_row('Sleep',      A.sleep,     B.sleep,     1, 'h', true)}
-    ${_row('Steps',      A.steps,     B.steps,     0, '',  true)}
-    ${_row('TDEE',       A.totalCal,  B.totalCal,  0, ' kcal', true)}
+    <div style="padding:12px 0 6px;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Over this range · ${R.spanDays} day${R.spanDays===1?'':'s'}</div>
+    ${sleepRow}${stepsRow}${eatenRow}${tdeeRow}${balanceRow}${sessRow}${volRow}${timeRow}
   `;
 }
 
