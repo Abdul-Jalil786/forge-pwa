@@ -1837,6 +1837,125 @@ async function seedNaveedDeloadCadenceV1() {
   }
 }
 
+// Farukh (Jay's nephew): mirror Jay's training + diet, scaled to Farukh's stats.
+// 35yo, 175cm, 92kg → 80kg cut. Full gym → same upper-lower-5d-fixed split (rehab
+// OFF — that's Jay's shoulder physio, not needed). ~2,000 kcal cut, NO whey shake
+// (per user): the post-workout shake becomes a Greek-yoghurt + blueberry bowl; the
+// rest mirrors Jay's meals at Farukh's portions. Guarded (runs once); editable in-app.
+async function seedFarukhPlanV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "farrukhalijameel@gmail.com" } });
+    if (!user) { console.log("[migration] Farukh plan: no account (skipped)"); return; }
+    const state: any = user.state || {};
+    if (state.farukhPlanV1Seeded) return;
+    const pf: any = state.profile || (state.profile = {});
+    const TODAY = "2026-08-06";
+
+    // Training: same fixed 5-day split as Jay, starting today (Thu → Upper B first;
+    // Mon–Wed precede programmeStartDate so nothing is retro-scheduled). Rehab off.
+    pf.programId = "upper-lower-5d-fixed";
+    pf.programmeStartDate = TODAY;
+    pf.showRehab = false;
+    pf.sessionTimes = { "0": null, "1": "16:00", "2": "16:00", "3": null, "4": "16:00", "5": "16:00", "6": "14:30" };
+    if (!state.trainingStartDate) state.trainingStartDate = TODAY;
+
+    // Personal profile (drives BMR / recovery / standards).
+    pf.personal = { ...(pf.personal || {}), age: 35, heightCm: 175, sex: "male", ethnicity: "south-asian", activityLevel: "moderate", phase: "cut" };
+
+    // Cut goal: 92 → 80 kg. Seed a starting weigh-in only if he has none yet.
+    const wl: any[] = Array.isArray(state.weightLog) ? state.weightLog : [];
+    if (!wl.length) { state.weightLog = [{ date: TODAY, weight: 92, source: "manual" }]; }
+    pf.phase = "cut";
+    pf.startWeight = 92;
+    pf.targetWeight = 80;
+    pf.targetBF = 15;
+    pf.proteinFloor = 170;
+    pf.startDate = pf.startDate || TODAY;
+    pf.planStartDate = pf.planStartDate || TODAY;
+    pf.activePhase = {
+      phase: "Cut", startDate: TODAY,
+      calorieTarget: 2000, proteinFloor: 170, calorieFloor: 1700,
+      startWeight: 92, goalWeight: 80, targetBFLow: 12, targetBFHigh: 15,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Targets ~2,000 kcal (≈200P / 160C / 65F) — a ~700/day deficit for a 92kg lifter.
+    const dt = { calories: 2000, protein: 200, carbs: 160, fat: 65 };
+    pf.dynamicTargets = { rest: { ...dt }, upper: { ...dt }, lower: { ...dt } };
+    pf.calsRest = 2000; pf.calsGym = 2000;
+    pf.macros = { protein: 200, carbs: 160, fat: 65 };
+    pf.eatingWindow = { enabled: true, start: 12, end: 20 };
+    state.eatingWindow = "12:00 to 20:00 UK";
+
+    // Meal plan: Jay's structure at Farukh's portions, shake → yoghurt bowl (no whey).
+    const L = "low", M = "moderate";
+    state.mealPlan = {
+      name: "Cut — 2,000 kcal · 200P/160C/65F",
+      meals: [
+        {
+          id: "breakfast", name: "Meal 1 · Breakfast: Eggs, Avocado, Yoghurt & Oats", time: "12:00",
+          cals: 647, protein: 47, carbs: 44, fat: 32,
+          ingredients: [
+            { name: "3 whole eggs boiled + 2 egg whites", cals: 250, protein: 25, carbs: 1, fat: 15, gi: L },
+            { name: "150g Greek yoghurt 0%", cals: 86, protein: 15, carbs: 6, fat: 0, gi: L },
+            { name: "30g rolled oats", cals: 113, protein: 4, carbs: 20, fat: 2, gi: M },
+            { name: "80g mixed berries", cals: 38, protein: 1, carbs: 8, fat: 0, gi: L },
+            { name: "1/2 avocado", cals: 160, protein: 2, carbs: 9, fat: 15, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "pre-workout", name: "Meal 2 · Pre-workout: Chicken, Basmati & Broccoli", time: "15:00",
+          cals: 544, protein: 63, carbs: 44, fat: 12,
+          ingredients: [
+            { name: "180g chicken breast grilled", cals: 297, protein: 56, carbs: 0, fat: 6, gi: L },
+            { name: "120g cooked basmati rice", cals: 156, protein: 3, carbs: 34, fat: 0, gi: M },
+            { name: "150g broccoli", cals: 51, protein: 4, carbs: 10, fat: 1, gi: L },
+            { name: "1 tsp olive oil", cals: 40, protein: 0, carbs: 0, fat: 5, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "post-meal", name: "Meal 3 · Post-workout: Yoghurt & Blueberry Bowl", time: "17:00",
+          cals: 176, protein: 21, carbs: 22, fat: 0,
+          ingredients: [
+            { name: "200g Greek yoghurt 0% + 100g blueberries + 5g creatine", cals: 176, protein: 21, carbs: 22, fat: 0, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "dinner", name: "Meal 4 · Dinner: Chicken, Rice & Big Salad", time: "17:30",
+          cals: 445, protein: 53, carbs: 33, fat: 11,
+          ingredients: [
+            { name: "150g chicken breast grilled", cals: 248, protein: 47, carbs: 0, fat: 5, gi: L },
+            { name: "60g cooked basmati rice", cals: 78, protein: 2, carbs: 17, fat: 0, gi: M },
+            { name: "Big salad: mixed leaves + cucumber + cherry tomatoes + grated carrot + pepper, balsamic + lemon", cals: 79, protein: 4, carbs: 16, fat: 1, gi: L },
+            { name: "1 tsp olive oil on salad", cals: 40, protein: 0, carbs: 0, fat: 5, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "evening", name: "Meal 5 · Evening: Greek Yoghurt & Almonds", time: "19:30",
+          cals: 230, protein: 24, carbs: 12, fat: 10,
+          ingredients: [
+            { name: "200g Greek yoghurt 0%", cals: 114, protein: 20, carbs: 8, fat: 0, gi: L },
+            { name: "20g almonds", cals: 116, protein: 4, carbs: 4, fat: 10, gi: L },
+          ],
+          supplements: [],
+        },
+      ],
+    };
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    state.mealPlanSeededV2 = true; // guard against the Jay-plan seeder touching this account
+
+    state.farukhPlanV1Seeded = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Farukh plan seeded (5-day split + ~2,000 kcal cut, no shake)");
+  } catch (err) {
+    console.error("[migration] seedFarukhPlanV1 failed:", err);
+  }
+}
+
 // ── DEV-ONLY (staging): seeded test account ──────────────────────────────────
 // Creates a ready-to-use test@afjltd.co.uk with representative data so the app
 // can be exercised without touching real data or manually registering. Guarded
@@ -2010,6 +2129,7 @@ const server = app.listen(PORT, async () => {
   await seedJayTapeReminderV1();
   await seedJayDeloadCadenceV1();
   await seedNaveedDeloadCadenceV1();
+  await seedFarukhPlanV1();
   await seedJayMealPlanV9();
   await seedJayMealPlanV10();
   await seedAbdulCutV1();
