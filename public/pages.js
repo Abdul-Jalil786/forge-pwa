@@ -2327,7 +2327,17 @@ function _wysRow(label, value, unit, bands, hint){
 
 // Phase 35: Skin Care — More page management + Today page checklist (owner-only)
 const _SKIN_TYPE_LABEL={cleanser:'Cleanser',vitaminC:'Vitamin C','vitamin-c':'Vitamin C',retinol:'Retinol',serum:'Serum',moisturizer:'Moisturiser',spf:'SPF',exfoliant:'Exfoliant',other:'Other'};
-const _SKIN_FREQ_LABEL={daily:'every day','every-2-days':'every 2 days','every-3-days':'every 3 days','every-4-days':'every 4 days',weekly:'weekly'};
+const _SKIN_FREQ_LABEL={daily:'every day','every-2-days':'every 2 days','every-3-days':'every 3 days','every-4-days':'every 4 days',weekly:'weekly','5x-week':'5 nights/week'};
+const _SKIN_DOW_ABBR=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+// Human label for a product's schedule — dynamic for specific-days (e.g. "Mon, Thu"),
+// static map otherwise (now incl. 5x-week, which previously rendered its raw key).
+function _skinFreqLabel(p){
+  if(p&&p.frequency==='specific-days'){
+    const days=Array.isArray(p.days)?p.days.slice().sort((a,b)=>((a+6)%7)-((b+6)%7)):[]; // Mon-first
+    return days.length?days.map(d=>_SKIN_DOW_ABBR[d]).join(', '):'specific days';
+  }
+  return _SKIN_FREQ_LABEL[p&&p.frequency]||(p&&p.frequency)||'every day';
+}
 
 function renderSkinProductsList(){
   const products=getSkinProducts();
@@ -2349,7 +2359,7 @@ function renderSkinProductsList(){
       <div style="display:flex;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(p.name)}${p.concentration?` <span style="font-size:11px;color:var(--text3);font-weight:400;">${escapeHtml(p.concentration)}</span>`:''}${phaseBadge}</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px;">${_SKIN_TYPE_LABEL[p.type]||p.type} · ${p.slot==='both'?'AM+PM':p.slot.toUpperCase()} · ${_SKIN_FREQ_LABEL[p.frequency]||p.frequency}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;">${_SKIN_TYPE_LABEL[p.type]||p.type} · ${p.slot==='both'?'AM+PM':p.slot.toUpperCase()} · ${_skinFreqLabel(p)}</div>
         </div>
         <div style="font-size:11px;color:var(--text3);">✏️</div>
       </div>

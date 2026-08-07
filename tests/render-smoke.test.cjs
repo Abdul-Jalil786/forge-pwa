@@ -391,6 +391,36 @@ test("Phase 71: renderCompareSnapshot drops per-date Sleep/Steps/TDEE for a rang
   assert.ok(/Weight/.test(html), "body-comp A/B table retained");
 });
 
+test("Phase 72: skincare specific-days scheduling (skinDueOn + labels + visible items)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (e) => vm.runInContext(e, ctx);
+  // Known weekdays: 2026-08-03 Mon, 08-04 Tue, 08-06 Thu, 08-09 Sun.
+  const md = `{frequency:'specific-days',days:[1,4]}`; // Mon + Thu
+  assert.equal(q(`skinDueOn(${md},'2026-08-03')`), true,  "due on Monday");
+  assert.equal(q(`skinDueOn(${md},'2026-08-04')`), false, "not due on Tuesday");
+  assert.equal(q(`skinDueOn(${md},'2026-08-06')`), true,  "due on Thursday");
+  assert.equal(q(`skinDueOn(${md},'2026-08-09')`), false, "not due on Sunday");
+  // Existing interval + weekday frequencies are untouched.
+  assert.equal(q(`skinDueOn({frequency:'every-2-days',startedDate:'2026-08-03'},'2026-08-05')`), true,  "every-2-days still modulo");
+  assert.equal(q(`skinDueOn({frequency:'every-2-days',startedDate:'2026-08-03'},'2026-08-04')`), false, "every-2-days off day");
+  assert.equal(q(`skinDueOn({frequency:'5x-week'},'2026-08-04')`), true,  "5x-week weekday");
+  assert.equal(q(`skinDueOn({frequency:'5x-week'},'2026-08-09')`), false, "5x-week weekend off");
+  assert.equal(q(`skinDueOn({frequency:'daily'},'2026-08-09')`), true, "daily unchanged");
+  // Sanitizer: dedupe, clamp to 0..6, coerce numeric strings, sort.
+  assert.equal(q(`JSON.stringify(_sanitizeSkinDays([4,1,1,9,-1,'2']))`), "[1,2,4]", "days sanitized");
+  // Labels: specific-days is dynamic Mon-first; 5x-week now has a real label.
+  assert.equal(q(`_skinFreqLabel({frequency:'specific-days',days:[4,1]})`), "Mon, Thu", "dynamic weekday label, Mon-first");
+  assert.equal(q(`_skinFreqLabel({frequency:'5x-week'})`), "5 nights/week", "5x-week label fixed (was raw string)");
+  assert.equal(q(`_skinFreqLabel({frequency:'every-2-days'})`), "every 2 days", "interval label unchanged");
+  // A specific-days product flows through the conflict engine → compliance sees it.
+  vm.runInContext(`STATE.skinCare={products:[{id:'skn-honeymask',type:'other',slot:'pm',frequency:'specific-days',days:[1]}]};`, ctx);
+  const monPm = q(`getSkinVisibleItems('2026-08-03').pm.length`);
+  const tuePm = q(`getSkinVisibleItems('2026-08-04').pm.length`);
+  assert.equal(monPm, 1, "specific-days mask visible on its chosen night (Mon)");
+  assert.equal(tuePm, 0, "specific-days mask hidden on a non-chosen night (Tue)");
+});
+
 test("progression is rep-range-aware per day (undulating split: Leg Press 8–10 vs 10–12)", () => {
   const { ctx } = bootApp();
   seed(ctx);
