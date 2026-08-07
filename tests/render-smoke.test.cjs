@@ -421,6 +421,26 @@ test("Phase 72: skincare specific-days scheduling (skinDueOn + labels + visible 
   assert.equal(tuePm, 0, "specific-days mask hidden on a non-chosen night (Tue)");
 });
 
+test("Phase 74: AM routine renders serums thinnest-first (cleanser→VitC→arbutin→niacinamide→moist→SPF)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext(`STATE.skinCare={products:[
+    {id:'cl',type:'cleanser',slot:'both',frequency:'daily',name:'CeraVe Cleanser'},
+    {id:'vc',type:'vitamin-c',slot:'am',frequency:'daily',name:'CE Ferulic'},
+    {id:'ni',type:'serum',slot:'am',concentration:'10%',frequency:'daily',name:'Niacinamide'},
+    {id:'ar',type:'serum',slot:'am',concentration:'2%',frequency:'daily',name:'Alpha Arbutin'},
+    {id:'mo',type:'moisturizer',slot:'both',frequency:'daily',name:'Moisturiser'},
+    {id:'sp',type:'spf',slot:'am',frequency:'daily',name:'SPF'}
+  ]};`, ctx);
+  const ids = JSON.parse(vm.runInContext(`JSON.stringify(getSkinVisibleItems('2026-08-05').am.map(it=>it.product.id))`, ctx));
+  // Order: cleanser, vitamin C, arbutin (2% thinnest), niacinamide (10%), moisturizer, SPF.
+  assert.deepEqual(ids, ['cl','vc','ar','ni','mo','sp'], "AM serums render in thinnest-first order between Vit C and moisturiser");
+  // A PM serum still behaves as before (unchanged).
+  const pmIds = JSON.parse(vm.runInContext(`STATE.skinCare.products.push({id:'pmser',type:'serum',slot:'pm',concentration:'5%',frequency:'daily',name:'PM Serum'});JSON.stringify(getSkinVisibleItems('2026-08-05').pm.map(it=>it.product.id))`, ctx));
+  assert.ok(pmIds.includes('pmser'), "PM serums still render in the evening list");
+  assert.ok(!pmIds.includes('ar') && !pmIds.includes('ni'), "AM-slot serums do NOT leak into the PM list");
+});
+
 test("Phase 73: read-only skincare week view (strip, nav, specific-days, retinol night)", () => {
   const { ctx } = bootApp();
   seed(ctx);
