@@ -421,6 +421,59 @@ test("Phase 72: skincare specific-days scheduling (skinDueOn + labels + visible 
   assert.equal(tuePm, 0, "specific-days mask hidden on a non-chosen night (Tue)");
 });
 
+test("Phase 73: read-only skincare week view (strip, nav, specific-days, retinol night)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // Today in the harness is real, but weekday math is deterministic per date. Seed a
+  // routine with a specific-days mask (Mon+Thu) and a Saturday-only retinoid.
+  vm.runInContext(`STATE.skinCare={products:[
+    {id:'c1',type:'cleanser',slot:'both',frequency:'daily',name:'CeraVe Cleanser'},
+    {id:'ar1',type:'serum',slot:'pm',concentration:'2%',frequency:'daily',name:'Alpha Arbutin'},
+    {id:'ni1',type:'serum',slot:'pm',concentration:'10%',frequency:'daily',name:'Niacinamide'},
+    {id:'skn-honeymask',type:'other',slot:'pm',frequency:'specific-days',days:[1,4],name:'Sidr Honey Mask'},
+    {id:'ret1',type:'retinol',slot:'pm',frequency:'specific-days',days:[6],name:'Tretinoin'},
+    {id:'skn-cicaplast',type:'other',slot:'pm',frequency:'specific-days',days:[6],name:'Cicaplast'}
+  ]};`, ctx);
+  const q = (e) => vm.runInContext(e, ctx);
+  // NOTE: the module-scoped _skinViewDate can't be set directly from the vm (top-level
+  // `let` isn't a global), so the grid renders the REAL current week — but that's fine:
+  // the grid assertions are week-relative (every week has a Saturday → the retinoid
+  // night marker always appears), and the expanded-day detail reads the tapped date
+  // directly via the toggleSkinDayExpand helper, which DOES share module scope.
+  let s = q(`renderSkinWeekStrip()`);
+  assert.ok(/Skin Care Week/.test(s), "strip renders with header");
+  assert.ok((s.match(/toggleSkinDayExpand\(/g)||[]).length === 7, "seven day cells");
+  assert.ok(/🌙/.test(s), "the Saturday-only retinoid night shows the moon marker in the grid");
+
+  // Specific-days mask: due Mon (08-03) + Thu, not Tue — expanded detail reads the tapped date.
+  q(`toggleSkinDayExpand('2026-08-03')`);
+  s = q(`renderSkinWeekStrip()`);
+  assert.ok(/Sidr Honey Mask/.test(s), "mask shown on Monday (a chosen day)");
+  assert.ok(/Alpha Arbutin/.test(s) && /Niacinamide/.test(s), "serums shown on a non-retinoid night");
+  assert.ok(!/Tretinoin/.test(s), "no retinoid in Monday's list");
+  q(`toggleSkinDayExpand('2026-08-04')`); // switch to Tuesday (not a chosen mask day)
+  s = q(`renderSkinWeekStrip()`);
+  assert.ok(!/Sidr Honey Mask/.test(s), "mask NOT shown on Tuesday (not a chosen day)");
+
+  // Retinoid night (Sat 08-08): retinol + cicaplast shown; arbutin/niacinamide/mask dropped.
+  q(`toggleSkinDayExpand('2026-08-08')`);
+  s = q(`renderSkinWeekStrip()`);
+  assert.ok(/retinoid night/.test(s), "Saturday flagged as a retinoid night");
+  assert.ok(/Tretinoin/.test(s) && /Cicaplast/.test(s), "retinoid + cicaplast shown on retinoid night");
+  assert.ok(!/Alpha Arbutin/.test(s) && !/Niacinamide/.test(s), "serums suppressed on retinoid night");
+  assert.ok(!/Sidr Honey Mask/.test(s), "mask suppressed on retinoid night");
+
+  // Navigation via the exposed helpers (these DO share module scope).
+  q(`goToSkinToday()`);
+  assert.equal(q(`getSkinViewDate()`), q(`todayStr()`), "goToSkinToday resets to today");
+  q(`shiftSkinWeek(1)`);
+  assert.notEqual(q(`getSkinViewDate()`), q(`todayStr()`), "shiftSkinWeek moves the view");
+  assert.ok(/Next week/.test(q(`renderSkinWeekStrip()`)), "one week forward reads 'Next week'");
+
+  // Independence: skincare nav must NOT touch the Train page's view-date.
+  assert.equal(q(`getViewDate()`), q(`todayStr()`), "workout view-date untouched by skincare nav");
+});
+
 test("progression is rep-range-aware per day (undulating split: Leg Press 8–10 vs 10–12)", () => {
   const { ctx } = bootApp();
   seed(ctx);
