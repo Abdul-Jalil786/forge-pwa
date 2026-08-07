@@ -2536,11 +2536,100 @@ function renderRetinolJourney(){
     </div>`;
 }
 
+// Phase 73: read-only skincare WEEK VIEW — mirrors the training week strip
+// (workout.js:renderWeekStrip) but with its OWN view-date state (must NOT reuse
+// workout's viewDate, which drives the Train page). Pure display: every day's
+// products come from getSkinVisibleItems(key), so retinol-night branching, mask
+// suppression, and specific-day scheduling all come for free. No logging, no server.
+let _skinViewDate=null;      // null = today
+let _skinExpandedDay=null;   // date key of the expanded cell, or null
+function getSkinViewDate(){return _skinViewDate||todayStr();}
+function shiftSkinWeek(delta){
+  const cur=new Date(getSkinViewDate()+'T12:00:00');
+  cur.setDate(cur.getDate()+delta*7);
+  const k=_ukDate(cur);
+  _skinViewDate=(k===todayStr())?null:k;
+  refreshSkinWeek();
+}
+function goToSkinToday(){_skinViewDate=null;refreshSkinWeek();}
+function toggleSkinDayExpand(key){_skinExpandedDay=(_skinExpandedDay===key)?null:key;refreshSkinWeek();}
+function refreshSkinWeek(){const el=document.getElementById('skin-week');if(el)el.innerHTML=renderSkinWeekStrip();}
+function renderSkinWeekStrip(){
+  if(!isOwner())return '';
+  const products=getSkinProducts();
+  if(!products.length)return '';
+  // Monday–Sunday of the VIEWED week (anchor math copied verbatim from renderWeekStrip)
+  const anchor=new Date(getSkinViewDate()+'T12:00:00');
+  const aDow=anchor.getDay();
+  const monOffset=aDow===0?-6:1-aDow;
+  const monday=new Date(anchor);monday.setDate(anchor.getDate()+monOffset);
+  const days=[];for(let i=0;i<7;i++){const d=new Date(monday);d.setDate(monday.getDate()+i);days.push(d);}
+  const initials=['M','T','W','T','F','S','S'];
+  const today=todayStr();
+  const mondayKey=_ukDate(monday);
+  const todayMon=(()=>{const t=new Date(today+'T12:00:00');const dow=t.getDay();t.setDate(t.getDate()+(dow===0?-6:1-dow));return _ukDate(t);})();
+  const weekDelta=Math.round((new Date(mondayKey+'T12:00:00')-new Date(todayMon+'T12:00:00'))/(7*86400000));
+  const weekLabel=weekDelta===0?'This week':weekDelta===1?'Next week':weekDelta===-1?'Last week':(weekDelta>0?`In ${weekDelta} weeks`:`${-weekDelta} weeks ago`);
+  const rangeLabel=`${monday.toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${days[6].toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`;
+  const navBtn='background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text2);width:34px;height:34px;cursor:pointer;font-size:16px;';
+  let html=`<div class="card" style="margin-bottom:10px;">
+    <div class="sec-label" style="margin-bottom:8px;">Skin Care Week</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <button onclick="shiftSkinWeek(-1)" aria-label="Previous week" style="${navBtn}">‹</button>
+      <div style="text-align:center;cursor:pointer;" onclick="goToSkinToday()">
+        <div style="font-size:12px;font-weight:700;color:${weekDelta===0?'var(--lime)':'var(--text)'};">${weekLabel}</div>
+        <div style="font-size:10px;color:var(--text3);">${rangeLabel}${weekDelta!==0?' · tap for today':''}</div>
+      </div>
+      <button onclick="shiftSkinWeek(1)" aria-label="Next week" style="${navBtn}">›</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;">`;
+  days.forEach((d,i)=>{
+    const key=_ukDate(d);
+    const isToday=key===today;
+    const isExpanded=key===_skinExpandedDay;
+    const v=getSkinVisibleItems(key);
+    const amN=(v.am||[]).length,pmN=(v.pm||[]).length;
+    let bg='var(--s2)',color='var(--text2)',border='1px solid var(--border)';
+    if(isToday){bg='rgba(200,255,0,.15)';color='var(--lime)';}
+    if(isExpanded){border='1px solid var(--lime)';}
+    const moon=v.retinolNight?'🌙':'';
+    const load=(amN||pmN)?`${amN?`AM·${amN}`:''}${amN&&pmN?' ':''}${pmN?`PM·${pmN}`:''}`:'—';
+    html+=`<button onclick="toggleSkinDayExpand('${key}')" style="background:${bg};border:${border};border-radius:10px;padding:6px 2px;color:${color};cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:'Archivo',sans-serif;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.5px;">${initials[i]}</div>
+      <div style="font-size:12px;font-weight:700;line-height:1;">${d.getDate()}</div>
+      <div style="font-size:9px;height:11px;">${moon}</div>
+      <div style="font-size:8px;color:${color};opacity:.85;line-height:1.2;text-align:center;">${load}</div>
+    </button>`;
+  });
+  html+='</div>';
+  // Expanded day detail (read-only) — reuses the exact conflict-engine output.
+  if(_skinExpandedDay){
+    const v=getSkinVisibleItems(_skinExpandedDay);
+    const dObj=new Date(_skinExpandedDay+'T12:00:00');
+    const dLabel=dObj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'});
+    const listOf=(items)=>items&&items.length
+      ? items.map(it=>`<div style="font-size:12px;color:var(--text);padding:3px 0;">• ${escapeHtml(it.product.name||'')}${it.product.concentration?` <span style="font-size:10px;color:var(--text3);">${escapeHtml(it.product.concentration)}</span>`:''}</div>`).join('')
+      : '<div style="font-size:11px;color:var(--text3);padding:3px 0;">Nothing scheduled</div>';
+    html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+      <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px;">${dLabel}${v.retinolNight?' · 🌙 retinoid night':''}</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:2px;">☀️ AM</div>
+      ${listOf(v.am)}
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:8px 0 2px;">🌙 PM</div>
+      ${listOf(v.pm)}
+      <div style="font-size:9px;color:var(--text3);margin-top:8px;">Read-only overview · tick products off on today's checklist below.</div>
+    </div>`;
+  }else{
+    html+=`<div style="font-size:10px;color:var(--text3);text-align:center;margin-top:8px;">Tap a day to see its products</div>`;
+  }
+  html+='</div>';
+  return html;
+}
+
 // Phase 37: full skin section on Today page (owner-only) — journal + checklist + journey
 function renderSkinSection(){
   if(!isOwner())return '';
   if(getSkinProducts().length===0)return '';
-  return renderSkinJournalPrompt()+renderSkinChecklist()+renderRetinolJourney();
+  return `<div id="skin-week">${renderSkinWeekStrip()}</div>`+renderSkinJournalPrompt()+renderSkinChecklist()+renderRetinolJourney();
 }
 
 function renderWhereYouStand(){
