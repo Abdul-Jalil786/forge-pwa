@@ -805,6 +805,7 @@ async function saveCoachDob(){
 
 // ---- SKIN CARE (Phase 35, owner-only) ----
 let _skinEdit=null;
+let _skinDaysSel=[]; // Phase 72: chosen weekdays (dow ints) for specific-days frequency
 
 function openSkinProductEdit(id){
   _skinEdit={id};
@@ -818,7 +819,43 @@ function openSkinProductEdit(id){
   document.getElementById('skin-started').value=p?.startedDate||new Date().toISOString().slice(0,10);
   document.getElementById('skin-notes').value=p?.notes||'';
   document.getElementById('skin-delete-btn').style.display=id?'block':'none';
+  // Phase 72: specific-days chips + retinol/cicaplast exclusion
+  _skinDaysSel=Array.isArray(p?.days)?p.days.slice():[];
+  renderSkinDayChips();
+  _updateSkinFreqOptions(); // hides "Specific days" for tret-ladder products; also toggles chip row
   openModal('modal-skin-edit');
+}
+
+// Phase 72: the tret ladder (PHASE_FREQ) rewrites retinol + cicaplast frequency on
+// phase-advance, so a hand-set specific-days value would be silently wiped — hide the
+// option for those products. Called on open and whenever the product type changes.
+function _updateSkinFreqOptions(){
+  const type=document.getElementById('skin-type').value;
+  const isLadder=(type==='retinol')||(_skinEdit&&_skinEdit.id==='skn-cicaplast');
+  const opt=document.getElementById('skin-freq-specific-opt');
+  const sel=document.getElementById('skin-freq');
+  if(opt){opt.style.display=isLadder?'none':'';opt.disabled=isLadder;}
+  if(isLadder&&sel&&sel.value==='specific-days')sel.value='daily';
+  onSkinFreqChange();
+}
+// Show the weekday chip row only when "Specific days" is the chosen frequency.
+function onSkinFreqChange(){
+  const wrap=document.getElementById('skin-days-wrap');
+  if(wrap)wrap.style.display=(document.getElementById('skin-freq').value==='specific-days')?'':'none';
+}
+function toggleSkinDayChip(dow){
+  const i=_skinDaysSel.indexOf(dow);
+  if(i>=0)_skinDaysSel.splice(i,1);else _skinDaysSel.push(dow);
+  renderSkinDayChips();
+}
+function renderSkinDayChips(){
+  document.querySelectorAll('#skin-days-wrap .skin-day-chip').forEach(el=>{
+    const dow=parseInt(el.getAttribute('data-dow'),10);
+    const on=_skinDaysSel.includes(dow);
+    el.style.background=on?'var(--lime)':'var(--bg2)';
+    el.style.color=on?'#000':'var(--text)';
+    el.style.borderColor=on?'var(--lime)':'var(--border)';
+  });
 }
 
 // When the product type changes, suggest a sensible slot + frequency.
@@ -839,21 +876,30 @@ function onSkinTypeChange(){
   if(!defaults)return;
   document.getElementById('skin-slot').value=defaults.slot;
   document.getElementById('skin-freq').value=defaults.freq;
+  _updateSkinFreqOptions(); // switching to retinol hides "Specific days"; also syncs chip row
 }
 
 function saveSkinProduct(){
   if(!_skinEdit)return;
   const name=document.getElementById('skin-name').value.trim();
   if(!name){showToast('Name required');return;}
+  const freq=document.getElementById('skin-freq').value;
   const data={
     name,
     type:document.getElementById('skin-type').value,
     concentration:document.getElementById('skin-conc').value.trim(),
     slot:document.getElementById('skin-slot').value,
-    frequency:document.getElementById('skin-freq').value,
+    frequency:freq,
     startedDate:document.getElementById('skin-started').value,
     notes:document.getElementById('skin-notes').value.trim(),
   };
+  if(freq==='specific-days'){
+    const days=_sanitizeSkinDays(_skinDaysSel);
+    if(!days.length){showToast('Pick at least one day');return;}
+    data.days=days;
+  }else{
+    data.days=null; // clear any stale specific-days selection when switching away
+  }
   if(_skinEdit.id)updateSkinProduct(_skinEdit.id,data);
   else addSkinProduct(data);
   showToast(_skinEdit.id?'Saved ✓':'Product added ✓');

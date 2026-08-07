@@ -315,13 +315,20 @@ function saveSkinCare(skinCare){
 }
 function addSkinProduct(p){
   const sc=getSkinCare();
-  sc.products.push({id:'skn_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),...p});
+  const clean={...p};
+  if('days' in clean)clean.days=_sanitizeSkinDays(clean.days);
+  sc.products.push({id:'skn_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),...clean});
   saveSkinCare(sc);
 }
 function updateSkinProduct(id,patch){
   const sc=getSkinCare();
   const i=sc.products.findIndex(x=>x.id===id);
-  if(i>=0){sc.products[i]={...sc.products[i],...patch};saveSkinCare(sc);}
+  if(i>=0){
+    const clean={...patch};
+    if('days' in clean)clean.days=(clean.days==null)?null:_sanitizeSkinDays(clean.days);
+    sc.products[i]={...sc.products[i],...clean};
+    saveSkinCare(sc);
+  }
 }
 function deleteSkinProduct(id){
   const sc=getSkinCare();
@@ -350,6 +357,13 @@ function setSkinIrritation(date,level){
   updateLocalCache();
   saveFieldToServer(`/api/state/skin-care-log/${date}`,{value:log[date]});
 }
+// Sanitize a specific-days array → unique day-of-week ints 0..6, sorted (Sun-first).
+function _sanitizeSkinDays(arr){
+  if(!Array.isArray(arr))return [];
+  const seen=new Set();
+  for(const v of arr){const n=parseInt(v,10);if(Number.isInteger(n)&&n>=0&&n<=6)seen.add(n);}
+  return [...seen].sort((a,b)=>a-b);
+}
 // Is a product due on `date`? freq + startedDate drive the cycle.
 function skinDueOn(product,date){
   const freq=product.frequency||'daily';
@@ -357,6 +371,10 @@ function skinDueOn(product,date){
   if(freq==='5x-week'){ // 5 nights/week = weekdays Mon-Fri
     const dow=new Date(date+'T12:00:00').getDay();
     return dow>=1&&dow<=5;
+  }
+  if(freq==='specific-days'){ // Phase 72: user-chosen weekdays (0=Sun..6=Sat)
+    const dow=new Date(date+'T12:00:00').getDay();
+    return Array.isArray(product.days)&&product.days.includes(dow);
   }
   const start=product.startedDate;
   if(!start)return true; // no start date → treat as daily

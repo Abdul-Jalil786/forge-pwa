@@ -636,14 +636,28 @@ svg.tchart .cross line{stroke:var(--text2);stroke-width:1;stroke-dasharray:3 3;}
       </div>
       <div>
         <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Frequency</div>
-        <select id="skin-freq" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+        <select id="skin-freq" onchange="onSkinFreqChange()" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
           <option value="daily">Every day</option>
           <option value="every-2-days">Every 2 days</option>
           <option value="every-3-days">Every 3 days</option>
           <option value="every-4-days">Every 4 days</option>
           <option value="weekly">Weekly</option>
+          <option id="skin-freq-specific-opt" value="specific-days">Specific days</option>
         </select>
       </div>
+    </div>
+    <div id="skin-days-wrap" style="display:none;margin-bottom:10px;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Which days</div>
+      <div style="display:flex;gap:6px;">
+        <button type="button" class="skin-day-chip" data-dow="1" onclick="toggleSkinDayChip(1)" style="flex:1;padding:8px 0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--text);">M</button>
+        <button type="button" class="skin-day-chip" data-dow="2" onclick="toggleSkinDayChip(2)" style="flex:1;padding:8px 0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--text);">T</button>
+        <button type="button" class="skin-day-chip" data-dow="3" onclick="toggleSkinDayChip(3)" style="flex:1;padding:8px 0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--text);">W</button>
+        <button type="button" class="skin-day-chip" data-dow="4" onclick="toggleSkinDayChip(4)" style="flex:1;padding:8px 0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--text);">T</button>
+        <button type="button" class="skin-day-chip" data-dow="5" onclick="toggleSkinDayChip(5)" style="flex:1;padding:8px 0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--text);">F</button>
+        <button type="button" class="skin-day-chip" data-dow="6" onclick="toggleSkinDayChip(6)" style="flex:1;padding:8px 0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--text);">S</button>
+        <button type="button" class="skin-day-chip" data-dow="0" onclick="toggleSkinDayChip(0)" style="flex:1;padding:8px 0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--text);">S</button>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px;">Tap the nights this product is used.</div>
     </div>
     <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">Started using (drives retinol ramping)</div>
     <input id="skin-started" type="date" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:10px;" />
