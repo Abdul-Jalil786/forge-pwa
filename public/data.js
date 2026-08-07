@@ -428,12 +428,19 @@ function getSkinVisibleItems(date){
   const due=products.filter(p=>skinDueOn(p,date));
   const retinolNight=due.some(p=>p.type==='retinol');
   const mk=(p,slot)=>({product:p,slot,itemId:`${p.id}_${slot}`});
-  // AM — fixed order: cleanser, vitamin-c, moisturizer, spf
+  // AM — cleanser → vitamin C → serums (thinnest-first) → moisturizer → SPF.
+  // Phase 74: serums (Alpha Arbutin, Niacinamide, …) can now sit in the morning
+  // routine, applied thinnest-first (e.g. Arbutin 2% before Niacinamide 10%),
+  // mirroring the PM serum ordering. Previously the AM branch dropped serums.
   const am=[];
-  for(const t of ['cleanser','vitamin-c','moisturizer','spf']){
-    const p=due.find(x=>(x.slot==='am'||x.slot==='both')&&x.type===t);
-    if(p)am.push(mk(p,'am'));
-  }
+  const _amPick=t=>due.find(x=>(x.slot==='am'||x.slot==='both')&&x.type===t);
+  const _amCleanser=_amPick('cleanser'); if(_amCleanser)am.push(mk(_amCleanser,'am'));
+  const _amVitC=_amPick('vitamin-c');    if(_amVitC)am.push(mk(_amVitC,'am'));
+  const _amSerums=due.filter(x=>(x.slot==='am'||x.slot==='both')&&x.type==='serum')
+    .sort((a,b)=>(parseFloat(a.concentration)||0)-(parseFloat(b.concentration)||0));
+  for(const p of _amSerums)am.push(mk(p,'am'));
+  const _amMoist=_amPick('moisturizer'); if(_amMoist)am.push(mk(_amMoist,'am'));
+  const _amSpf=_amPick('spf');           if(_amSpf)am.push(mk(_amSpf,'am'));
   // PM — branches on retinol night
   const pm=[];
   if(retinolNight){
