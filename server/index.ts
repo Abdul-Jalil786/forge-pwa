@@ -1087,10 +1087,10 @@ async function seedJayDaalFibrePlanV1() {
         },
         {
           id: "pre-workout", name: "Pre-workout: Chicken, Basmati & Peas", time: "15:00",
-          cals: 516, protein: 50, carbs: 51, fat: 10,
+          cals: 451, protein: 48, carbs: 37, fat: 10,
           ingredients: [
             { name: "130g chicken breast grilled", cals: 215, protein: 41, carbs: 0, fat: 4, gi: L },
-            { name: "150g cooked basmati rice", cals: 195, protein: 4, carbs: 42, fat: 0, gi: M },
+            { name: "100g cooked basmati rice", cals: 130, protein: 2, carbs: 28, fat: 0, gi: M },
             { name: "80g garden peas", cals: 66, protein: 5, carbs: 9, fat: 1, gi: M },
             { name: "1 tsp olive oil", cals: 40, protein: 0, carbs: 0, fat: 5, gi: L },
           ],
@@ -1106,9 +1106,9 @@ async function seedJayDaalFibrePlanV1() {
         },
         {
           id: "dinner", name: "Post-workout dinner: Chicken, Daal & Rice", time: "17:30",
-          cals: 510, protein: 55, carbs: 44, fat: 11,
+          cals: 493, protein: 51, carbs: 44, fat: 11,
           ingredients: [
-            { name: "130g chicken breast grilled", cals: 215, protein: 41, carbs: 0, fat: 4, gi: L },
+            { name: "120g chicken breast grilled", cals: 198, protein: 37, carbs: 0, fat: 4, gi: L },
             { name: "150g cooked chana daal", cals: 190, protein: 13, carbs: 30, fat: 2, gi: L },
             { name: "50g cooked basmati rice", cals: 65, protein: 1, carbs: 14, fat: 0, gi: M },
             { name: "1 tsp olive oil", cals: 40, protein: 0, carbs: 0, fat: 5, gi: L },
