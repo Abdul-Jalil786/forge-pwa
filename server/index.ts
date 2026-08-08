@@ -963,6 +963,97 @@ async function seedAbdulCutV1() {
   }
 }
 
+// Rebalanced cut plan — same ~2,200 kcal, macros shifted 244P/145C/77F → 200P/185C/72F.
+// Per user + data review: 239g protein was above every guideline (~3.1g/kg lean),
+// was pushing urea up, and crowded out training carbs while being hard to finish on
+// a GLP-1. Trades excess protein for low-GI, training-timed carbs (more rice pre/post,
+// more oats AM) — protein still 200g (ample muscle protection at 52), carbs +~46g for
+// energy, fat held. Foods stay recognisable (kept his peas, psyllium, big salad, CoQ10);
+// the post-workout shake drops 2 scoops→1 (49g→24g protein — post-workout doesn't need
+// 49g). Also lowers the protein floor 200→180 so the target isn't a hard ceiling.
+async function seedAbdulRebalancedPlanV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.abdulRebalancedPlanV1) return;
+    const L = "low", M = "moderate";
+    state.mealPlan = {
+      name: "Cut (rebalanced) — 2,200 kcal · 200P/185C/72F",
+      meals: [
+        {
+          id: "breakfast", name: "Breakfast: Eggs, Avocado, Yoghurt & Oats", time: "12:00",
+          cals: 770, protein: 57, carbs: 54, fat: 34,
+          ingredients: [
+            { name: "3 whole eggs boiled + 4 egg whites", cals: 302, protein: 32, carbs: 1, fat: 16, gi: L },
+            { name: "150g Greek yoghurt 0%", cals: 86, protein: 15, carbs: 6, fat: 0, gi: L },
+            { name: "45g rolled oats", cals: 170, protein: 6, carbs: 30, fat: 3, gi: M },
+            { name: "80g mixed berries", cals: 34, protein: 1, carbs: 6, fat: 0, gi: L },
+            { name: "1/2 avocado", cals: 120, protein: 1, carbs: 6, fat: 11, gi: L },
+            { name: "1 tbsp chia seeds", cals: 58, protein: 2, carbs: 5, fat: 4, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "pre-workout", name: "Pre-workout: Chicken, Basmati & Peas", time: "15:00",
+          cals: 516, protein: 50, carbs: 51, fat: 10,
+          ingredients: [
+            { name: "130g chicken breast grilled", cals: 215, protein: 41, carbs: 0, fat: 4, gi: L },
+            { name: "150g cooked basmati rice", cals: 195, protein: 4, carbs: 42, fat: 0, gi: M },
+            { name: "80g garden peas", cals: 66, protein: 5, carbs: 9, fat: 1, gi: M },
+            { name: "1 tsp olive oil", cals: 40, protein: 0, carbs: 0, fat: 5, gi: L },
+          ],
+          supplements: [{ id: "supp-coq10", name: "CoQ10", dose: "2 caps (200mg)" }],
+        },
+        {
+          id: "post-shake", name: "Post-workout shake", time: "17:00",
+          cals: 185, protein: 24, carbs: 18, fat: 2,
+          ingredients: [
+            { name: "1 scoop whey + water + 100g blueberries + 5g creatine", cals: 185, protein: 24, carbs: 18, fat: 2, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "dinner", name: "Post-workout dinner: Chicken, Rice & Big Salad", time: "17:30",
+          cals: 446, protein: 43, carbs: 43, fat: 10,
+          ingredients: [
+            { name: "120g chicken breast grilled", cals: 198, protein: 37, carbs: 0, fat: 4, gi: L },
+            { name: "100g cooked basmati rice", cals: 130, protein: 2, carbs: 28, fat: 0, gi: M },
+            { name: "Big salad: 60g mixed leaves + 100g cucumber + 100g cherry tomatoes + 50g grated carrot + 50g pepper, balsamic + lemon (no oil)", cals: 78, protein: 4, carbs: 15, fat: 1, gi: L },
+            { name: "1 tsp olive oil on salad", cals: 40, protein: 0, carbs: 0, fat: 5, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "evening", name: "Evening: Greek Yoghurt & Almonds", time: "19:30",
+          cals: 310, protein: 26, carbs: 19, fat: 15,
+          ingredients: [
+            { name: "200g Greek yoghurt 0%", cals: 114, protein: 20, carbs: 8, fat: 0, gi: L },
+            { name: "30g almonds", cals: 174, protein: 6, carbs: 6, fat: 15, gi: L },
+            { name: "1 tbsp psyllium husk (stir into yoghurt, drink with a big glass of water)", cals: 22, protein: 0, carbs: 5, fat: 0, gi: L },
+          ],
+          supplements: [],
+        },
+      ],
+    };
+    // Re-point the display targets + floors to the rebalanced macros (calories unchanged).
+    const pf: any = state.profile || (state.profile = {});
+    const dt = { calories: 2200, protein: 200, carbs: 185, fat: 72 };
+    pf.dynamicTargets = { rest: { ...dt }, upper: { ...dt }, lower: { ...dt } };
+    pf.calsRest = 2200; pf.calsGym = 2200;
+    pf.macros = { protein: 200, carbs: 185, fat: 72 };
+    pf.proteinFloor = 180;
+    if (pf.activePhase && typeof pf.activePhase === "object") pf.activePhase.proteinFloor = 180;
+    if (pf.coachTargets && typeof pf.coachTargets === "object") pf.coachTargets.proteinFloorDaily = 180;
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    state.abdulRebalancedPlanV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Abdul plan rebalanced — 200P/185C/72F (protein↓ carbs↑, floor 180)");
+  } catch (err) {
+    console.error("[migration] seedAbdulRebalancedPlanV1 failed:", err);
+  }
+}
+
 // Phase 54a: correct the whey scoop to 20g protein (was 28g) in the live meal plan
 // and re-derive that ingredient's calories + the meal totals from the ingredients.
 async function fixAbdulWheyV1() {
@@ -2166,6 +2257,7 @@ const server = app.listen(PORT, async () => {
   await fixAbdulStartWeightV1();
   await fixAbdulShakeProteinV1();
   await fixAbdulPeasFibreRebalanceV1();
+  await seedAbdulRebalancedPlanV1(); // final word on the meal plan — 200P/185C/72F
   await fixJayLegPressSledV1();
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();
