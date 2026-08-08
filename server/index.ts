@@ -1054,6 +1054,119 @@ async function seedAbdulRebalancedPlanV1() {
   }
 }
 
+// Daal + fibre revision (user-directed) on the live plan (jay@afjltd.co.uk).
+// Dinner → Chicken, Daal & Rice (150g chana daal + 50g basmati replace the rice,
+// big salad removed); breakfast drops the 150g yoghurt; evening drops psyllium,
+// adds a kiwi, and trims almonds 30g→15g; three quick-log templates added (banana,
+// dates, standalone psyllium+water). RECONCILED against the actual live plan (flagged
+// to the user): peas + CoQ10 stay in pre-workout (that's where they live), and the
+// almond change applies to the evening meal (the only place almonds appear). No fibre
+// field — Forge doesn't track it, so fibre is omitted (user chose option B). Guarded;
+// runs after the rebalanced plan so it's the final word on the meal plan.
+async function seedJayDaalFibrePlanV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.jayDaalFibrePlanV1) return;
+    const L = "low", M = "moderate";
+    state.mealPlan = {
+      name: "Cut (daal + fibre) — ~2,270 kcal · 183P/210C/64F target",
+      meals: [
+        {
+          id: "breakfast", name: "Breakfast: Eggs, Avocado & Oats", time: "12:00",
+          cals: 684, protein: 42, carbs: 48, fat: 34,
+          ingredients: [
+            { name: "3 whole eggs boiled + 4 egg whites", cals: 302, protein: 32, carbs: 1, fat: 16, gi: L },
+            { name: "45g rolled oats", cals: 170, protein: 6, carbs: 30, fat: 3, gi: M },
+            { name: "80g mixed berries", cals: 34, protein: 1, carbs: 6, fat: 0, gi: L },
+            { name: "1/2 avocado", cals: 120, protein: 1, carbs: 6, fat: 11, gi: L },
+            { name: "1 tbsp chia seeds", cals: 58, protein: 2, carbs: 5, fat: 4, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "pre-workout", name: "Pre-workout: Chicken, Basmati & Peas", time: "15:00",
+          cals: 451, protein: 48, carbs: 37, fat: 10,
+          ingredients: [
+            { name: "130g chicken breast grilled", cals: 215, protein: 41, carbs: 0, fat: 4, gi: L },
+            { name: "100g cooked basmati rice", cals: 130, protein: 2, carbs: 28, fat: 0, gi: M },
+            { name: "80g garden peas", cals: 66, protein: 5, carbs: 9, fat: 1, gi: M },
+            { name: "1 tsp olive oil", cals: 40, protein: 0, carbs: 0, fat: 5, gi: L },
+          ],
+          supplements: [{ id: "supp-coq10", name: "CoQ10", dose: "2 caps (200mg)" }],
+        },
+        {
+          id: "post-shake", name: "Post-workout shake", time: "17:00",
+          cals: 185, protein: 24, carbs: 18, fat: 2,
+          ingredients: [
+            { name: "1 scoop whey + water + 100g blueberries + 5g creatine", cals: 185, protein: 24, carbs: 18, fat: 2, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "dinner", name: "Post-workout dinner: Chicken, Daal & Rice", time: "17:30",
+          cals: 493, protein: 51, carbs: 44, fat: 11,
+          ingredients: [
+            { name: "120g chicken breast grilled", cals: 198, protein: 37, carbs: 0, fat: 4, gi: L },
+            { name: "150g cooked chana daal", cals: 190, protein: 13, carbs: 30, fat: 2, gi: L },
+            { name: "50g cooked basmati rice", cals: 65, protein: 1, carbs: 14, fat: 0, gi: M },
+            { name: "1 tsp olive oil", cals: 40, protein: 0, carbs: 0, fat: 5, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "evening", name: "Evening: Greek Yoghurt, Almonds & Kiwi", time: "19:30",
+          cals: 251, protein: 24, carbs: 21, fat: 8,
+          ingredients: [
+            { name: "200g Greek yoghurt 0%", cals: 114, protein: 20, carbs: 8, fat: 0, gi: L },
+            { name: "15g almonds", cals: 87, protein: 3, carbs: 3, fat: 7.5, gi: L },
+            { name: "1 kiwi", cals: 50, protein: 1, carbs: 10, fat: 0, gi: L },
+          ],
+          supplements: [],
+        },
+        {
+          id: "ql-banana", name: "Pre-workout: Banana", time: "14:30",
+          cals: 90, protein: 1, carbs: 23, fat: 0,
+          ingredients: [
+            { name: "1 small banana", cals: 90, protein: 1, carbs: 23, fat: 0, gi: M },
+          ],
+          supplements: [],
+        },
+        {
+          id: "ql-dates", name: "Intra-workout: Dates", time: "16:00",
+          cals: 75, protein: 0, carbs: 22, fat: 0,
+          ingredients: [
+            { name: "3 dates (deglet noor)", cals: 75, protein: 0, carbs: 22, fat: 0, gi: M },
+          ],
+          supplements: [],
+        },
+        {
+          id: "ql-psyllium", name: "Psyllium + water", time: "21:00",
+          cals: 22, protein: 0, carbs: 5, fat: 0,
+          ingredients: [
+            { name: "1 tbsp psyllium husk in 300ml water", cals: 22, protein: 0, carbs: 5, fat: 0, gi: L },
+          ],
+          supplements: [],
+        },
+      ],
+    };
+    // Day target per the user (base 5 meals ≈ 195P/182C/64F; the 3 quick-logs add
+    // ~1P/50C on training days, so the day flexes around this target).
+    const pf: any = state.profile || (state.profile = {});
+    const dt = { calories: 2270, protein: 183, carbs: 210, fat: 64 };
+    pf.dynamicTargets = { rest: { ...dt }, upper: { ...dt }, lower: { ...dt } };
+    pf.calsRest = 2270; pf.calsGym = 2270;
+    pf.macros = { protein: 183, carbs: 210, fat: 64 };
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    state.jayDaalFibrePlanV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay daal+fibre plan seeded — dinner daal, quick-logs, ~2,270/183/210/64");
+  } catch (err) {
+    console.error("[migration] seedJayDaalFibrePlanV1 failed:", err);
+  }
+}
+
 // Phase 54a: correct the whey scoop to 20g protein (was 28g) in the live meal plan
 // and re-derive that ingredient's calories + the meal totals from the ingredients.
 async function fixAbdulWheyV1() {
@@ -2257,7 +2370,8 @@ const server = app.listen(PORT, async () => {
   await fixAbdulStartWeightV1();
   await fixAbdulShakeProteinV1();
   await fixAbdulPeasFibreRebalanceV1();
-  await seedAbdulRebalancedPlanV1(); // final word on the meal plan — 200P/185C/72F
+  await seedAbdulRebalancedPlanV1(); // 200P/185C/72F rebalance
+  await seedJayDaalFibrePlanV1(); // final word on the meal plan — daal dinner + quick-logs
   await fixJayLegPressSledV1();
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();
