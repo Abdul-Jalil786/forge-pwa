@@ -618,8 +618,12 @@ function trainingMetric(state, opts) {
 function weeklyReport(state, opts) {
   opts = opts || {};
   var days = _last7(opts.today);
+  // Protein grades the last 7 COMPLETED days (ends yesterday, excludes today):
+  // today's food is still being logged, so counting a partial today unfairly
+  // drags the score down. All the other metrics keep the today-inclusive window.
+  var proteinDays = _last7(_addDays(opts.today, -1));
   var steps = stepsMetric(state, { days: days, stepsTarget: opts.stepsTarget });
-  var protein = proteinMetric(state, { days: days, proteinFloor: opts.proteinFloor });
+  var protein = proteinMetric(state, { days: proteinDays, proteinFloor: opts.proteinFloor });
   var training = trainingMetric(state, { scheduled: opts.scheduled });
   var sleep = sleepMetric(state, { days: days });
   var weight = weightMetric(state, { days: days });
