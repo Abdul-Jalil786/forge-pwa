@@ -204,6 +204,72 @@ test("Phase 69: restMobility completion credits restMobility ONLY + its own X/7 
   assert.equal(c.restMobility.total, 7, "restMobility has its own /7");
 });
 
+// ---- Phase 83: 45s Plank rest-gap drill + dedicated post-exercise rest ----
+test("Phase 83: Plank is a registered 45s timed mobility drill (own id, capped 90s)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  assert.equal(q(`getAllExercises().some(e=>e.id==='mob_plank')`), true, "mob_plank registered");
+  assert.equal(q(`isTimeBased(getAllExercises().find(e=>e.id==='mob_plank'))`), true, "mob_plank is time-based");
+  // its own id — NOT merged with the main-lift u9 Plank
+  assert.notEqual(q(`getAllExercises().find(e=>e.id==='mob_plank').id`), "u9", "distinct from the main Plank u9");
+  assert.equal(q(`computeSessionVolume({mob_plank:{sets:[{seconds:45,done:true,viaRest:true}]}})`), 45, "45s counts as seconds-volume");
+  assert.equal(q(`getAllExercises().filter(e=>!e.mobility).some(e=>e.id==='mob_plank')`), false, "excluded from strength lists");
+  // duration suggestion climbs then caps at 90 (never a kg)
+  const up = JSON.parse(q(`JSON.stringify(suggestWeight('mob_plank',{log:{mob_plank:{sets:[{seconds:45,done:true}]}}},0))`));
+  assert.equal(up.timed, true, "timed suggestion"); assert.ok(up.kg == null, "no kg");
+  const capped = JSON.parse(q(`JSON.stringify(suggestWeight('mob_plank',{log:{mob_plank:{sets:[{seconds:90,done:true}]}}},0))`));
+  assert.equal(capped.seconds, 90, "capped at 90s");
+});
+
+test("Phase 83: mobility fallback offers both drills; wmSelectMobDrill switches the active one", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  q(`wm.active=true; wm.session='upperA'; wm.exIdx=0; wm.restStarted=Date.now(); wm.mobDrillId='mob_deepsquat';`);
+  const html = q(`_wmMobilityFallbackHTML('u4')`);
+  assert.ok(/Deep Squat/.test(html), "deep squat present");
+  assert.ok(/Plank/.test(html), "plank chip present");
+  assert.ok(/wmSelectMobDrill\('mob_plank'\)/.test(html), "plank chip is tappable");
+  assert.ok(/🧘 Deep Squat Hold/.test(html), "deep squat is the active header while selected");
+  // switch to plank → the active header changes to the plank drill
+  q(`wmSelectMobDrill('mob_plank')`);
+  assert.equal(q(`wm.mobDrillId`), "mob_plank", "active drill switched to plank");
+  const html2 = q(`_wmMobilityFallbackHTML('u4')`);
+  assert.ok(/🧱 Plank/.test(html2), "header shows the plank drill");
+  assert.ok(!/🧘 Deep Squat Hold/.test(html2), "deep squat is no longer the active header");
+});
+
+test("Phase 83: final set runs a post-exercise rest before the summary; last exercise skips it", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  const T = q(`todayStr()`);
+  // Mid-session exercise (index 0) with a pending later exercise → post-exercise rest.
+  q(`(function(){
+    wm.active=true; wm.session='upperA'; wm.setIdx=0; wm.exIdx=0; wm.postExercise=false;
+    var w=getWorkout('upperA');
+    STATE.exLog['${T}']={}; STATE.exLog['${T}'][w.exercises[0].id]={done:true,sets:[{kg:50,reps:8,done:true,effort:'solid'}]};
+    wm.restStarted=Date.now();
+    _wmEnterPostExerciseRest(w.exercises[0]);
+  })()`);
+  assert.equal(q(`wm.postExercise`), true, "entered the post-exercise rest");
+  assert.equal(q(`wm.mode`), "rest", "mode is rest, not straight to exDone");
+  const restHtml = q(`document.getElementById('wmContent').innerHTML`);
+  assert.ok(/CONTINUE/.test(restHtml), "the rest offers CONTINUE (not START NEXT SET)");
+  assert.ok(/Next up/.test(restHtml), "footer names the next exercise");
+  // Last exercise → no post-exercise rest, straight to the complete summary.
+  q(`(function(){
+    var w=getWorkout('upperA'); var last=w.exercises.length-1;
+    wm.exIdx=last; wm.setIdx=0; wm.postExercise=false; wm.mode='set';
+    var le=w.exercises[last];
+    STATE.exLog['${T}'][le.id]={done:true,sets:[{seconds:45,done:true}]};
+    _wmEnterPostExerciseRest(le);
+  })()`);
+  assert.equal(q(`wm.postExercise`), false, "no post-exercise rest after the last exercise");
+  assert.equal(q(`wm.mode`), "exDone", "goes straight to the complete summary");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
