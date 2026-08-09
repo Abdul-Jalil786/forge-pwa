@@ -249,8 +249,12 @@ router.post("/chat", requireAuth, requireOwnerCheck, aiBudget(), async (req: Req
       const role = m?.role === "assistant" ? "assistant" : "user";
       const content = typeof m?.content === "string" ? m.content.trim() : "";
       if (!content) { res.status(400).json({ error: "Every message needs content" }); return; }
-      if (content.length > 500) { res.status(400).json({ error: "Keep each message under 500 characters" }); return; }
-      messages.push({ role, content });
+      // The 500-char limit is a USER-INPUT cap. Assistant turns are the model's own
+      // prior replies (up to ~4000 chars) and get echoed back in the thread each turn —
+      // capping them at 500 wrongly rejected every follow-up after a long answer. Cap
+      // user input at 500 (reject), and just truncate assistant turns (never reject).
+      if (role === "user" && content.length > 500) { res.status(400).json({ error: "Keep each message under 500 characters" }); return; }
+      messages.push({ role, content: role === "assistant" ? content.slice(0, 4000) : content });
     }
     if (messages[messages.length - 1].role !== "user") { res.status(400).json({ error: "Last message must be from the user" }); return; }
     const reply = await chatAnswer(req.userId as string, messages);
