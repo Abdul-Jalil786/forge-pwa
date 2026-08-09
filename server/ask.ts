@@ -418,3 +418,51 @@ export async function chatAnswer(userId: string, messages: ChatTurn[]): Promise<
     .trim();
   return text || "Sorry — I couldn't put a reply together just now. Try asking again?";
 }
+
+// Phase 80 (Medium): on-demand DEEP ANALYSIS — a single Opus pass over the full
+// context that names the 3 biggest levers right now + one 2-week n-of-1 experiment.
+// Owner-only, BYOK, aiBudget-gated at the route. Deliberately NOT a background agent
+// (cost/redundancy) — the user pulls it when they want a step-back review.
+const DEEP_ANALYSIS_SYSTEM = `You are Forge's deep-analysis analyst. The user pressed "Deep Analysis" for an on-demand, step-back review of everything. You get the SAME rich context as the weekly report (trends, correlations, DISCOVERED PATTERNS, RECENT CHANGES, blood markers, training, sleep, nutrition) plus FULL HISTORY AGGREGATES.
+
+Output EXACTLY these two sections in markdown, nothing else:
+
+## The 3 biggest levers right now
+Rank the THREE changes that would most move the needle on their current goal (read CURRENT PHASE — on a cut the prime directive is losing fat while keeping muscle). For each: **bold one-line lever**, then 1-2 sentences citing the SPECIFIC numbers/dates from their data that justify it, then a concrete action. Prefer levers backed by trends + correlations over guesses.
+
+## One experiment to run (next 2 weeks)
+Design a SINGLE, measurable n-of-1 experiment: exactly what to change, what you'll measure, the expected direction, and how you'll know in 2 weeks if it worked. Make it something the app can actually track.
+
+RULES:
+- Cite real figures/dates verbatim from the data — never invent numbers.
+- Reference RECENT CHANGES (what they already changed) so you don't re-recommend something in flight, and note whether recent changes are working.
+- DISCOVERED PATTERNS are exploratory — you may use one as the experiment hypothesis, but frame it as a test, not a fact.
+- Be direct and specific. No preamble, no filler, no restating their whole dataset back.
+- NEVER give a medical diagnosis. If a blood marker or symptom needs it, say "worth a GP conversation" and move on.
+- Escape nothing; plain markdown.`;
+
+export async function deepAnalysis(userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  if (!state.coachingKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(state.coachingKey); }
+  catch { throw new Error("Failed to decrypt stored API key"); }
+
+  const context = buildContext(state);
+  const history = buildFullHistory(state);
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 2000,
+    system: DEEP_ANALYSIS_SYSTEM,
+    messages: [{ role: "user", content: `Here is all my data. Do the deep analysis.\n\n===== CONTEXT =====\n${context}\n${history}` }],
+  });
+  const text = response.content
+    .filter((b: any) => b.type === "text")
+    .map((b: any) => b.text)
+    .join("\n")
+    .trim();
+  return text || "Couldn't complete the analysis just now — try again in a moment.";
+}

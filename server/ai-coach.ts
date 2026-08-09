@@ -1603,6 +1603,7 @@ INTERPRETATION RULES:
 - Use WEEK-OVER-WEEK to characterise trend direction: rate "accelerated", "held", "slowed", or "stalled" relative to the previous 7 days. Cite both numbers.
 - Use MONTHLY ARC (if present) to flag whether momentum is rising or fading over the longer arc.
 - Use RECENT CHANGES to attribute movement to the user's own interventions, not just to time: when a metric shifts, check whether a change (meal-plan/macros, program, phase, deload) lines up with it and say so explicitly ("since the meal-plan change on <date>, your carbs/energy/training volume moved X — it's working, keep it" or "no change yet — give it another week"). This before-vs-after framing is more actionable than describing a trend in isolation.
+- DISCOVERED PATTERNS (in the CORRELATIONS block) are auto-mined and EXPLORATORY — they carry multiple-comparison and correlation-≠-causation risk. Treat them as hypotheses: raise at most one, gently ("worth watching — your data hints that X may affect Y"), and only promote it to a real recommendation when it's both mechanistically plausible AND strong (|r| ≥ 0.5). Never state a discovered pattern as established fact.
 - Sleep: deep < 45 min or REM < 60 min = poor quality even if hours are fine. Reference stages, not just totals.
 - Effort tags: >50% easy + no tough = sandbagging (push harder). >40% tough = under-recovery or weights too high.
 - Meal plan adherence: <70% on multiple days = the plan doesn't fit life, not a discipline problem. Suggest a swap, not a guilt trip.

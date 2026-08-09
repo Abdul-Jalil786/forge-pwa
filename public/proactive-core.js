@@ -137,6 +137,78 @@ function detectStalls(state, reps) {
   return stalls;
 }
 
+// ---- Phase 80: automated pattern DISCOVERY ----
+// Broadens the fixed correlation set by scanning behaviour→outcome pairs (same-day
+// AND next-day lag) across all logged streams, ranking by |r|. Deterministic stats
+// in code — the LLM only interprets. EXPLORATORY: multiple comparisons inflate false
+// positives, so we require n>=MIN_N and |r|>=0.4, cap to the top 3, and label them
+// clearly as hypotheses (never presented as proven).
+function _dayVolume(dayLog) {
+  if (!dayLog) return null;
+  var v = 0, any = false;
+  for (var k in dayLog) {
+    if (k.charAt(0) === "_") continue;
+    var ex = dayLog[k]; if (!ex || !Array.isArray(ex.sets)) continue;
+    for (var i = 0; i < ex.sets.length; i++) {
+      var s = ex.sets[i], kg = _num(s.kg), rp = _num(s.reps), sec = _num(s.seconds);
+      if (kg != null && rp != null) { v += kg * rp; any = true; }
+      else if (sec != null) { v += sec; any = true; }
+    }
+  }
+  return any ? v : null;
+}
+function _waterMl(w) {
+  if (w == null) return null;
+  if (typeof w === "number") return w > 0 ? w : null;
+  if (Array.isArray(w.entries)) { var t = 0; for (var i = 0; i < w.entries.length; i++) t += _num(w.entries[i] && w.entries[i].ml) || _num(w.entries[i]) || 0; return t > 0 ? t : null; }
+  var tot = _num(w.total) || _num(w.ml); return tot && tot > 0 ? tot : null;
+}
+function minePatterns(state) {
+  var sleepLog = state.sleepLog || {}, recovery = state.recovery || {}, steps = state.stepsLog || {}, exLog = state.exLog || {}, foods = state.foods || {}, waterLog = state.waterLog || {};
+  var sleepH = {}, deep = {}, rem = {}, bed = {}, stepsM = {}, readiness = {}, hrv = {}, rhr = {}, kcal = {}, protein = {}, carbs = {}, vol = {}, water = {};
+  for (var d in sleepLog) {
+    var se = sleepEntry(state, d); if (se && se.hours != null) sleepH[d] = se.hours; if (se && se.bedtime != null) bed[d] = se.bedtime;
+    var raw = sleepLog[d]; if (raw) { if (_num(raw.deepMin) != null) deep[d] = _num(raw.deepMin); if (_num(raw.remMin) != null) rem[d] = _num(raw.remMin); }
+  }
+  for (var ds in steps) { var sv = _num(steps[ds]); if (sv != null) stepsM[ds] = sv; }
+  for (var dr in recovery) { var rc = recovery[dr]; if (!rc) continue; if (_num(rc.readiness) != null) readiness[dr] = _num(rc.readiness); if (_num(rc.hrv) != null) hrv[dr] = _num(rc.hrv); var hr = _num(rc.restingHR != null ? rc.restingHR : rc.rhr); if (hr != null) rhr[dr] = hr; }
+  for (var df in foods) { var it = foods[df] || [], k = 0, p = 0, c = 0; for (var j = 0; j < it.length; j++) { k += _num(it[j].cals) || 0; p += _num(it[j].protein) || 0; c += _num(it[j].carbs) || 0; } if (k > 0) { kcal[df] = Math.round(k); protein[df] = Math.round(p); carbs[df] = Math.round(c); } }
+  for (var dv in exLog) { if (dv.charAt(0) === "_") continue; var vv = _dayVolume(exLog[dv]); if (vv != null) vol[dv] = vv; }
+  for (var dw in waterLog) { var wv = _waterMl(waterLog[dw]); if (wv != null) water[dw] = wv; }
+  var SER = {
+    sleepH: { label: "sleep duration", map: sleepH }, deep: { label: "deep sleep", map: deep }, rem: { label: "REM sleep", map: rem },
+    bedtime: { label: "later bedtime", map: bed }, steps: { label: "steps", map: stepsM }, readiness: { label: "readiness", map: readiness },
+    hrv: { label: "HRV", map: hrv }, rhr: { label: "resting HR", map: rhr }, kcal: { label: "calories eaten", map: kcal },
+    protein: { label: "protein", map: protein }, carbs: { label: "carbs", map: carbs }, vol: { label: "training volume", map: vol }, water: { label: "water intake", map: water },
+  };
+  // Behaviour(in) → outcome(out), lag in days. Excludes the 5 fixed correlations.
+  var CANDS = [
+    ["deep", "readiness", 0], ["deep", "hrv", 0], ["deep", "rhr", 0], ["rem", "readiness", 0],
+    ["steps", "deep", 1], ["steps", "readiness", 1], ["steps", "hrv", 1],
+    ["water", "rhr", 1], ["water", "readiness", 1], ["water", "sleepH", 1],
+    ["carbs", "sleepH", 1], ["kcal", "sleepH", 1], ["kcal", "steps", 1],
+    ["vol", "readiness", 1], ["vol", "hrv", 1], ["vol", "sleepH", 1], ["vol", "rhr", 1],
+    ["bedtime", "hrv", 1], ["bedtime", "rhr", 1], ["protein", "rhr", 1], ["sleepH", "steps", 1],
+  ];
+  var found = [];
+  for (var ci = 0; ci < CANDS.length; ci++) {
+    var inK = CANDS[ci][0], outK = CANDS[ci][1], lag = CANDS[ci][2];
+    var A = SER[inK] && SER[inK].map, B = SER[outK] && SER[outK].map; if (!A || !B) continue;
+    var pairs = [];
+    for (var dd in A) { var t = lag ? _addDays(dd, lag) : dd; if (A[dd] != null && B[t] != null) pairs.push([A[dd], B[t]]); }
+    var pc = pearson(pairs);
+    if (pc.r == null || pc.n < MIN_N || Math.abs(pc.r) < 0.4) continue;
+    var moreLess = pc.r > 0 ? "more" : "less";
+    found.push({
+      key: inK + "|" + outK + "|" + lag, r: pc.r, n: pc.n, r_abs: Math.abs(pc.r), direction: _dir(pc.r), strength: _strength(pc.r),
+      label: SER[inK].label + " → " + (lag ? "next-day " : "") + SER[outK].label,
+      summary: _strength(pc.r) + " " + _dir(pc.r) + " (r=" + pc.r + ", n=" + pc.n + "): more " + SER[inK].label + " → " + moreLess + " " + (lag ? "next-day " : "") + SER[outK].label,
+    });
+  }
+  found.sort(function (a, b) { return b.r_abs - a.r_abs; });
+  return found.slice(0, 3);
+}
+
 // Full correlation computation. opts: { exerciseReps, onGlp1, glp1InjectionDow }.
 function computeCorrelations(state, opts) {
   opts = opts || {};
@@ -164,7 +236,7 @@ function computeCorrelations(state, opts) {
   for (var d5 in (state.sleepLog || {})) { var sl5 = sleepEntry(state, d5); var rec = recovery[d5]; if (sl5 && sl5.bedtime != null && rec && _num(rec.readiness) != null) p5.push([sl5.bedtime, _num(rec.readiness)]); }
   results.push(_corr("bedtime_vs_readiness", "Bedtime → next-day readiness", p5, "later bedtime", "readiness", "Bedtime is not yet synced from Oura (no sleep-start field) — this will populate once it is captured."));
 
-  return { minN: MIN_N, correlations: results, stalls: detectStalls(state, reps) };
+  return { minN: MIN_N, correlations: results, stalls: detectStalls(state, reps), discovered: minePatterns(state) };
 }
 
 // Plain-text block for the AI-coach context.
@@ -173,6 +245,10 @@ function formatCorrelations(c) {
   var L = ["CORRELATIONS (computed deterministically over full history — cite these, do not eyeball patterns):"];
   c.correlations.forEach(function (x) { L.push("  - " + x.label + ": " + x.summary); });
   L.push("  - Stalled lifts (last 6 sessions): " + (c.stalls && c.stalls.length ? c.stalls.map(function (s) { return s.exId + " (" + s.sessions + " sessions @ " + s.kg + "kg)"; }).join(", ") : "none detected"));
+  if (c.discovered && c.discovered.length) {
+    L.push("  DISCOVERED PATTERNS (auto-mined across all streams incl. next-day lags — EXPLORATORY, hypothesis-generating only; multiple-comparison risk, correlation ≠ causation. Raise gently as 'worth watching'; only act if mechanistically plausible AND strong):");
+    c.discovered.forEach(function (x) { L.push("    · " + x.label + ": " + x.summary); });
+  }
   return L.join("\n");
 }
 
