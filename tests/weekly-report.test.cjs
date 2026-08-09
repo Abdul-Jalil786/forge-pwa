@@ -45,6 +45,19 @@ test("Phase 82: partial credit — a near-miss day counts, doesn't zero out", ()
   assert.equal(protM.score, 75, "160g earns half credit vs the 180 floor");
 });
 
+test("weeklyReport: protein grades last 7 COMPLETED days, excludes today", () => {
+  // The 7 completed days d(-7)..d(-1) are all at/above the floor → protein 100.
+  // Today d(0) is a partial-logged 0g day; it must NOT be counted (still eating).
+  const foods = {};
+  for (let i = -7; i <= -1; i++) foods[d(i)] = [{ cals: 2000, protein: 210 }];
+  foods[d(0)] = [{ cals: 500, protein: 0 }]; // today, half-logged — must be ignored
+  const st = { stepsLog: {}, foods, sleepLog: {}, weightLog: [], exLog: {} };
+  const r = core.weeklyReport(st, { today: TODAY, stepsTarget: null, proteinFloor: 200, scheduled: [] });
+  assert.equal(r.protein.total, 7, "still a 7-day window");
+  assert.equal(r.protein.hit, 7, "all 7 completed days hit the floor");
+  assert.equal(r.protein.score, 100, "today's partial 0g day is excluded, so score stays 100");
+});
+
 test("protein: floor is THE number (no ×0.9); no floor = null score", () => {
   const foods = {}; WIN.forEach((dt, i) => { foods[dt] = [{ cals: 2000, protein: i < 4 ? 210 : 150 }]; });
   const st = { foods };
