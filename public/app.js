@@ -2688,6 +2688,28 @@ async function sendCoachChat(preset){
     _chatBusy=false;
   }
 }
+let _deepBusy=false;
+async function runDeepAnalysis(){
+  if(_deepBusy)return;
+  _deepBusy=true;
+  const btn=document.getElementById('deep-analysis-btn');
+  const out=document.getElementById('deep-analysis-result');
+  if(btn){btn.disabled=true;btn.textContent='🔬 Analysing… (~15s)';}
+  if(out)out.innerHTML='<div style="font-size:12px;color:var(--text3);">Reading everything and finding your biggest levers…</div>';
+  try{
+    const jwt=localStorage.getItem('forge_token');
+    const res=await fetch('/api/coach/deep-analysis',{method:'POST',headers:{Authorization:'Bearer '+jwt}});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||('Error '+res.status));
+    STATE._deepAnalysis=String(data.text||'');
+    if(out)out.innerHTML=`<div style="font-size:13px;line-height:1.6;color:var(--text);">${typeof formatCoachingReport==='function'?formatCoachingReport(STATE._deepAnalysis):STATE._deepAnalysis}</div>`;
+  }catch(e){
+    if(out)out.innerHTML=`<div style="font-size:12px;color:var(--red);">${(e&&e.message)?String(e.message).slice(0,120):'Analysis failed — try again.'}</div>`;
+  }finally{
+    _deepBusy=false;
+    if(btn){btn.disabled=false;btn.textContent='🔬 Run Deep Analysis';}
+  }
+}
 function clearCoachChat(){
   if(!(STATE.coachChat||[]).length)return;
   if(!confirm('Clear this conversation?'))return;

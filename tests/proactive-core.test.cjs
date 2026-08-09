@@ -42,6 +42,39 @@ test("bedtime correlation reports no-data note when sleep-start is absent", () =
   assert.match(s.summary, /not yet synced/i);
 });
 
+test("Phase 80: pattern mining discovers strong lagged + same-day relationships, ranked", () => {
+  const stepsLog = {}, recovery = {}, sleepLog = {};
+  for (let i = 0; i < 20; i++) {
+    const day = d(B, i), next = d(B, i + 1);
+    const steps = 6000 + i * 400, deep = 40 + (i % 7) * 8;
+    stepsLog[day] = steps;
+    sleepLog[day] = { hours: 7, deepMin: deep, remMin: 90 };
+    (recovery[next] = recovery[next] || {}).readiness = 40 + (steps - 6000) / 200; // steps → next-day readiness
+    (recovery[day] = recovery[day] || {}).hrv = 30 + deep * 0.5;                    // deep → same-day HRV
+  }
+  const c = core.computeCorrelations({ stepsLog, sleepLog, recovery }, { exerciseReps: {} });
+  assert.ok(Array.isArray(c.discovered) && c.discovered.length >= 2, "found at least two patterns");
+  assert.ok(c.discovered.length <= 3, "capped at 3");
+  const labels = c.discovered.map((x) => x.label);
+  assert.ok(labels.some((l) => /steps → next-day readiness/.test(l)), "found the lagged steps→readiness pattern");
+  assert.ok(labels.some((l) => /deep sleep → HRV/.test(l)), "found the same-day deep→HRV pattern");
+  // ranked by |r| descending
+  assert.ok(Math.abs(c.discovered[0].r) >= Math.abs(c.discovered[c.discovered.length - 1].r), "ranked by strength");
+  // formatted block carries the EXPLORATORY caveat
+  const txt = core.formatCorrelations(c);
+  assert.match(txt, /DISCOVERED PATTERNS/);
+  assert.match(txt, /EXPLORATORY/);
+});
+
+test("Phase 80: weak/insufficient candidates are NOT surfaced as discovered patterns", () => {
+  const stepsLog = {}, recovery = {};
+  // noisy, near-zero relationship, and only 6 days (< MIN_N)
+  const noise = [1, -1, 1, -1, 1, -1];
+  for (let i = 0; i < 6; i++) { stepsLog[d(B, i)] = 8000 + noise[i] * 50; (recovery[d(B, i + 1)] = {}).readiness = 70 + noise[i]; }
+  const c = core.computeCorrelations({ stepsLog, recovery }, { exerciseReps: {} });
+  assert.equal((c.discovered || []).length, 0, "no spurious/underpowered patterns surfaced");
+});
+
 test("detectStalls flags a held lift and ignores a progressing one", () => {
   const reps = { u1: [6, 8], u3: [6, 8] };
   const exLog = {};

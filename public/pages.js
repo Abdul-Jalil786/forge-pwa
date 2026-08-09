@@ -2989,6 +2989,12 @@ function renderCoach(){
         ${["How much of my loss was fat vs muscle?","Is my waist moving even when the scale isn't?","Am I getting stronger for my size?"].map(q=>`<button onclick="sendCoachChat('${q.replace(/'/g,"\\'")}')" style="font-size:10px;padding:6px 10px;background:transparent;border:1px solid var(--border);border-radius:12px;color:var(--text2);cursor:pointer;">${q}</button>`).join('')}
         ${((STATE.coachChat||[]).length)?`<span onclick="clearCoachChat()" style="margin-left:auto;font-size:10px;color:var(--text3);text-decoration:underline;cursor:pointer;">Clear chat</span>`:''}
       </div>
+    </div>
+    <div class="sec-label">🔬 Deep Analysis</div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px;">A one-off step-back review of everything Forge has on you — your <strong>3 biggest levers right now</strong> and <strong>one 2-week experiment</strong> to run. Uses your AI key (one Opus pass).</div>
+      <button class="btn btn-lime btn-sm" style="width:100%;" id="deep-analysis-btn" onclick="runDeepAnalysis()">🔬 Run Deep Analysis</button>
+      <div id="deep-analysis-result" style="margin-top:12px;">${STATE._deepAnalysis?`<div style="font-size:13px;line-height:1.6;color:var(--text);">${typeof formatCoachingReport==='function'?formatCoachingReport(STATE._deepAnalysis):STATE._deepAnalysis}</div>`:''}</div>
     </div>`:''}
 
     <div class="sec-label">Weekly Report Card</div>

@@ -4,7 +4,7 @@ import prisma from "./db";
 import { requireAuth, requireOwnerCheck } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection, buildContext } from "./ai-coach";
-import { answerQuestion, estimateFood, extractHealthRecord, chatAnswer, ChatTurn } from "./ask";
+import { answerQuestion, estimateFood, extractHealthRecord, chatAnswer, deepAnalysis, ChatTurn } from "./ask";
 import { chargeAiBudget, AI_DAILY_LIMIT } from "./ai-budget";
 
 const router = Router();
@@ -262,6 +262,18 @@ router.post("/chat", requireAuth, requireOwnerCheck, aiBudget(), async (req: Req
   } catch (err: any) {
     console.error("Coach chat error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to reply" });
+  }
+});
+
+// Phase 80 (Medium): on-demand Deep Analysis — one Opus pass → 3 biggest levers +
+// one 2-week experiment. Owner-only, aiBudget-gated (it's an Opus call on the user's key).
+router.post("/deep-analysis", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+  try {
+    const text = await deepAnalysis(req.userId as string);
+    res.json({ success: true, text });
+  } catch (err: any) {
+    console.error("Deep analysis error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to analyse" });
   }
 });
 
