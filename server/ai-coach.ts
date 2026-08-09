@@ -356,6 +356,63 @@ function buildTrainingDetail(state: any): string {
   return lines.join("\n");
 }
 
+// Phase 78: long-arc strength — first-ever vs current top set per lift + relative
+// strength (kg lifted per kg bodyweight). buildTrainingDetail only shows the last 4
+// sessions, so the weekly report was blind to strength gained SINCE PLAN START — the
+// single best evidence muscle is preserved on a cut (holding/rising strength while
+// bodyweight falls). Fed into buildContext so the report + chat + brief all see it.
+export function buildStrengthBaseline(state: any): string {
+  const exLog: any = state.exLog || {};
+  const weightLog: any[] = Array.isArray(state.weightLog) ? state.weightLog : [];
+  const dates = Object.keys(exLog).sort();
+  if (!dates.length) return "";
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const currentW = weightLog.length ? +weightLog[weightLog.length - 1].weight : null;
+  const weightAt = (date: string): number | null => {
+    let best: number | null = null;
+    for (const e of weightLog) { if (e?.date && e.date <= date && e.weight != null) best = +e.weight; }
+    return best ?? currentW;
+  };
+  type LiftAgg = { firstDate: string; firstKg: number; lastDate: string; lastKg: number; sessions: number; timed: boolean; firstSec?: number; bestSec?: number };
+  const lifts: Record<string, LiftAgg> = {};
+  for (const d of dates) {
+    const day = exLog[d];
+    if (!day || typeof day !== "object") continue;
+    for (const [exId, ex] of Object.entries<any>(day)) {
+      if (exId.startsWith("_") || !ex || !Array.isArray(ex.sets)) continue;
+      const kgs = ex.sets.map((s: any) => parseFloat(s.kg)).filter((n: number) => n > 0);
+      const secs = ex.sets.map((s: any) => parseFloat(s.seconds)).filter((n: number) => n > 0);
+      if (!kgs.length && !secs.length) continue;
+      const topKg = kgs.length ? Math.max(...kgs) : 0;
+      const topSec = secs.length ? Math.max(...secs) : 0;
+      if (!lifts[exId]) {
+        lifts[exId] = { firstDate: d, firstKg: topKg, lastDate: d, lastKg: topKg, sessions: 1, timed: !kgs.length && secs.length > 0, firstSec: topSec || undefined, bestSec: topSec || undefined };
+      } else {
+        const L = lifts[exId];
+        L.sessions++; L.lastDate = d; if (topKg) L.lastKg = topKg;
+        if (topSec) L.bestSec = Math.max(L.bestSec || 0, topSec);
+      }
+    }
+  }
+  const rows = Object.entries(lifts).filter(([, L]) => L.sessions >= 3).slice(0, 16);
+  if (!rows.length) return "";
+  const lines: string[] = [];
+  lines.push("STRENGTH SINCE START (first-ever vs current top set per lift + relative strength = kg per kg bodyweight; on a cut, holding/rising strength — especially RELATIVE, as bodyweight falls — is the prime evidence muscle is preserved):");
+  for (const [exId, L] of rows) {
+    if (L.timed) {
+      lines.push(`  ${exerciseName(exId)}: first hold ${L.firstSec}s (${L.firstDate}) → longest ${L.bestSec}s · ${L.sessions} sessions`);
+    } else {
+      const bwFirst = weightAt(L.firstDate), bwLast = weightAt(L.lastDate);
+      const relFirst = bwFirst ? r1(L.firstKg / bwFirst) : null;
+      const relLast = bwLast ? r1(L.lastKg / bwLast) : null;
+      const dir = L.lastKg > L.firstKg ? "↑" : L.lastKg < L.firstKg ? "↓" : "=";
+      lines.push(`  ${exerciseName(exId)}: ${L.firstKg}kg (${L.firstDate}) → ${L.lastKg}kg (${L.lastDate}) ${dir} · relative ${relFirst ?? "?"}→${relLast ?? "?"} kg/kg bw · ${L.sessions} sessions`);
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
 // Phase 38: pair each training session with the sleep + recovery that preceded it
 function buildSleepPerformance(state: any): string {
   const exLog = state.exLog || {};
@@ -1404,6 +1461,8 @@ export function buildContext(state: any): string {
   // Phase 38: per-lift detail + sleep/performance correlation
   const trainingDetail = buildTrainingDetail(state);
   if (trainingDetail) lines.push(trainingDetail);
+  const strengthBaseline = buildStrengthBaseline(state);
+  if (strengthBaseline) lines.push(strengthBaseline);
   const sleepPerf = buildSleepPerformance(state);
   if (sleepPerf) lines.push(sleepPerf);
   // Phase 47: user-written training notes (per-exercise running + per-session)

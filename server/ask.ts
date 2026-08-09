@@ -79,51 +79,13 @@ export function buildFullHistory(state: any): string {
     lines.push(`  Protein latest week: ${Math.round(recentP)}g/day = ${r1(recentP / currentW)}g/kg bodyweight${targetP ? ` (target ${targetP}g = ${r1(targetP / currentW)}g/kg)` : ""}`);
   }
 
-  // --- per-lift first vs current + relative strength ---
-  const exLog: any = state.exLog || {};
-  const dates = Object.keys(exLog).sort();
-  const weightAt = (date: string): number | null => {
-    let best: number | null = null;
-    for (const e of weightLog) { if (e?.date && e.date <= date && e.weight != null) best = +e.weight; }
-    return best ?? currentW;
-  };
-  type LiftAgg = { name: string; firstDate: string; firstKg: number; lastDate: string; lastKg: number; sessions: number; timed: boolean; firstSec?: number; bestSec?: number };
-  const lifts: Record<string, LiftAgg> = {};
-  for (const d of dates) {
-    const day = exLog[d];
-    if (!day || typeof day !== "object") continue;
-    for (const [exId, ex] of Object.entries<any>(day)) {
-      if (exId.startsWith("_") || !ex || !Array.isArray(ex.sets)) continue;
-      const kgs = ex.sets.map((s: any) => parseFloat(s.kg)).filter((n: number) => n > 0);
-      const secs = ex.sets.map((s: any) => parseFloat(s.seconds)).filter((n: number) => n > 0);
-      if (!kgs.length && !secs.length) continue;
-      const topKg = kgs.length ? Math.max(...kgs) : 0;
-      const topSec = secs.length ? Math.max(...secs) : 0;
-      if (!lifts[exId]) {
-        lifts[exId] = { name: exId, firstDate: d, firstKg: topKg, lastDate: d, lastKg: topKg, sessions: 1, timed: !kgs.length && secs.length > 0, firstSec: topSec || undefined, bestSec: topSec || undefined };
-      } else {
-        const L = lifts[exId];
-        L.sessions++; L.lastDate = d; if (topKg) L.lastKg = topKg;
-        if (topSec) L.bestSec = Math.max(L.bestSec || 0, topSec);
-      }
-    }
-  }
-  const liftRows = Object.entries(lifts).filter(([, L]) => L.sessions >= 3).slice(0, 14);
-  if (liftRows.length) {
-    lines.push("  Lifts — first-ever vs current top set, with relative strength (kg lifted per kg bodyweight):");
-    for (const [exId, L] of liftRows) {
-      if (L.timed) {
-        lines.push(`    ${exId}: first hold ${L.firstSec}s (${L.firstDate}) → longest ${L.bestSec}s · ${L.sessions} sessions`);
-      } else {
-        const bwFirst = weightAt(L.firstDate), bwLast = weightAt(L.lastDate);
-        const relFirst = bwFirst ? r1(L.firstKg / bwFirst) : null;
-        const relLast = bwLast ? r1(L.lastKg / bwLast) : null;
-        lines.push(`    ${exId}: ${L.firstKg}kg (${L.firstDate}) → ${L.lastKg}kg (${L.lastDate}) · relative ${relFirst ?? "?"}→${relLast ?? "?"} kg/kg bw · ${L.sessions} sessions`);
-      }
-    }
-  }
+  // Per-lift first-vs-current strength now lives in buildContext (buildStrengthBaseline,
+  // Phase 78) so the weekly report gets it too — chat/ask prepend buildContext, so it's
+  // covered here without duplicating it in this block.
 
   // --- monthly training-day counts ---
+  const exLog: any = state.exLog || {};
+  const dates = Object.keys(exLog).sort();
   const monthly: Record<string, number> = {};
   for (const d of dates) {
     const day = exLog[d];
