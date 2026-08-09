@@ -809,8 +809,8 @@ function buildScorecard(state: any): string {
     const sw = weeklyReport(state, { today: ukToday(), stepsTarget: ct.stepsDaily, proteinFloor: ct.proteinFloorDaily, scheduled });
     const L = [`WEEKLY SCORECARD (identical to the user's Coach card — rolling 7 days ${sw.window.from} → ${sw.window.to}; weights protein30/training30/steps20/sleep20):`];
     L.push(`  Overall: ${sw.overall == null ? "—" : sw.overall}/100`);
-    L.push(`  Steps: ${sw.steps.hasTarget ? `${sw.steps.hit}/${sw.steps.total} days ≥ ${sw.steps.target}` : "no target set"} → ${sw.grades.steps}`);
-    L.push(`  Protein: ${sw.protein.hasTarget ? `${sw.protein.hit}/${sw.protein.total} days ≥ ${sw.protein.floor}g floor` : "no floor set"} → ${sw.grades.protein}`);
+    L.push(`  Steps: ${sw.steps.hasTarget ? `${sw.steps.hit}/${sw.steps.total} days ≥ ${sw.steps.target} · score ${sw.steps.score}/100 (partial credit for near-miss days)` : "no target set"} → ${sw.grades.steps}`);
+    L.push(`  Protein: ${sw.protein.hasTarget ? `${sw.protein.hit}/${sw.protein.total} full days ≥ ${sw.protein.floor}g floor · score ${sw.protein.score}/100 (near-miss days earn partial credit)` : "no floor set"} → ${sw.grades.protein}`);
     L.push(`  Training: ${sw.training.completed}/${sw.training.scheduled} scheduled sessions completed → ${sw.grades.training}`);
     const bed = sw.sleep.hasTiming ? `, bedtime avg ${sw.sleep.avgBedtimeClock}` : " (bedtime not tracked)";
     L.push(`  Sleep: ${sw.sleep.avgHours != null ? `${sw.sleep.avgHours}h avg${bed}, ${sw.sleep.nightsLogged}/${sw.sleep.total} nights` : "no data"} → ${sw.grades.sleep}`);

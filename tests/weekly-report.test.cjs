@@ -26,9 +26,23 @@ test("steps: hit vs target, missing day = miss; no target = null score", () => {
   assert.equal(m.total, 7);
   assert.equal(m.hit, WIN.filter((dt, i) => i !== 2 && i < 5).length, "days >=10k");
   assert.equal(m.logged, 6, "missing day not logged");
-  assert.equal(m.score, Math.round(m.hit / 7 * 100));
+  // Phase 82: partial credit — 4 full days (1.0) + two 4k days (0.4) + one missing (0)
+  // = 4.8/7 = 69, higher than the old binary 4/7 = 57.
+  assert.equal(m.score, 69, "partial credit for the 4k-step days");
   // no target
   assert.equal(core.stepsMetric(st, { days: WIN, stepsTarget: null }).score, null);
+});
+
+test("Phase 82: partial credit — a near-miss day counts, doesn't zero out", () => {
+  // steps target 8000: one day at 8000 (full), one at 6000 (0.75) → 1.75/2 windows... use a 2-day window
+  const W2 = [d(0), d(-1)];
+  const stepsM = core.stepsMetric({ stepsLog: { [d(0)]: 8000, [d(-1)]: 6000 } }, { days: W2, stepsTarget: 8000 });
+  assert.equal(stepsM.hit, 1, "one full-hit day");
+  assert.equal(stepsM.score, Math.round((1 + 0.75) / 2 * 100), "6k earns 0.75 credit → score 88, not 50");
+  // protein floor 180, band 40: 180 (full) + 160 (half) → (1 + 0.5)/2 = 75
+  const protM = core.proteinMetric({ foods: { [d(0)]: [{ cals: 2000, protein: 180 }], [d(-1)]: [{ cals: 2000, protein: 160 }] } }, { days: W2, proteinFloor: 180 });
+  assert.equal(protM.hit, 1, "one full day at/above floor");
+  assert.equal(protM.score, 75, "160g earns half credit vs the 180 floor");
 });
 
 test("protein: floor is THE number (no ×0.9); no floor = null score", () => {
@@ -102,8 +116,8 @@ test("training: schedule-aware; >=60% done = complete; make-ups + Zone 2 count",
 
 test("weeklyReport: weighted overall (protein30/training30/steps20/sleep20), renormalised", () => {
   const st = {
-    stepsLog: Object.fromEntries(WIN.map((dt, i) => [dt, i < 5 ? 12000 : 3000])),      // 5/7 → 71
-    foods: Object.fromEntries(WIN.map((dt, i) => [dt, [{ cals: 2000, protein: i < 5 ? 210 : 150 }]])), // 5/7 → 71
+    stepsLog: Object.fromEntries(WIN.map((dt, i) => [dt, i < 5 ? 12000 : 3000])),      // 5 full + two 3k(0.3) → 80
+    foods: Object.fromEntries(WIN.map((dt, i) => [dt, [{ cals: 2000, protein: i < 5 ? 210 : 150 }]])), // 5/7; 150<band → 71
     sleepLog: Object.fromEntries(WIN.map(dt => [dt, { hours: 7.2, bedtime: 23 }])),     // 100
     weightLog: WIN.map((dt, i) => ({ date: dt, weight: 105 - i * 0.1 })),
     exLog: {},
@@ -118,11 +132,11 @@ test("weeklyReport: weighted overall (protein30/training30/steps20/sleep20), ren
   st.exLog[d(-1)] = { cardio_z2: { done: true } };
   const r = core.weeklyReport(st, { today: TODAY, stepsTarget: 10000, proteinFloor: 200, scheduled: sched });
   assert.equal(r.training.score, 100, "3/3 scheduled done");
-  assert.equal(r.steps.score, 71);
+  assert.equal(r.steps.score, 80);
   assert.equal(r.protein.score, 71);
   assert.equal(r.sleep.score, 100);
-  // weighted: (71*.3 + 100*.3 + 71*.2 + 100*.2) = 21.3+30+14.2+20 = 85.5 → 86 (round)
-  assert.equal(r.overall, 86);
+  // weighted: (71*.3 + 100*.3 + 80*.2 + 100*.2) = 21.3+30+16+20 = 87.3 → 87 (round)
+  assert.equal(r.overall, 87);
   assert.equal(r.grades.sleep, "A");
   assert.equal(r.window.days, 7);
 });

@@ -538,22 +538,33 @@ function _wmean(pairs) { // [[score,weight],...], skips null scores, renormalise
   return sw > 0 ? Math.round(ssw / sw) : null;
 }
 
-// STEPS — hit vs coachTargets.stepsDaily; a day with no data = 0 = honest miss.
+// Phase 82: friendlier scoring — score on PARTIAL per-day credit, not a binary
+// hit/miss, so a near-miss day (e.g. 7.5k of an 8k step goal, or 179g of a 180g
+// floor) counts most of the way rather than as a zero. `hit` (full days) is kept
+// for display; `score` is the average per-day attainment. Grade bands unchanged.
+var PROTEIN_CREDIT_BAND = 40; // g of partial-credit runway below the protein floor
+
+// STEPS — per-day credit = min(1, steps/target); a day with no data = 0 = honest miss.
 function stepsMetric(state, opts) {
   var days = opts.days || _last7(opts.today), target = _num(opts.stepsTarget), steps = state.stepsLog || {};
-  var hit = 0, logged = 0;
-  days.forEach(function (d) { var v = _num(steps[d]); if (v != null) logged++; if (target && (v || 0) >= target) hit++; });
+  var hit = 0, logged = 0, credit = 0;
+  days.forEach(function (d) { var v = _num(steps[d]); if (v != null) logged++; if (target) { var val = v || 0; if (val >= target) hit++; credit += Math.min(1, val / target); } });
   var hasTarget = target != null;
-  return { hit: hit, total: days.length, logged: logged, target: target, hasTarget: hasTarget, score: hasTarget ? Math.round(hit / days.length * 100) : null };
+  return { hit: hit, total: days.length, logged: logged, target: target, hasTarget: hasTarget, score: hasTarget ? Math.round(credit / days.length * 100) : null };
 }
-// PROTEIN — hit vs coachTargets.proteinFloorDaily (SAME value the scanner uses).
-// No ×0.9 fudge. No target set -> score null (card shows "no target set").
+// PROTEIN — per-day credit ramps from 0 at (floor − band) to full at the floor; a
+// day just under the floor still earns most of the credit. No ×0.9 fudge.
 function proteinMetric(state, opts) {
   var days = opts.days || _last7(opts.today), floor = _num(opts.proteinFloor), intake = dailyIntake(state);
-  var hit = 0, logged = 0;
-  days.forEach(function (d) { var e = intake[d]; if (e && e.kcal > 0) logged++; if (floor && e && e.protein >= floor) hit++; });
+  var hit = 0, logged = 0, credit = 0;
+  days.forEach(function (d) {
+    var e = intake[d];
+    if (e && e.kcal > 0) logged++;
+    if (floor && e && e.protein >= floor) hit++;
+    if (floor) { var p = (e && e.kcal > 0) ? e.protein : 0; credit += Math.max(0, Math.min(1, (p - (floor - PROTEIN_CREDIT_BAND)) / PROTEIN_CREDIT_BAND)); }
+  });
   var hasTarget = floor != null;
-  return { hit: hit, total: days.length, logged: logged, floor: floor, hasTarget: hasTarget, score: hasTarget ? Math.round(hit / days.length * 100) : null };
+  return { hit: hit, total: days.length, logged: logged, floor: floor, hasTarget: hasTarget, score: hasTarget ? Math.round(credit / days.length * 100) : null };
 }
 // SLEEP — 60% duration + 40% timing. Timing needs bedtime; when absent, the score
 // is duration-only (graceful) and hasTiming=false so the card can say so.

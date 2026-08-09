@@ -2941,8 +2941,8 @@ function _renderReportCard(r){
   const oc=r.overall==null?'var(--text3)':(r.overall>=75?'var(--green)':r.overall>=60?'var(--lime)':'var(--orange)');
   const w=r.weights;
   const item=(icon,label,detail,g)=>`<div class="rc-item"><div class="rc-icon">${icon}</div><div class="rc-info"><div class="rc-label">${label}</div><div class="rc-detail">${detail}</div></div><div class="rc-score ${_rcClass(g)}">${g||'—'}</div></div>`;
-  const stepsDetail=r.steps.hasTarget?`${r.steps.hit}/${r.steps.total} days hit ${r.steps.target.toLocaleString()} steps`:`No step target set`;
-  const proteinDetail=r.protein.hasTarget?`${r.protein.hit}/${r.protein.total} days ≥ ${r.protein.floor}g floor`:`No protein floor set — add one in Coach Settings`;
+  const stepsDetail=r.steps.hasTarget?`${r.steps.hit}/${r.steps.total} days hit ${r.steps.target.toLocaleString()} · ${r.steps.score}/100`:`No step target set`;
+  const proteinDetail=r.protein.hasTarget?`${r.protein.hit}/${r.protein.total} full days ≥ ${r.protein.floor}g · ${r.protein.score}/100`:`No protein floor set — add one in Coach Settings`;
   const trainingDetail=r.training.scheduled?`${r.training.completed}/${r.training.scheduled} scheduled sessions completed`:`No sessions scheduled this week`;
   let sleepDetail;
   if(r.sleep.avgHours==null){sleepDetail=`No sleep logged`;}

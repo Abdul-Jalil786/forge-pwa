@@ -2015,6 +2015,25 @@ async function seedJayDeloadCadenceV1() {
   }
 }
 
+// Phase 82: set Jay's daily steps target to 8,000 (his scorecard showed "no target
+// set", so steps weren't graded/coached). Sustainable given his current ~9k/day.
+async function seedJayStepsTargetV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.jayStepsTargetV1) return;
+    if (!state.profile) state.profile = {};
+    if (!state.profile.coachTargets || typeof state.profile.coachTargets !== "object") state.profile.coachTargets = {};
+    state.profile.coachTargets.stepsDaily = 8000;
+    state.jayStepsTargetV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay steps target set to 8,000/day");
+  } catch (err) {
+    console.error("[migration] seedJayStepsTargetV1 failed:", err);
+  }
+}
+
 // Phase 70c: seed Naveed's deload cadence — same as Jay (this week = deload, then
 // every 8 weeks from Mon 2026-08-03). Naveed is on the 5-day fixed split, whose
 // built-in deload would otherwise fall on Aug 17-23; the program-agnostic config
@@ -2359,6 +2378,7 @@ const server = app.listen(PORT, async () => {
   await seedJayTargetOverridesV1();
   await seedJayTapeReminderV1();
   await seedJayDeloadCadenceV1();
+  await seedJayStepsTargetV1();
   await seedNaveedDeloadCadenceV1();
   await seedFarukhPlanV1();
   await seedFarukhDeloadCadenceV1();
