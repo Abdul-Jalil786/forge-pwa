@@ -413,6 +413,56 @@ export function buildStrengthBaseline(state: any): string {
   return lines.join("\n");
 }
 
+// Phase 79: RECENT CHANGES timeline — the coach could see trends (week-over-week,
+// correlations) but not WHEN the user deliberately changed something, so it couldn't
+// attribute before/after impact to a specific intervention. Assembled from the dated
+// markers already in state (no schema change): meal-plan updates, program + phase +
+// deload config, plan start, injuries flagged/resolved. Newest first.
+function buildRecentChanges(state: any): string {
+  const profile = state.profile || {};
+  const today = ukToday();
+  const daysAgo = (d: string): number | null => {
+    if (!d || d.length < 10) return null;
+    return Math.round((new Date(today + "T12:00:00").getTime() - new Date(d.slice(0, 10) + "T12:00:00").getTime()) / 86400000);
+  };
+  const items: Array<{ date: string; label: string }> = [];
+  const push = (date: any, label: string) => {
+    if (typeof date === "string" && date.length >= 10) items.push({ date: date.slice(0, 10), label });
+  };
+  push(profile.planStartDate || profile.startDate, "Cut / plan started");
+  if (profile.programmeStartDate) {
+    const prog = programmeLabel(profile.programId);
+    push(profile.programmeStartDate, `Training program set: ${prog?.name || profile.programId || "?"}`);
+  }
+  const ap = profile.activePhase;
+  if (ap && ap.startDate) {
+    push(ap.startDate, `Phase set: ${ap.phase || profile.phase || "cut"}${ap.calorieTarget ? ` · target ${ap.calorieTarget}kcal` : ""}${ap.goalWeight ? ` · goal ${ap.goalWeight}kg` : ""}`);
+  }
+  const dc = profile.deloadConfig;
+  if (dc && dc.enabled && dc.anchorMonday) {
+    push(dc.updatedAt || dc.anchorMonday, `Deload cadence set: every ${dc.everyWeeks || 8} weeks (anchor ${dc.anchorMonday})`);
+  }
+  if (state.lastMealPlanRegenAt) {
+    push(state.lastMealPlanRegenAt, `Meal plan updated${state.mealPlan?.name ? ` → "${state.mealPlan.name}"` : ""}`);
+  }
+  const inj = state.injuries || {};
+  for (const k of Object.keys(inj)) {
+    const j = inj[k]; if (!j) continue;
+    if (j.createdAt) push(j.createdAt, `Injury flagged: ${j.name || "injury"}${j.severity ? ` (${j.severity})` : ""}`);
+    if (j.status === "resolved" && j.resolvedAt) push(j.resolvedAt, `Injury resolved: ${j.name || "injury"}`);
+  }
+  if (!items.length) return "";
+  items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // newest first
+  const list = items.slice(0, 12).map((it) => {
+    const dd = daysAgo(it.date);
+    return `  ${it.date}${dd != null ? ` (${dd <= 0 ? "today" : dd + "d ago"})` : ""}: ${it.label}`;
+  });
+  return [
+    "RECENT CHANGES (interventions the user made, newest first — cross-reference these dates against WEEK-OVER-WEEK / MONTHLY ARC / trends to attribute BEFORE-vs-AFTER impact, e.g. \"since the meal-plan change on <date>, protein / training volume / energy moved X — it's working / not working\"; do NOT describe trends in isolation when a change explains them):",
+    ...list, "",
+  ].join("\n");
+}
+
 // Phase 38: pair each training session with the sleep + recovery that preceded it
 function buildSleepPerformance(state: any): string {
   const exLog = state.exLog || {};
@@ -1347,6 +1397,11 @@ export function buildContext(state: any): string {
     lines.push("");
   }
 
+  // Phase 79: RECENT CHANGES timeline — so the coach can attribute the trends below
+  // to specific interventions (not just describe them).
+  const recentChanges = buildRecentChanges(state);
+  if (recentChanges) lines.push(recentChanges);
+
   // Phase 30: WEEK-OVER-WEEK comparison — last 7 days vs the 7 days before
   const wk0From = daysAgoUK(6),  wk0To = ukToday();
   const wk1From = daysAgoUK(13), wk1To = daysAgoUK(7);
@@ -1547,6 +1602,7 @@ INTERPRETATION RULES:
 - Reference SINCE PLAN START in every "This week" section ("X weeks in, Yg/kg down, LBM preservation status"). Frame the cut as a multi-month arc, not a week-to-week slog.
 - Use WEEK-OVER-WEEK to characterise trend direction: rate "accelerated", "held", "slowed", or "stalled" relative to the previous 7 days. Cite both numbers.
 - Use MONTHLY ARC (if present) to flag whether momentum is rising or fading over the longer arc.
+- Use RECENT CHANGES to attribute movement to the user's own interventions, not just to time: when a metric shifts, check whether a change (meal-plan/macros, program, phase, deload) lines up with it and say so explicitly ("since the meal-plan change on <date>, your carbs/energy/training volume moved X — it's working, keep it" or "no change yet — give it another week"). This before-vs-after framing is more actionable than describing a trend in isolation.
 - Sleep: deep < 45 min or REM < 60 min = poor quality even if hours are fine. Reference stages, not just totals.
 - Effort tags: >50% easy + no tough = sandbagging (push harder). >40% tough = under-recovery or weights too high.
 - Meal plan adherence: <70% on multiple days = the plan doesn't fit life, not a discipline problem. Suggest a swap, not a guilt trip.
