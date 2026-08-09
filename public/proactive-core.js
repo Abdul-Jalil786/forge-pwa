@@ -127,9 +127,15 @@ function detectStalls(state, reps) {
       (byEx[k] = byEx[k] || []).push({ date: dates[di], kg: topKg, hitUpper: hitUpper });
     }
   }
+  // Phase 81: only flag lifts still in rotation. An exercise last trained >28d before
+  // the most recent training day has been dropped from the program — its "held weight"
+  // is a discontinued lift, not a stall (fixes e.g. neck flexion flagging weeks later).
+  var latest = dates.length ? dates[dates.length - 1] : null;
   var stalls = [];
   for (var exId in byEx) {
-    var sess = byEx[exId].slice(-6); if (sess.length < 3) continue;
+    var arr = byEx[exId];
+    if (latest && _dayIdx(latest, arr[arr.length - 1].date) > 28) continue; // discontinued lift
+    var sess = arr.slice(-6); if (sess.length < 3) continue;
     var last = sess[sess.length - 1], streak = 0;
     for (var i = sess.length - 1; i >= 0; i--) { if (Math.abs(sess[i].kg - last.kg) < 0.1 && !sess[i].hitUpper) streak++; else break; }
     if (streak >= 3) stalls.push({ exId: exId, sessions: streak, kg: last.kg });

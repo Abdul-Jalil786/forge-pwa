@@ -75,6 +75,18 @@ test("Phase 80: weak/insufficient candidates are NOT surfaced as discovered patt
   assert.equal((c.discovered || []).length, 0, "no spurious/underpowered patterns surfaced");
 });
 
+test("Phase 81: stall detection ignores a discontinued lift (last trained >28d ago)", () => {
+  const reps = { neck_front: [12, 15], u1: [6, 8] };
+  const exLog = {};
+  // neck flexion: 4 sessions all @ 11.25kg back in June — since dropped from the program
+  [0, 4, 8, 12].forEach((i) => { exLog[d("2026-06-01", i)] = { neck_front: { sets: [{ kg: 11.25, reps: 13 }] } }; });
+  // u1: currently trained (recent), held @ 100kg for 4 sessions → a genuine stall
+  [40, 44, 48, 52].forEach((i) => { exLog[d("2026-06-01", i)] = { u1: { sets: [{ kg: 100, reps: 6 }] } }; });
+  const c = core.computeCorrelations({ exLog }, { exerciseReps: reps });
+  assert.ok(!c.stalls.some((s) => s.exId === "neck_front"), "discontinued lift not flagged");
+  assert.ok(c.stalls.some((s) => s.exId === "u1"), "current stall still flagged");
+});
+
 test("detectStalls flags a held lift and ignores a progressing one", () => {
   const reps = { u1: [6, 8], u3: [6, 8] };
   const exLog = {};
