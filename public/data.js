@@ -232,6 +232,9 @@ function getWorkout(sessionKey){
 // `capSeconds` stops suggestTime climbing past the cap (see suggestTime).
 const MOBILITY_DRILLS = [
   { id:'mob_deepsquat', name:'Deep Squat Hold', metric:'time', reps:'60-65s', sets:1, capSeconds:120, mobility:true, category:'rehab' },
+  // Phase 83: 45s plank offered as a rest-gap / between-exercise mobility drill.
+  // Own id (NOT the main-lift u9 Plank) so its rest-gap holds log separately.
+  { id:'mob_plank', name:'Plank', metric:'time', reps:'45s', sets:1, capSeconds:90, mobility:true, category:'rehab' },
 ];
 // Union of every exercise across all program templates, deduped by id.
 function getAllExercises(){
@@ -2310,13 +2313,18 @@ const STRETCH_ROUTINES = {
   // never the morning/evening/flexibility routines. Ticked from the workout rest UI
   // (markStretchDone + saveStretchSession), not a separate guided overlay.
   restMobility: {
-    id:'restMobility', title:'Rest-Gap Mobility', subtitle:'Deep-squat holds done between sets in your workout',
+    id:'restMobility', title:'Rest-Gap Mobility', subtitle:'Deep-squat or plank holds done in your workout rest gaps',
     totalMinutes:2, bestTime:'During workout rest gaps',
     stretches:[
       { id:'rm_deep_squat', name:'Deep Squat Hold', duration:60, unit:'seconds', sides:false,
         instructions:"Sink into a full-depth bodyweight (Asian) squat during your rest, heels down, and breathe.",
         benefit:"Opens hips, knees and ankles at depth between sets — free mobility work.",
         cue:"Breathe — push the knees out gently with the elbows" },
+      // Phase 83: plank as an alternative rest-gap drill.
+      { id:'rm_plank', name:'Plank', duration:45, unit:'seconds', sides:false,
+        instructions:"Brace in a hard forearm plank during your rest — flat back, glutes and abs tight.",
+        benefit:"Free core + anti-extension work squeezed into rest gaps between sets.",
+        cue:"Ribs down, squeeze glutes — a straight line from head to heels" },
     ],
   },
 };
