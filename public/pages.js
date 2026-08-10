@@ -513,6 +513,74 @@ function shiftFoodDate(days){
   setFoodViewDate(newDate);
 }
 
+// ===================== Phase 85: maintenance calories (TDEE) =====================
+// A Food-page readout of the user's real maintenance. The measured number comes
+// from the server engine (GET /api/coach/maintenance = analyzeNutrition: avg logged
+// intake − weight-trend energy over a rolling 14 days). The Mifflin formula estimate
+// is computed here client-side as a cross-check + a cold-start fallback shown
+// instantly before enough days are logged (or when offline).
+let _maintData; // undefined = not fetched · 'loading' · null = fetch failed · object = result
+function _formulaTDEE(){
+  try{
+    const p=getActive(); const pe=p&&p.personal; if(!pe)return null;
+    const weight=(typeof getCurrentWeight==='function')?getCurrentWeight():(p.startWeight||0);
+    if(!weight||!pe.age||!pe.heightCm||!pe.sex)return null;
+    const phase=pe.phase||p.phase||(p.activePhase&&p.activePhase.phase)||'maintenance';
+    const t=(typeof computeTargets==='function')?computeTargets({weight,age:pe.age,heightCm:pe.heightCm,sex:pe.sex,activityLevel:pe.activityLevel,phase}):null;
+    return t?t.tdee:null;
+  }catch(e){ return null; }
+}
+function loadMaintenance(){
+  if(_maintData!==undefined)return; // fetched once per session (or failed); reload to refresh
+  _maintData='loading';
+  const jwt=localStorage.getItem('forge_token'); if(!jwt){_maintData=null;return;}
+  fetch('/api/coach/maintenance',{headers:{Authorization:'Bearer '+jwt}})
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{ _maintData=d||null; _refreshMaintCard(); })
+    .catch(()=>{ _maintData=null; _refreshMaintCard(); });
+}
+function _refreshMaintCard(){
+  const el=document.getElementById('maint-card');
+  if(el)el.outerHTML=renderMaintenanceCard();
+}
+function renderMaintenanceCard(){
+  const formula=_formulaTDEE();
+  const m=(_maintData&&typeof _maintData==='object')?_maintData:null;
+  const loading=(_maintData===undefined||_maintData==='loading');
+  const measured=(m&&m.observedTDEE!=null)?m.observedTDEE:null;
+  const high=!!(m&&m.confidence==='high'&&measured!=null);
+  const headline=high?measured:(formula!=null?formula:measured);
+  const rate=m?m.rateKgPerWk:null;
+  const rateStr=rate==null?'':(Math.abs(rate)<0.05?'holding steady':(rate>0?`losing ${rate.toFixed(2)} kg/wk`:`gaining ${Math.abs(rate).toFixed(2)} kg/wk`));
+  // measured reasoning line: eating X, moving Y → maintenance Z
+  const reason=high?`You're averaging ${m.avgIntake} kcal/day and ${rateStr} → maintenance ≈ <b style="color:var(--lime);">${measured}</b>.`:'';
+  const badge=high
+    ? `<span style="font-size:10px;font-weight:700;color:var(--green);background:rgba(0,200,120,.12);border:1px solid var(--green);border-radius:6px;padding:2px 7px;">✓ MEASURED FROM YOUR DATA</span>`
+    : `<span style="font-size:10px;font-weight:700;color:#ffc107;background:rgba(255,193,7,.1);border:1px solid #ffc107;border-radius:6px;padding:2px 7px;">${loading?'CALCULATING…':'FORMULA ESTIMATE'}</span>`;
+  const cell=(lbl,val)=>`<div style="flex:1;text-align:center;"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">${lbl}</div><div style="font-family:'Archivo Black',sans-serif;font-size:15px;color:var(--text);">${val!=null?val:'—'}</div></div>`;
+  const note=high
+    ? m.confidenceReason
+    : (m&&m.confidenceReason?m.confidenceReason:(loading?'Reading your logged food + weigh-ins…':'Log your food (tap “Everything logged today”) and weigh in for ~2 weeks and this becomes measured from your own data.'));
+  const headStr=headline!=null?headline:'—';
+  return `<div id="maint-card" class="card" style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Maintenance calories</div>
+        ${badge}
+      </div>
+      <div style="display:flex;align-items:baseline;gap:8px;">
+        <div style="font-family:'Archivo Black',sans-serif;font-size:38px;color:var(--lime);letter-spacing:-2px;line-height:1;">${headStr}</div>
+        <div style="font-size:12px;color:var(--text2);">kcal/day</div>
+      </div>
+      ${reason?`<div style="font-size:12px;color:var(--text2);margin-top:8px;line-height:1.5;">${reason}</div>`:''}
+      <div style="display:flex;gap:6px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
+        ${cell('Measured',measured)}
+        ${cell('Oura',m?m.ouraTDEE:null)}
+        ${cell('Formula',formula)}
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.45;">${note}</div>
+    </div>`;
+}
+
 function renderFood(){
   const p=getActive(); if(!p)return;
   const viewDate=getFoodViewDate();
@@ -598,6 +666,8 @@ function renderFood(){
       <div class="macro-row" style="margin-bottom:0;"><div class="macro-hdr"><span class="macro-name" style="color:var(--purple);">Fat</span><span class="macro-amt">${totals.fat}g / ${fatTarget}g</span></div><div class="macro-bar"><div class="macro-fill mf-f" style="width:${Math.min(100,(totals.fat/fatTarget)*100)}%"></div></div></div>
     </div>
 
+    ${isToday?renderMaintenanceCard():''}
+
     <div class="sec-label">${isToday?"Today's Log":"Food Log"}</div>
     <div class="card">
       ${foods.length===0?`<div style="text-align:center;color:var(--text3);padding:20px 0;font-size:13px;">Nothing logged ${isToday?'yet':'on this day'}</div>`:
@@ -648,6 +718,7 @@ function renderFood(){
   `;
 
   renderFoodTemplatesModal();
+  if(isToday)loadMaintenance(); // Phase 85: fetch measured maintenance once, then re-render the card
 }
 
 function delFoodOnDate(idx,date){
