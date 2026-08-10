@@ -1249,6 +1249,62 @@ async function fixJayWheyTemplateProteinV1() {
   }
 }
 
+// Phase 86a: user confirmed 1 scoop whey = 20g protein. The Phase 86 fix assumed
+// ~24g (set the "2 scoops whey" template to 48g); it should be 40g. Recompute every
+// whey item on 20g/scoop: (1) pure "N scoops whey" quick templates + their historical
+// logs → N×20g; (2) the live meal-plan shake ingredient (1 scoop + blueberries) →
+// 20g + ~1g berries, meal total re-derived. Keyed to the owner, guarded, idempotent.
+async function fixJayWheyScoop20gV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.jayWheyScoop20gV1) return;
+    const scoops = (name: string) => /(\b2\s*scoop|two\s*scoop)/i.test(name) ? 2 : 1;
+    // pure whey = whey/scoop in the name, NOT a combined shake (no milk/banana/berry/yoghurt)
+    const isPureWhey = (name: any) => {
+      const n = String(name || "").toLowerCase();
+      return /whey|scoop/.test(n) && !/milk|banana|blueberr|yoghurt|yogurt|oats|water/.test(n);
+    };
+    let t = 0, lg = 0, mp = 0;
+    // 1) pure whey quick templates (fixes the "2 scoops whey" 48g → 40g)
+    if (Array.isArray(state.foodTemplates)) {
+      for (const tpl of state.foodTemplates) {
+        const p = +tpl?.protein || 0;
+        if (tpl && isPureWhey(tpl.name) && p > 0 && p < 200) { tpl.protein = scoops(String(tpl.name)) * 20; t++; }
+      }
+    }
+    // 2) historical pure-whey food logs
+    const foods = state.foods || {};
+    for (const d of Object.keys(foods)) {
+      const arr = foods[d]; if (!Array.isArray(arr)) continue;
+      for (const f of arr) {
+        const p = +f?.protein || 0;
+        if (f && isPureWhey(f.name) && p > 0 && p < 200) { f.protein = scoops(String(f.name)) * 20; lg++; }
+      }
+    }
+    // 3) live meal-plan shake ingredient (combined: whey + blueberries) → 20g/scoop + ~1g berries
+    const meals = state.mealPlan && Array.isArray(state.mealPlan.meals) ? state.mealPlan.meals : [];
+    for (const meal of meals) {
+      if (!meal || !Array.isArray(meal.ingredients)) continue;
+      let changed = false;
+      for (const ing of meal.ingredients) {
+        if (ing && /(scoop.*whey|whey.*scoop|scoops?\s*whey)/i.test(String(ing.name || ""))) {
+          const berry = /blueberr|banana|milk/i.test(String(ing.name)) ? 1 : 0;
+          const target = scoops(String(ing.name)) * 20 + berry;
+          if ((+ing.protein || 0) !== target) { ing.protein = target; changed = true; mp++; }
+        }
+      }
+      if (changed) meal.protein = meal.ingredients.reduce((s: number, i: any) => s + (+i.protein || 0), 0);
+    }
+    state.jayWheyScoop20gV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] Jay whey → 20g/scoop (templates:${t}, logs:${lg}, mealplan:${mp})`);
+  } catch (err) {
+    console.error("[migration] fixJayWheyScoop20gV1 failed:", err);
+  }
+}
+
 // Phase 54a: correct the whey scoop to 20g protein (was 28g) in the live meal plan
 // and re-derive that ingredient's calories + the meal totals from the ingredients.
 async function fixAbdulWheyV1() {
@@ -2476,6 +2532,7 @@ const server = app.listen(PORT, async () => {
   await seedJayDaalFibrePlanV1(); // final word on the meal plan — daal dinner + quick-logs
   await seedJayChaiHoneyQuicklogsV1(); // Phase 84: append chai + honey quick-logs
   await fixJayWheyTemplateProteinV1(); // Phase 86: whey template protein 480→48 + logs
+  await fixJayWheyScoop20gV1(); // Phase 86a: 1 scoop = 20g (2-scoop template 48→40)
   await fixJayLegPressSledV1();
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();
