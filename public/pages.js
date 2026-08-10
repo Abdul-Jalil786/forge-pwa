@@ -542,6 +542,60 @@ function loadMaintenance(){
 function _refreshMaintCard(){
   const el=document.getElementById('maint-card');
   if(el)el.outerHTML=renderMaintenanceCard();
+  const rv=document.getElementById('eating-review-card'); // Phase 87 Layer 1
+  if(rv)rv.outerHTML=renderEatingReviewCard();
+}
+// Phase 87 (Layer 1, all users): deterministic Eating Review — this week vs last
+// week of what you actually logged (calories/protein/carbs/fat + weight), plus the
+// muscle-governed carb recommendation (read-only; it's formally applied from the
+// weekly coach report). Reads _maintData (fetched by loadMaintenance).
+function renderEatingReviewCard(){
+  const m=(_maintData&&typeof _maintData==='object')?_maintData:null;
+  const cmp=m&&m.comparison?m.comparison:null;
+  const cur=cmp?cmp.current:null, prev=cmp?cmp.previous:null;
+  const loading=(_maintData===undefined||_maintData==='loading');
+  if(!cur||cur.days===0){
+    const msg=loading?'Comparing this week to last…':'Log your food to compare this week vs last.';
+    return `<div id="eating-review-card" class="card" style="margin-bottom:10px;">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Eating review</div>
+        <div style="font-size:12px;color:var(--text3);">${msg}</div>
+      </div>`;
+  }
+  const delta=(now,pv,unit)=>{
+    if(now==null||pv==null)return '<span style="color:var(--text3);">—</span>';
+    const d=Math.round((now-pv)*10)/10;
+    if(Math.abs(d)<(unit==='kg'?0.1:1))return '<span style="color:var(--text3);">→ 0</span>';
+    return `<span style="color:var(--text2);">${d>0?'▲':'▼'} ${Math.abs(d)}${unit}</span>`;
+  };
+  const row=(label,now,pv,unit)=>`<div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;">
+      <div style="flex:1;color:var(--text2);">${label}</div>
+      <div style="width:62px;text-align:right;font-weight:700;color:var(--text);">${now!=null?now+unit:'—'}</div>
+      <div style="width:62px;text-align:right;color:var(--text3);">${pv!=null?pv+unit:'—'}</div>
+      <div style="width:66px;text-align:right;">${delta(now,pv,unit)}</div>
+    </div>`;
+  const rec=m&&m.recommendation?m.recommendation:null;
+  const recBlock=(rec&&rec.direction&&rec.direction!=='hold'&&Array.isArray(rec.reasons))
+    ? `<div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.25);border-radius:10px;padding:11px 13px;margin-top:12px;">
+        <div style="font-size:10px;color:var(--lime);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:5px;">Recommendation</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.5;">${rec.reasons.join(' ')}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:7px;">Apply this from your weekly Coach report.</div>
+      </div>`
+    : (rec&&rec.direction==='hold'&&Array.isArray(rec.reasons)
+      ? `<div style="font-size:12px;color:var(--text2);line-height:1.5;margin-top:12px;">${rec.reasons.join(' ')}</div>`
+      : '');
+  return `<div id="eating-review-card" class="card" style="margin-bottom:10px;">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Eating review · this week vs last</div>
+      <div style="display:flex;align-items:center;font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;padding-bottom:4px;">
+        <div style="flex:1;">Per day</div><div style="width:62px;text-align:right;">Now</div><div style="width:62px;text-align:right;">Prev</div><div style="width:66px;text-align:right;">Δ</div>
+      </div>
+      ${row('Calories',cur.avgCals,prev?prev.avgCals:null,'')}
+      ${row('Protein',cur.avgProtein,prev?prev.avgProtein:null,'g')}
+      ${row('Carbs',cur.avgCarbs,prev?prev.avgCarbs:null,'g')}
+      ${row('Fat',cur.avgFat,prev?prev.avgFat:null,'g')}
+      ${row('Weight',cur.avgWeight,prev?prev.avgWeight:null,'kg')}
+      <div style="font-size:10px;color:var(--text3);margin-top:8px;">${cur.days} day${cur.days===1?'':'s'} logged this week · ${prev?prev.days:0} last week</div>
+      ${recBlock}
+    </div>`;
 }
 function renderMaintenanceCard(){
   const formula=_formulaTDEE();
@@ -667,6 +721,12 @@ function renderFood(){
     </div>
 
     ${isToday?renderMaintenanceCard():''}
+    ${isToday?renderEatingReviewCard():''}
+    ${isToday && typeof isOwner==='function' && isOwner()?`
+    <div class="card" style="margin-bottom:10px;">
+      <button class="btn btn-lime btn-sm" style="width:100%;" id="eating-advice-btn" onclick="runEatingAdvice()">🍽️ What should I eat? (AI)</button>
+      <div id="eating-advice-result" style="margin-top:12px;">${STATE._eatingAdvice?`<div style="font-size:13px;line-height:1.6;color:var(--text);">${typeof formatCoachingReport==='function'?formatCoachingReport(STATE._eatingAdvice):STATE._eatingAdvice}</div>`:''}</div>
+    </div>`:''}
 
     <div class="sec-label">${isToday?"Today's Log":"Food Log"}</div>
     <div class="card">

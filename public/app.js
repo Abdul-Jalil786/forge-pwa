@@ -2710,6 +2710,29 @@ async function runDeepAnalysis(){
     if(btn){btn.disabled=false;btn.textContent='🔬 Run Deep Analysis';}
   }
 }
+// Phase 87 (Layer 2, owner-only): "What should I eat?" — food-level AI review.
+let _eatingBusy=false;
+async function runEatingAdvice(){
+  if(_eatingBusy)return;
+  _eatingBusy=true;
+  const btn=document.getElementById('eating-advice-btn');
+  const out=document.getElementById('eating-advice-result');
+  if(btn){btn.disabled=true;btn.textContent='🍽️ Reviewing… (~15s)';}
+  if(out)out.innerHTML='<div style="font-size:12px;color:var(--text3);">Reading what you\'ve been logging + your weight trend…</div>';
+  try{
+    const jwt=localStorage.getItem('forge_token');
+    const res=await fetch('/api/coach/eating-advice',{method:'POST',headers:{Authorization:'Bearer '+jwt}});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||('Error '+res.status));
+    STATE._eatingAdvice=String(data.text||'');
+    if(out)out.innerHTML=`<div style="font-size:13px;line-height:1.6;color:var(--text);">${typeof formatCoachingReport==='function'?formatCoachingReport(STATE._eatingAdvice):STATE._eatingAdvice}</div>`;
+  }catch(e){
+    if(out)out.innerHTML=`<div style="font-size:12px;color:var(--red);">${(e&&e.message)?String(e.message).slice(0,120):'Review failed — try again.'}</div>`;
+  }finally{
+    _eatingBusy=false;
+    if(btn){btn.disabled=false;btn.textContent='🍽️ What should I eat? (AI)';}
+  }
+}
 function clearCoachChat(){
   if(!(STATE.coachChat||[]).length)return;
   if(!confirm('Clear this conversation?'))return;
