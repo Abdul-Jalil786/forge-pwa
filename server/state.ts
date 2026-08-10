@@ -866,6 +866,7 @@ dateKeyedRoute("/supplement-log/:date", "supplementLog");
 dateKeyedRoute("/stretch-log/:date", "stretchLog"); // Phase 41 (owner-only feature, but endpoint is per-user data)
 dateKeyedRoute("/cardio-log/:date", "cardioLog"); // Phase 41i (zone-2 cardio sessions, any user)
 dateKeyedRoute("/food-complete/:date", "foodComplete"); // Phase 48a ("that's everything I ate today")
+dateKeyedRoute("/energy-log/:date", "energyLog"); // Phase 88 (evening "how was your day" — level + why tags)
 dateKeyedRoute("/session-feel/:date", "sessionFeel"); // Phase 44 (pre-session feel tap)
 dateKeyedRoute("/recovery-overrides/:date", "recoveryOverrides"); // Phase 44 (advisory gate choices)
 

@@ -317,6 +317,36 @@ test("Phase 87: eating review card renders comparison + recommendation; owner se
   assert.equal(q(`typeof runEatingAdvice`), "function", "runEatingAdvice handler defined");
 });
 
+// ---- Phase 88: daily energy check-in ----
+test("Phase 88: energy card logs level + why tags; on Food page + calendar backfill", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  const T = q(`todayStr()`);
+  // renders 5 levels + why chips, no throw
+  const card = q(`renderEnergyCard('${T}','energy-card-food')`);
+  assert.ok(/Drained/.test(card) && /Great/.test(card), "5-level scale rendered");
+  assert.ok(/Tired/.test(card) && /Strong/.test(card), "why tags rendered");
+  assert.ok(/How was your day/.test(card), "today prompt");
+  // setting a level persists to STATE.energyLog
+  q(`_setEnergyLevel('${T}',4,'energy-card-food')`);
+  assert.equal(q(`STATE.energyLog['${T}'].level`), 4, "level saved");
+  // toggling a tag persists + is reversible
+  q(`_toggleEnergyTag('${T}','Strong','energy-card-food')`);
+  assert.ok(q(`STATE.energyLog['${T}'].tags.includes('Strong')`), "tag added");
+  q(`_toggleEnergyTag('${T}','Strong','energy-card-food')`);
+  assert.ok(!q(`STATE.energyLog['${T}'].tags.includes('Strong')`), "tag removed on second tap");
+  assert.equal(q(`STATE.energyLog['${T}'].level`), 4, "toggling a tag keeps the level");
+  // Food page shows the energy card
+  q(`STATE.foods={}`); q(`renderFood()`);
+  assert.ok(/energy-card-food/.test(q(`document.getElementById('page-food').innerHTML`)), "energy card on Food page");
+  // Calendar day-detail: backfill on a past day, hidden on a future day (renderDayDetail writes to #ddContent)
+  q(`renderDayDetail('2020-01-01')`);
+  assert.ok(/energy-card-dd/.test(q(`document.getElementById('ddContent').innerHTML`)), "energy backfill in past-day detail");
+  q(`renderDayDetail('2999-01-01')`);
+  assert.ok(!/energy-card-dd/.test(q(`document.getElementById('ddContent').innerHTML`)), "no energy card on a future day");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
