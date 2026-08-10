@@ -260,6 +260,7 @@ let STATE = {
   exLog: {},
   measLog: [],
   sleepLog: {},
+  energyLog: {},        // Phase 88: {date: {level:1-5, tags:[], at}} — evening "how was your day"
   swimLog: {},
   supps: [],
   suppDone: {},
@@ -892,6 +893,30 @@ function getTodayTotals(){
 // ============================================================
 // FOOD TEMPLATES
 // ============================================================
+// ---- Phase 88: daily energy check-in (evening "how was your day") ----
+const ENERGY_TAGS=['Tired','Foggy','Wired','Stressed','Rested','Strong'];
+function getEnergyLog(){return pGet('energyLog',{});}
+function getEnergy(date){return getEnergyLog()[date||todayStr()]||null;}
+function _saveEnergy(date,entry){
+  const log=pGet('energyLog',{});
+  log[date]=entry;
+  STATE.energyLog=log;
+  updateLocalCache();
+  saveFieldToServer(`/api/state/energy-log/${date}`,{value:entry});
+  return entry;
+}
+function setEnergyLevel(date,level){
+  const cur=getEnergy(date)||{};
+  return _saveEnergy(date,{level:level,tags:Array.isArray(cur.tags)?cur.tags:[],at:new Date().toISOString()});
+}
+function toggleEnergyTag(date,tag){
+  const cur=getEnergy(date)||{level:null,tags:[]};
+  const tags=Array.isArray(cur.tags)?cur.tags.slice():[];
+  const i=tags.indexOf(tag);
+  if(i>=0)tags.splice(i,1); else tags.push(tag);
+  return _saveEnergy(date,{level:cur.level!=null?cur.level:null,tags:tags,at:new Date().toISOString()});
+}
+
 function getTemplates(){return pGet('foodTemplates',[]);}
 function saveTemplate(t){const ts=getTemplates();ts.push(t);pSet('foodTemplates',ts);}
 function deleteTemplate(i){const ts=getTemplates();ts.splice(i,1);pSet('foodTemplates',ts);}

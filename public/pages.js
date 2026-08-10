@@ -635,6 +635,52 @@ function renderMaintenanceCard(){
     </div>`;
 }
 
+// ===================== Phase 88: daily energy check-in =====================
+// Evening "how was your day" — a 1-5 level + optional "why" tags. Shown on the
+// Food page for the VIEWED date (today for the evening log; step back with the
+// date arrows to backfill) and in the calendar day-detail (backfill from any day).
+const ENERGY_LEVELS=[
+  {v:1,emoji:'🪫',label:'Drained'},
+  {v:2,emoji:'😴',label:'Low'},
+  {v:3,emoji:'😐',label:'OK'},
+  {v:4,emoji:'🙂',label:'Good'},
+  {v:5,emoji:'⚡',label:'Great'},
+];
+function renderEnergyCard(date,domId){
+  domId=domId||'energy-card';
+  const e=(typeof getEnergy==='function')?getEnergy(date):null;
+  const lvl=(e&&e.level!=null)?e.level:null;
+  const tags=(e&&Array.isArray(e.tags))?e.tags:[];
+  const isToday=date===todayStr();
+  const title=isToday?'How was your day?':'Energy · that day';
+  const levelBtns=ENERGY_LEVELS.map(l=>{
+    const on=lvl===l.v;
+    return `<button onclick="_setEnergyLevel('${date}',${l.v},'${domId}')" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 2px;border-radius:10px;border:1px solid ${on?'var(--lime)':'var(--border2)'};background:${on?'rgba(200,255,0,.12)':'var(--bg2)'};cursor:pointer;">
+        <span style="font-size:22px;filter:${on?'none':'grayscale(.45)'};opacity:${on||lvl==null?1:.6};">${l.emoji}</span>
+        <span style="font-size:9px;color:${on?'var(--lime)':'var(--text3)'};font-weight:700;">${l.label}</span>
+      </button>`;
+  }).join('');
+  const chips=(typeof ENERGY_TAGS!=='undefined'?ENERGY_TAGS:[]).map(t=>{
+    const on=tags.includes(t);
+    return `<button onclick="_toggleEnergyTag('${date}','${t}','${domId}')" style="padding:5px 11px;border-radius:20px;border:1px solid ${on?'var(--lime)':'var(--border2)'};background:${on?'rgba(200,255,0,.12)':'transparent'};color:${on?'var(--lime)':'var(--text2)'};font-size:11px;font-weight:600;cursor:pointer;">${t}</button>`;
+  }).join('');
+  return `<div id="${domId}" class="card" style="margin-bottom:10px;">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">${title}${lvl!=null?' <span style="color:var(--lime);">✓</span>':''}</div>
+      <div style="display:flex;gap:6px;">${levelBtns}</div>
+      <div style="font-size:10px;color:var(--text3);margin:12px 0 6px;">Why? <span style="color:var(--text3);">(optional)</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">${chips}</div>
+    </div>`;
+}
+function _setEnergyLevel(date,level,domId){
+  if(typeof setEnergyLevel==='function')setEnergyLevel(date,level);
+  const el=document.getElementById(domId); if(el)el.outerHTML=renderEnergyCard(date,domId);
+  if(typeof showToast==='function'&&date===todayStr())showToast('Energy logged ✓');
+}
+function _toggleEnergyTag(date,tag,domId){
+  if(typeof toggleEnergyTag==='function')toggleEnergyTag(date,tag);
+  const el=document.getElementById(domId); if(el)el.outerHTML=renderEnergyCard(date,domId);
+}
+
 function renderFood(){
   const p=getActive(); if(!p)return;
   const viewDate=getFoodViewDate();
@@ -720,6 +766,7 @@ function renderFood(){
       <div class="macro-row" style="margin-bottom:0;"><div class="macro-hdr"><span class="macro-name" style="color:var(--purple);">Fat</span><span class="macro-amt">${totals.fat}g / ${fatTarget}g</span></div><div class="macro-bar"><div class="macro-fill mf-f" style="width:${Math.min(100,(totals.fat/fatTarget)*100)}%"></div></div></div>
     </div>
 
+    ${renderEnergyCard(viewDate,'energy-card-food')}
     ${isToday?renderMaintenanceCard():''}
     ${isToday?renderEatingReviewCard():''}
     ${isToday && typeof isOwner==='function' && isOwner()?`
@@ -2191,6 +2238,9 @@ function renderDayDetail(date){
       <div style="width:36px;"></div>
     </div>
   `;
+
+  // Phase 88: energy check-in (backfill from the calendar) — not for future days.
+  if(!isFuture)html+=renderEnergyCard(date,'energy-card-dd');
 
   // OVERVIEW
   if(weight||bf||sleep){
