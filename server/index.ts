@@ -1210,6 +1210,45 @@ async function seedJayChaiHoneyQuicklogsV1() {
   }
 }
 
+// Phase 86: fix the user's "2 scoops whey" quick template — protein was entered as
+// 480g (a 10× typo); a 2-scoop shake is ~48g. Corrects the saved template AND any
+// historical food log that used the wrong value (day totals are summed live from
+// entries, so fixing the entry recalculates that day). Guard: only touches a whey/
+// scoop entry whose protein is implausibly high (≥200g) — no single food is ever
+// that high, so a real 2-scoop 48g entry is never affected. Idempotent + guarded.
+async function fixJayWheyTemplateProteinV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.jayWheyTemplateFixV1) return;
+    const CORRECT = 48;
+    const isBuggyWhey = (name: any, protein: number) =>
+      /whey|scoop|scope/i.test(String(name || "")) && protein >= 200;
+    let templatesFixed = 0, logsFixed = 0;
+    // 1) saved quick templates (state.foodTemplates)
+    if (Array.isArray(state.foodTemplates)) {
+      for (const t of state.foodTemplates) {
+        if (t && isBuggyWhey(t.name, +t.protein || 0)) { t.protein = CORRECT; templatesFixed++; }
+      }
+    }
+    // 2) historical logged foods
+    const foods = state.foods || {};
+    for (const d of Object.keys(foods)) {
+      const arr = foods[d];
+      if (!Array.isArray(arr)) continue;
+      for (const f of arr) {
+        if (f && isBuggyWhey(f.name, +f.protein || 0)) { f.protein = CORRECT; logsFixed++; }
+      }
+    }
+    state.jayWheyTemplateFixV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] Jay whey protein 480→48 fixed (templates:${templatesFixed}, logs:${logsFixed})`);
+  } catch (err) {
+    console.error("[migration] fixJayWheyTemplateProteinV1 failed:", err);
+  }
+}
+
 // Phase 54a: correct the whey scoop to 20g protein (was 28g) in the live meal plan
 // and re-derive that ingredient's calories + the meal totals from the ingredients.
 async function fixAbdulWheyV1() {
@@ -2436,6 +2475,7 @@ const server = app.listen(PORT, async () => {
   await seedAbdulRebalancedPlanV1(); // 200P/185C/72F rebalance
   await seedJayDaalFibrePlanV1(); // final word on the meal plan — daal dinner + quick-logs
   await seedJayChaiHoneyQuicklogsV1(); // Phase 84: append chai + honey quick-logs
+  await fixJayWheyTemplateProteinV1(); // Phase 86: whey template protein 480→48 + logs
   await fixJayLegPressSledV1();
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();

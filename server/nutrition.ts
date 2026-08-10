@@ -6,6 +6,12 @@
 // No AI here — the weekly report's AI only narrates these numbers.
 
 const KCAL_PER_KG = 7700;     // approx energy per kg of body mass change
+// Phase 86: not all short-term scale movement is tissue energy — a chunk is water,
+// glycogen and gut content. Applying an 80% correction to the observed weight-change
+// term stops us OVER-stating maintenance from a noisy 2-week trend (a naive calc
+// reads water loss as a bigger deficit than it really was). Backward measurement
+// only — the forward deficit planner in the recommendation keeps full 7700.
+const TISSUE_CORRECTION = 0.8;
 const WINDOW_DAYS = 14;       // trailing window for intake + weight trend
 const MAX_STEP_KCAL = 150;    // max change to the calorie target per week
 const RATE_FLOOR = 0.35;      // kg/week — ease target when muscle is at risk
@@ -154,8 +160,10 @@ export function analyzeNutrition(state: any, asOf?: string): NutritionAnalysis {
   const ouraTDEE = ouraDays ? Math.round(ouraSum / ouraDays) : null;
 
   // --- observed TDEE ---
+  // maintenance = avg intake − (weight-change energy × tissue correction).
+  // perDay is kg/day (negative when losing), so −perDay×KCAL adds the deficit back.
   const observedTDEE = (avgIntake != null && perDay != null)
-    ? Math.round(avgIntake - perDay * KCAL_PER_KG)
+    ? Math.round(avgIntake - perDay * KCAL_PER_KG * TISSUE_CORRECTION)
     : null;
 
   // --- Phase 48a: days the user confirmed "that's everything I ate today".

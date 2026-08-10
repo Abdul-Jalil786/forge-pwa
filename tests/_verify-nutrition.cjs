@@ -75,9 +75,12 @@ check("floor-bound + slow loss → hold with add-steps advice", () => {
   assert.ok(a.recommendation.reasons.some((r) => r.includes("add steps") || r.includes("minimum calories")), "honest floor advice");
 });
 
-// 3. Muscle at risk (strength falling) → eat MORE (up), even mid-cut
+// 3. Muscle at risk (strength falling) → eat MORE (up), even mid-cut.
+// Phase 86: with the 0.8 tissue correction maintenance is lower, so the "ease"
+// path only adds calories when there's real deficit headroom — an aggressive
+// ~2kg/2wk cut (below), not a gentle one already sitting at the floor.
 check("strength falling → ease, add carbs (muscle first)", () => {
-  const s = { profile, ...buildLogs({ kcal: 2300, wStart: 110.5, wEnd: 109.5, oura: 2800 }),
+  const s = { profile, ...buildLogs({ kcal: 2300, wStart: 111.5, wEnd: 109.5, oura: 2800 }),
     exLog: strengthLifts("down"), measLog: [{ date: dayBefore(28), waist: 115 }, { date: dayBefore(2), waist: 114 }] };
   const a = analyzeNutrition(s, ASOF);
   assert.equal(a.muscle.verdict, "red");
