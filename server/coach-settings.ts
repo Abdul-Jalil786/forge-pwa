@@ -5,7 +5,8 @@ import { requireAuth, requireOwnerCheck } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection, buildContext } from "./ai-coach";
 import { answerQuestion, estimateFood, extractHealthRecord, chatAnswer, deepAnalysis, ChatTurn } from "./ask";
-import { chargeAiBudget, AI_DAILY_LIMIT } from "./ai-budget";
+import { chargeAiBudget, AI_DAILY_LIMIT, ukToday } from "./ai-budget";
+import { analyzeNutrition } from "./nutrition";
 
 const router = Router();
 
@@ -35,6 +36,34 @@ router.get("/key", requireAuth, async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error("Get coach key error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Phase 85: measured maintenance calories (TDEE) — surfaces the Phase 48
+// analyzeNutrition engine directly (no AI). Rolling trailing 14-day window over
+// the user's OWN logged food + weigh-ins: maintenance = avg intake − weight-trend
+// energy. Also returns Oura's device estimate as a cross-check. requireAuth only
+// (all users, not owner-gated); the formula (Mifflin) estimate is computed on the
+// client from targets.js so this stays a thin read.
+router.get("/maintenance", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    const a = analyzeNutrition(st, ukToday());
+    res.json({
+      observedTDEE: a.observedTDEE,
+      ouraTDEE: a.ouraTDEE,
+      avgIntake: a.avgIntake,
+      rateKgPerWk: a.rateKgPerWk,
+      loggedDays: a.loggedDays,
+      completeDays: a.completeDays,
+      windowDays: 14,
+      confidence: a.confidence,
+      confidenceReason: a.confidenceReason,
+    });
+  } catch (err) {
+    console.error("Maintenance TDEE error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

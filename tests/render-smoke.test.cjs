@@ -270,6 +270,30 @@ test("Phase 83: final set runs a post-exercise rest before the summary; last exe
   assert.equal(q(`wm.mode`), "exDone", "goes straight to the complete summary");
 });
 
+// ---- Phase 85: maintenance calories (TDEE) readout on the Food page ----
+test("Phase 85: maintenance card renders a formula estimate before server data, upgrades when measured", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  // Cold start: no server fetch yet → formula (Mifflin) fallback shown, labelled as an estimate.
+  const cold = q(`renderMaintenanceCard()`);
+  assert.ok(/Maintenance calories/.test(cold), "card title present");
+  assert.ok(/FORMULA ESTIMATE|CALCULATING/.test(cold), "shows estimate/calculating badge before measured data");
+  assert.ok(/_formulaTDEE\(\)!=null|kcal\/day/.test(cold), "renders a kcal/day headline");
+  assert.ok(Number(q(`_formulaTDEE()`)) > 1500, "formula TDEE computes from personal profile + weight");
+  // Simulate a high-confidence server result → the card upgrades to the measured number.
+  q(`_maintData={observedTDEE:2550,ouraTDEE:2600,avgIntake:2000,rateKgPerWk:0.5,loggedDays:12,completeDays:12,confidence:'high',confidenceReason:'Confident.'}`);
+  const measured = q(`renderMaintenanceCard()`);
+  assert.ok(/MEASURED FROM YOUR DATA/.test(measured), "shows measured badge at high confidence");
+  assert.ok(/2550/.test(measured), "headline is the measured maintenance number");
+  assert.ok(/losing 0\.50 kg\/wk/.test(measured), "explains the weight-trend reasoning");
+  assert.ok(/2600/.test(measured), "Oura cross-check shown");
+  // Food page includes the card
+  q(`STATE.foods={}`);
+  q(`renderFood()`);
+  assert.ok(/Maintenance calories/.test(q(`document.getElementById('page-food').innerHTML`)), "Food page renders the maintenance card");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
