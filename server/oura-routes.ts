@@ -16,6 +16,7 @@ router.put("/token", requireAuth, async (req: Request, res: Response) => {
     if (!user) { res.status(404).json({ error: "User not found" }); return; }
     const state: any = user.state || {};
     state.ouraToken = writeToken(token.trim()); // encrypted at rest (AES-256-GCM)
+    state.ouraTokenInvalid = false; // Phase 89: a fresh token clears the reconnect prompt
     await prisma.user.update({ where: { id: req.userId }, data: { state } });
     res.json({ success: true });
   } catch (err) {
@@ -53,6 +54,7 @@ router.get("/status", requireAuth, async (req: Request, res: Response) => {
   res.json({
     connected: !!state.ouraToken,
     lastSync: state.ouraLastSync || null,
+    tokenInvalid: !!state.ouraTokenInvalid, // Phase 89: prompt a reconnect on 401
   });
 });
 

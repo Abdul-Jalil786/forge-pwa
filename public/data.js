@@ -261,6 +261,9 @@ let STATE = {
   measLog: [],
   sleepLog: {},
   energyLog: {},        // Phase 88: {date: {level:1-5, tags:[], at}} — evening "how was your day"
+  walkLog: {},          // Phase 89: {date:[{id,start,end,distanceM,source:'manual'}]} — manual walks
+  ouraVitals: {},       // Phase 89: {date:{rhr(bpm),hrv(ms)}} — real values from sleep endpoint
+  walkAnalysis: {},     // Phase 89: {walkId:{durationMin,distanceM,paceMph,avgHR,maxHR,hrDrift,...}}
   swimLog: {},
   supps: [],
   suppDone: {},
@@ -915,6 +918,23 @@ function toggleEnergyTag(date,tag){
   const i=tags.indexOf(tag);
   if(i>=0)tags.splice(i,1); else tags.push(tag);
   return _saveEnergy(date,{level:cur.level!=null?cur.level:null,tags:tags,at:new Date().toISOString()});
+}
+
+// ---- Phase 89: Oura walk analysis + vitals ----
+function getWalkAnalysis(){return pGet('walkAnalysis',{});}
+function getOuraVitals(){return pGet('ouraVitals',{});}
+function getManualWalks(){return pGet('walkLog',{});}
+function ouraNeedsReconnect(){return !!STATE.ouraTokenInvalid;}
+// Log a manual walk (Oura missed it). HR fills in on the next sync if Oura HR
+// overlaps the window; pace is available immediately from distance + duration.
+function addManualWalk(date,startIso,endIso,distanceM){
+  const log=pGet('walkLog',{});
+  const arr=Array.isArray(log[date])?log[date].slice():[];
+  const id='mw-'+Date.now();
+  arr.push({id,start:startIso,end:endIso,distanceM:(distanceM!=null?distanceM:null),source:'manual',at:new Date().toISOString()});
+  log[date]=arr; STATE.walkLog=log; updateLocalCache();
+  saveFieldToServer(`/api/state/walk-log/${date}`,{value:log[date]});
+  return id;
 }
 
 function getTemplates(){return pGet('foodTemplates',[]);}

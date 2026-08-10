@@ -204,6 +204,31 @@ function openModal(id){
   if(id==='modal-weight'){
     document.getElementById('mw-val').value='';
   }
+  if(id==='modal-walk'){
+    document.getElementById('mw-date').value=todayStr();
+    document.getElementById('mw-start').value=fmtNow();
+    document.getElementById('mw-dur').value='';
+    document.getElementById('mw-dist').value='';
+  }
+}
+function openWalkModal(){ openModal('modal-walk'); }
+// Phase 89: log a manual walk → feeds the same server-side walk analysis as Oura
+// walks (HR fills in on the next sync if the ring recorded it).
+function saveWalkFromModal(){
+  const date=document.getElementById('mw-date').value;
+  const time=document.getElementById('mw-start').value||'12:00';
+  const dur=parseFloat(document.getElementById('mw-dur').value);
+  const miles=parseFloat(document.getElementById('mw-dist').value);
+  if(!date||!dur||dur<1){showToast('Enter a date and duration');return;}
+  const startMs=new Date(`${date}T${time}:00`).getTime();
+  if(!isFinite(startMs)){showToast('Invalid start time');return;}
+  const startIso=new Date(startMs).toISOString();
+  const endIso=new Date(startMs+dur*60000).toISOString();
+  const distanceM=(isFinite(miles)&&miles>0)?Math.round(miles*1609.344):null;
+  addManualWalk(date,startIso,endIso,distanceM);
+  closeModal('modal-walk');
+  showToast('Walk logged ✓ — HR fills in on next Oura sync');
+  if(typeof renderTrack==='function')renderTrack();
 }
 function closeModal(id){
   document.getElementById(id)?.classList.remove('open');

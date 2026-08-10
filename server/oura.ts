@@ -1,8 +1,10 @@
 import prisma from "./db";
 import { readToken, isEncryptedToken, writeToken } from "./token-crypto";
 import { mergeStateMap, setStateKey } from "./state-merge";
+import { analyzeAllWalks, isWalkActivity, WalkInput } from "./walk-analysis";
 
 const BASE = "https://api.ouraring.com/v2/usercollection";
+const HR_RETENTION_DAYS = 60; // raw HR kept ~60 days (server-only, pruned each sync)
 
 function ymd(d: Date): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -24,8 +26,30 @@ async function ouraGet(token: string, path: string, params: Record<string, strin
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`Oura ${path} ${res.status}: ${await res.text().catch(() => "")}`);
+  if (!res.ok) {
+    const err: any = new Error(`Oura ${path} ${res.status}: ${await res.text().catch(() => "")}`);
+    err.status = res.status; // 401 = expired/invalid token (see syncOuraForUser)
+    throw err;
+  }
   return res.json();
+}
+
+// Heartrate is a time-series and can paginate via next_token. Pull all pages in
+// the window (start_datetime/end_datetime are ISO, per Oura v2 heartrate docs).
+async function ouraGetHeartrate(token: string, startIso: string, endIso: string): Promise<Array<{ bpm: number; timestamp: string; source?: string }>> {
+  const out: Array<{ bpm: number; timestamp: string; source?: string }> = [];
+  let nextToken: string | null = null;
+  let guard = 0;
+  do {
+    const params: Record<string, string> = { start_datetime: startIso, end_datetime: endIso };
+    if (nextToken) params.next_token = nextToken;
+    const page: any = await ouraGet(token, "heartrate", params);
+    for (const s of page.data || []) {
+      if (typeof s?.bpm === "number" && s?.timestamp) out.push({ bpm: s.bpm, timestamp: s.timestamp, source: s.source });
+    }
+    nextToken = page.next_token || null;
+  } while (nextToken && ++guard < 20);
+  return out;
 }
 
 export async function syncOuraForUser(userId: string): Promise<{ updated: number; error?: string }> {
@@ -86,6 +110,9 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     // Oura's bedtime_start ISO is already in the user's local zone.
     const bedtimeByDay: Record<string, number> = {};
     const bedtimeDurByDay: Record<string, number> = {};
+    // Phase 89: REAL physiological resting HR (bpm) + HRV (ms) from the main sleep —
+    // NOT the 0-100 readiness contributor SCORES (which is all state.recovery has).
+    const vitalsByDay: Record<string, { rhr: number | null; hrv: number | null }> = {};
     for (const e of sleepDetail.data || []) {
       if (e.type === "deleted") continue;
       const seconds = e.total_sleep_duration || 0;
@@ -96,6 +123,11 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       if (e.bedtime_start && seconds > (bedtimeDurByDay[day] || 0)) {
         const bm = String(e.bedtime_start).match(/T(\d{2}):(\d{2})/);
         if (bm) { bedtimeByDay[day] = parseInt(bm[1], 10) + parseInt(bm[2], 10) / 60; bedtimeDurByDay[day] = seconds; }
+        // vitals ride with the longest sleep of the day (same "main sleep" gate)
+        vitalsByDay[day] = {
+          rhr: typeof e.lowest_heart_rate === "number" ? e.lowest_heart_rate : null,
+          hrv: typeof e.average_hrv === "number" ? e.average_hrv : null,
+        };
       }
       // Phase 29: capture sleep stages
       if (!stagesByDay[day]) stagesByDay[day] = { rem: 0, deep: 0, light: 0, awake: 0 };
@@ -177,6 +209,7 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
         start: w.start_datetime,
         end: w.end_datetime,
         calories: w.calories,
+        distance: typeof w.distance === "number" ? w.distance : null, // Phase 89: meters (nullable) — pace
       });
       workoutDaysTouched.add(day);
       updated++;
@@ -192,6 +225,37 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
       updated++;
     }
 
+    // Phase 89: HR time-series → server-only raw store (pruned to 60 days), then
+    // walk analysis (avg/max HR + drift) for every walking workout + manual walk.
+    const hrStartIso = new Date(ymd(start) + "T00:00:00Z").toISOString();
+    const hrEndIso = new Date(ymd(endQuery) + "T00:00:00Z").toISOString();
+    // Tolerate a heartrate failure (e.g. missing scope) without killing the sync.
+    const hrSamples = await ouraGetHeartrate(token, hrStartIso, hrEndIso).catch(() => []);
+    const hrMap: Record<string, number> = { ...(state.ouraHeartrate || {}) };
+    for (const s of hrSamples) hrMap[s.timestamp] = s.bpm;
+    // prune anything older than the retention window
+    const cutMs = Date.now() - HR_RETENTION_DAYS * 86400000;
+    for (const iso in hrMap) { const t = Date.parse(iso); if (!isFinite(t) || t < cutMs) delete hrMap[iso]; }
+
+    // Gather walks in the retained window: Oura walking workouts (existing snapshot
+    // now includes this sync's writes) + the user's manual walks (state.walkLog).
+    const walks: WalkInput[] = [];
+    const mergedWorkouts: Record<string, any[]> = { ...existingWorkouts, ...workoutsToWrite };
+    for (const day in mergedWorkouts) {
+      for (const w of mergedWorkouts[day] || []) {
+        if (isWalkActivity(w.activity) && w.start && w.end) {
+          walks.push({ id: w.id, day, start: w.start, end: w.end, distanceM: w.distance ?? null, source: "oura", activity: w.activity });
+        }
+      }
+    }
+    const manualWalks = state.walkLog || {};
+    for (const day in manualWalks) {
+      for (const w of manualWalks[day] || []) {
+        if (w && w.start && w.end) walks.push({ id: w.id, day, start: w.start, end: w.end, distanceM: w.distanceM ?? null, source: "manual" });
+      }
+    }
+    const walkResults = analyzeAllWalks(walks, hrMap);
+
     // Phase 64: write each key on its own (atomic merge of only the changed
     // days), never the whole state object. Concurrent writes to other keys/dates
     // survive. No cross-key invariant here, so no transaction needed — a crash
@@ -202,12 +266,22 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     await mergeStateMap(userId, "calorieLog", caloriePartial);
     await mergeStateMap(userId, "ouraWorkouts", workoutsToWrite);
     await mergeStateMap(userId, "vo2maxLog", vo2Partial);
+    await mergeStateMap(userId, "ouraVitals", vitalsByDay);        // Phase 89: real RHR/HRV
+    await mergeStateMap(userId, "walkAnalysis", walkResults);      // Phase 89: per-walk metrics
+    await setStateKey(userId, "ouraHeartrate", hrMap);             // Phase 89: raw HR (server-only)
     await setStateKey(userId, "ouraLastSync", new Date().toISOString());
+    if (state.ouraTokenInvalid) await setStateKey(userId, "ouraTokenInvalid", false); // clear a prior re-auth prompt
     // Lazy migration: re-encrypt a legacy plaintext PAT via its own key.
     if (!isEncryptedToken(storedToken)) await setStateKey(userId, "ouraToken", writeToken(token));
     return { updated };
   } catch (err: any) {
     console.error(`Oura sync failed for user ${userId}:`, err);
+    // Phase 89: a 401 means the token is expired/revoked — flag it so the UI can
+    // show a reconnect prompt (read-only integration, so we just re-prompt the PAT).
+    if (err?.status === 401) {
+      await setStateKey(userId, "ouraTokenInvalid", true).catch(() => {});
+      return { updated: 0, error: "Oura connection expired — reconnect in More settings" };
+    }
     return { updated: 0, error: err.message || "Sync failed" };
   }
 }
