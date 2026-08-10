@@ -294,6 +294,29 @@ test("Phase 85: maintenance card renders a formula estimate before server data, 
   assert.ok(/Maintenance calories/.test(q(`document.getElementById('page-food').innerHTML`)), "Food page renders the maintenance card");
 });
 
+// ---- Phase 87: Layer 1 eating review + Layer 2 owner-only AI button ----
+test("Phase 87: eating review card renders comparison + recommendation; owner sees the AI button", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  // Cold (no server data yet) → safe empty/loading state, no throw.
+  const empty = q(`renderEatingReviewCard()`);
+  assert.ok(/Eating review/.test(empty), "review card title present cold");
+  // With a comparison payload → macro rows, now/prev values, deltas, recommendation.
+  q(`_maintData={comparison:{current:{days:6,avgCals:2100,avgProtein:190,avgCarbs:180,avgFat:70,avgWeight:104.0},previous:{days:7,avgCals:2300,avgProtein:170,avgCarbs:210,avgFat:75,avgWeight:104.8}},recommendation:{direction:'down',reasons:['Real burn ~2500.','Trim ~20g carbs.']}}`);
+  const full = q(`renderEatingReviewCard()`);
+  assert.ok(/Calories/.test(full) && /Protein/.test(full) && /Weight/.test(full), "macro + weight rows present");
+  assert.ok(/2100/.test(full) && /2300/.test(full), "now + previous values shown");
+  assert.ok(/▼|▲/.test(full), "delta arrows rendered");
+  assert.ok(/Recommendation/.test(full), "actionable recommendation block shown");
+  // Owner sees the Layer 2 AI button on the Food page.
+  q(`STATE.foods={}`);
+  q(`renderFood()`);
+  const food = q(`document.getElementById('page-food').innerHTML`);
+  assert.ok(/What should I eat/.test(food), "owner-only AI button present on Food page");
+  assert.equal(q(`typeof runEatingAdvice`), "function", "runEatingAdvice handler defined");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [

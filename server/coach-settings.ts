@@ -4,9 +4,9 @@ import prisma from "./db";
 import { requireAuth, requireOwnerCheck } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection, buildContext } from "./ai-coach";
-import { answerQuestion, estimateFood, extractHealthRecord, chatAnswer, deepAnalysis, ChatTurn } from "./ask";
+import { answerQuestion, estimateFood, extractHealthRecord, chatAnswer, deepAnalysis, eatingAdvice, ChatTurn } from "./ask";
 import { chargeAiBudget, AI_DAILY_LIMIT, ukToday } from "./ai-budget";
-import { analyzeNutrition } from "./nutrition";
+import { analyzeNutrition, periodComparison } from "./nutrition";
 
 const router = Router();
 
@@ -51,6 +51,7 @@ router.get("/maintenance", requireAuth, async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};
     const a = analyzeNutrition(st, ukToday());
+    const comparison = periodComparison(st, ukToday()); // Phase 87: Eating Review card
     res.json({
       observedTDEE: a.observedTDEE,
       ouraTDEE: a.ouraTDEE,
@@ -61,6 +62,8 @@ router.get("/maintenance", requireAuth, async (req: Request, res: Response) => {
       windowDays: 14,
       confidence: a.confidence,
       confidenceReason: a.confidenceReason,
+      recommendation: a.recommendation, // null unless high-confidence + actionable
+      comparison,                       // { current, previous } 7d intake + weight
     });
   } catch (err) {
     console.error("Maintenance TDEE error:", err);
@@ -303,6 +306,18 @@ router.post("/deep-analysis", requireAuth, requireOwnerCheck, aiBudget(), async 
   } catch (err: any) {
     console.error("Deep analysis error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to analyse" });
+  }
+});
+
+// Phase 87 (Layer 2): on-demand "What should I eat?" — food-level nutrition review.
+// Owner-only, aiBudget-gated (Opus call on the user's own key).
+router.post("/eating-advice", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+  try {
+    const text = await eatingAdvice(req.userId as string);
+    res.json({ success: true, text });
+  } catch (err: any) {
+    console.error("Eating advice error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to review" });
   }
 });
 

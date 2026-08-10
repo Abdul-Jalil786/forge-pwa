@@ -441,6 +441,56 @@ RULES:
 - NEVER give a medical diagnosis. If a blood marker or symptom needs it, say "worth a GP conversation" and move on.
 - Escape nothing; plain markdown.`;
 
+// Phase 87 (Layer 2, owner-only): "What should I eat?" — a food-level nutrition
+// review. Reads the SAME rich context (actual food log, meal-plan adherence, week-
+// over-week, weight trend, maintenance, phase, meds, flagged bloods) and returns
+// CONCRETE food changes, weight-aware. One Opus pass on the user's own key.
+const EATING_ADVICE_SYSTEM = `You are Forge's nutrition analyst. The user pressed "What should I eat?" — they want a concrete, food-level review of what they've ACTUALLY been logging, compared to before, taking their weight trend into account.
+
+Output EXACTLY these markdown sections, nothing else:
+
+## What your logging shows
+2-3 bullets on what they're actually eating now vs the previous period — protein, carbs, calories, meal timing, and meal-plan adherence — citing the SPECIFIC numbers from the context (this-week vs last-week, maintenance, weight rate).
+
+## What to change
+The 2-3 highest-impact, SPECIFIC food changes. Name real foods, meals and timing (e.g. "add 2 eggs at breakfast", "move the dates to pre-workout", "the honey's adding up — 3 tsp this week"). NOT abstract macros. Read CURRENT PHASE + maintenance + weight trend so the direction (eat more / less / redistribute) is right; on a cut, protect muscle.
+
+## Why
+One line tying it to their goal and the numbers.
+
+RULES:
+- Cite real figures/dates verbatim from the data — never invent numbers.
+- Concrete foods, not "eat more protein" in the abstract.
+- Reference what they already eat (from the food log + meal plan) so swaps are realistic.
+- NEVER give a medical diagnosis; if a marker needs it, say "worth a GP conversation".
+- No preamble or filler. Plain markdown, escape nothing.`;
+
+export async function eatingAdvice(userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  if (!state.coachingKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(state.coachingKey); }
+  catch { throw new Error("Failed to decrypt stored API key"); }
+
+  const context = buildContext(state);
+  const history = buildFullHistory(state);
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1500,
+    system: EATING_ADVICE_SYSTEM,
+    messages: [{ role: "user", content: `Here is all my data. Review my eating and recommend what to change.\n\n===== CONTEXT =====\n${context}\n${history}` }],
+  });
+  const text = response.content
+    .filter((b: any) => b.type === "text")
+    .map((b: any) => b.text)
+    .join("\n")
+    .trim();
+  return text || "Couldn't complete the review just now — try again in a moment.";
+}
+
 export async function deepAnalysis(userId: string): Promise<string> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new Error("User not found");

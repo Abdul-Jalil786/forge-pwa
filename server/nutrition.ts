@@ -46,6 +46,46 @@ function daysBetween(a: string, b: string): number {
   return Math.round((new Date(a + "T12:00:00").getTime() - new Date(b + "T12:00:00").getTime()) / 86400000);
 }
 
+// Phase 87 (Layer 1): "this week vs last week" logged-intake comparison — feeds the
+// deterministic Eating Review card. Averages over days-WITH-food (sparse logging is
+// visible via the day count), plus avg weight in each period. Pure, no AI.
+export interface PeriodStats { days: number; avgCals: number | null; avgProtein: number | null; avgCarbs: number | null; avgFat: number | null; avgWeight: number | null; }
+export interface EatingComparison { current: PeriodStats; previous: PeriodStats; }
+export function periodComparison(state: any, asOf?: string): EatingComparison {
+  const foods = state.foods || {};
+  const weightLog: any[] = Array.isArray(state.weightLog) ? state.weightLog : [];
+  const allDates = [...Object.keys(foods), ...weightLog.map((w) => w?.date).filter(Boolean)].filter(Boolean).sort();
+  const today = asOf || allDates[allDates.length - 1];
+  const stat = (fromN: number, toN: number): PeriodStats => {
+    let cS = 0, pS = 0, cbS = 0, fS = 0, logged = 0, wS = 0, wN = 0;
+    if (today) for (let n = fromN; n <= toN; n++) {
+      const d = ymd(new Date(new Date(today + "T12:00:00").getTime() - n * 86400000));
+      const items = foods[d];
+      if (Array.isArray(items) && items.length) {
+        const kcal = items.reduce((s: number, f: any) => s + (+f?.cals || 0), 0);
+        if (kcal > 0) {
+          cS += kcal;
+          pS += items.reduce((s: number, f: any) => s + (+f?.protein || 0), 0);
+          cbS += items.reduce((s: number, f: any) => s + (+f?.carbs || 0), 0);
+          fS += items.reduce((s: number, f: any) => s + (+f?.fat || 0), 0);
+          logged++;
+        }
+      }
+      const w = weightLog.find((x) => x?.date === d);
+      if (w && w.weight != null) { wS += +w.weight; wN++; }
+    }
+    return {
+      days: logged,
+      avgCals: logged ? Math.round(cS / logged) : null,
+      avgProtein: logged ? Math.round(pS / logged) : null,
+      avgCarbs: logged ? Math.round(cbS / logged) : null,
+      avgFat: logged ? Math.round(fS / logged) : null,
+      avgWeight: wN ? Math.round((wS / wN) * 10) / 10 : null,
+    };
+  };
+  return { current: stat(0, 6), previous: stat(7, 13) };
+}
+
 // least-squares slope of weight vs day-index → kg per day
 function trendKgPerDay(points: Array<{ date: string; w: number }>, asOf: string): number | null {
   if (points.length < 3) return null;
