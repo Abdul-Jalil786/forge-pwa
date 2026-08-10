@@ -1403,6 +1403,78 @@ function _trackCompChart(){
   return legend+_tchartHTML(cfg)+note;
 }
 
+// ===================== Phase 89: Engine Trend + vitals (Oura walk analysis) =====================
+function _ouraReconnectBanner(){
+  return ouraNeedsReconnect()
+    ? `<div style="background:rgba(255,85,0,.08);border:1px solid rgba(255,85,0,.25);border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11px;color:var(--orange);font-weight:600;line-height:1.4;">⚠ Oura connection expired — paste a fresh token in <b>More → Oura</b> to resume syncing.</div>`
+    : '';
+}
+// "Engine Trend" — avg HR on same-pace (~3.0mph) walks over time. Falling = fitter.
+function renderEngineTrend(){
+  const recon=_ouraReconnectBanner();
+  const walks=Object.values(getWalkAnalysis()||{})
+    .filter(w=>w&&w.paceMph!=null&&w.paceMph>=2.8&&w.paceMph<=3.2&&w.avgHR!=null&&w.day)
+    .sort((a,b)=>String(a.day).localeCompare(String(b.day)));
+  if(walks.length<2){
+    return `<div class="card">${recon}
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Engine Trend · avg HR @ ~3.0mph</div>
+      <div style="font-size:12px;color:var(--text3);line-height:1.5;">Tracks your average heart rate on steady ~3.0mph walks (pace 2.8–3.2) — a <b>falling line means a fitter engine</b> at the same effort. Needs ≥2 same-pace walks with heart-rate + distance. ${walks.length?'1 so far.':'None yet.'}<br><span style="color:var(--text3);">Walks come from Oura (activity “walking”) or your manual logs; pace needs distance (GPS-tracked walks).</span></div>
+    </div>`;
+  }
+  const first=walks[0].day;
+  const dx=d=>Math.round((Date.parse(d+'T12:00:00')-Date.parse(first+'T12:00:00'))/86400000);
+  const pts=walks.map(w=>({x:dx(w.day),y:w.avgHR,date:w.day,pace:w.paceMph}));
+  const maxDay=Math.max(pts[pts.length-1].x,1);
+  const ys=pts.map(p=>p.y), yt=_niceTicks(Math.min(...ys),Math.max(...ys),4);
+  const cfg={ wrap:'engine-chart', aria:'Average HR at 3mph walks over time',
+    xDom:[0,maxDay], yDom:[yt.min,yt.max], yTicks:yt.ticks, xTicks:_monthTicks(first,maxDay),
+    series:[{color:_TCHART_W,data:pts.map(p=>({x:p.x,y:p.y})),label:'bpm'}],
+    hover:pts.map(p=>({x:p.x,label:fmtDate(p.date)+' · '+p.pace+'mph',rows:[{name:'Avg HR',color:_TCHART_W,y:p.y,unit:' bpm'}]})) };
+  const delta=pts[pts.length-1].y-pts[0].y;
+  const col=delta<-1?'var(--green)':delta>1?'#ffc107':'var(--text2)';
+  const note=delta<-1?`▼ ${Math.abs(delta)} bpm since your first walk — fitter engine at the same pace.`:delta>1?`▲ ${delta} bpm since first — check sleep/recovery.`:'Holding steady at the same pace.';
+  return `<div class="card">${recon}
+    <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Engine Trend · avg HR @ ~3.0mph</div>
+    <div style="font-size:11px;color:var(--text3);margin:2px 0 8px;">Same-pace walks only (2.8–3.2mph). Falling line = fitter engine.</div>
+    ${_tchartHTML(cfg)}
+    <div style="font-size:12px;color:${col};font-weight:600;margin-top:8px;">${note}</div>
+    <div style="font-size:10px;color:var(--text3);margin-top:4px;">${walks.length} qualifying walks</div>
+  </div>`;
+}
+// Resting HR (bpm) + HRV (ms) — real values from the sleep endpoint, last 30 days.
+function renderVitalsTrend(){
+  const v=getOuraVitals()||{};
+  const recent=Object.keys(v).filter(d=>v[d]).sort().slice(-30);
+  if(!recent.length)return '';
+  const first=recent[0];
+  const dx=d=>Math.round((Date.parse(d+'T12:00:00')-Date.parse(first+'T12:00:00'))/86400000);
+  const maxDay=Math.max(dx(recent[recent.length-1]),1);
+  const rhrPts=[],hrvPts=[];
+  recent.forEach(d=>{ const x=dx(d); if(v[d].rhr!=null)rhrPts.push({x,y:v[d].rhr,date:d}); if(v[d].hrv!=null)hrvPts.push({x,y:v[d].hrv,date:d}); });
+  const mini=(id,pts,color,unit,label,goodDown)=>{
+    if(pts.length<2)return '';
+    const ys=pts.map(p=>p.y), yt=_niceTicks(Math.min(...ys),Math.max(...ys),4);
+    const cfg={wrap:id,aria:label,xDom:[0,maxDay],yDom:[yt.min,yt.max],yTicks:yt.ticks,xTicks:_monthTicks(first,maxDay),
+      series:[{color,data:pts.map(p=>({x:p.x,y:p.y})),label:unit.trim()}],
+      hover:pts.map(p=>({x:p.x,label:fmtDate(p.date),rows:[{name:label,color,y:p.y,unit}]}))};
+    const delta=Math.round((pts[pts.length-1].y-pts[0].y)*10)/10;
+    const good=goodDown?delta<0:delta>0;
+    const col=Math.abs(delta)<0.5?'var(--text2)':(good?'var(--green)':'#ffc107');
+    return `<div style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:4px;"><span style="color:${color};">${label}</span><span style="color:${col};">${delta<0?'▼':delta>0?'▲':'→'} ${Math.abs(delta)}${unit} / 30d</span></div>
+        ${_tchartHTML(cfg)}
+      </div>`;
+  };
+  const rhr=mini('rhr-chart',rhrPts,'#e0680f',' bpm','Resting HR',true);
+  const hrv=mini('hrv-chart',hrvPts,'#2f7fd6',' ms','HRV',false);
+  if(!rhr&&!hrv)return '';
+  return `<div class="card">
+    <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Resting HR & HRV · 30 days</div>
+    ${rhr}${hrv}
+    <div style="font-size:10px;color:var(--text3);">Resting HR ↓ and HRV ↑ = recovering / getting fitter.</div>
+  </div>`;
+}
+
 function renderTrack(){
   _tchartReg={};
   const p=getActive(); if(!p)return;
@@ -1626,6 +1698,7 @@ function renderTrack(){
     ${_collapsibleOpen('goal','Goal Date')}${_goalCard}${_collapsibleClose()}
     ${_collapsibleOpen('compare','Compare Any Two Dates')}${compareCard}${_collapsibleClose()}
     ${_collapsibleOpen('health','VO2 Max · Blood Pressure · DEXA')}${renderVO2MaxCard()}${renderBPCard()}${renderDexaCard()}${_collapsibleClose()}
+    ${_collapsibleOpen('engine','Engine Trend · Walks','<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openWalkModal()">+ Walk</button>')}${renderEngineTrend()}${renderVitalsTrend()}${_collapsibleClose()}
     ${_collapsibleOpen('weighthist','Weight History',_weightLogBtn)}${_weightHistCard}${_collapsibleClose()}
     ${_collapsibleOpen('bfhist','Body Fat History')}${_bfHistCard}${_collapsibleClose()}
     ${_collapsibleOpen('bphist','Blood Pressure History')}${renderBPHistory()}${_collapsibleClose()}

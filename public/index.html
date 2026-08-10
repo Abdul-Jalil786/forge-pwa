@@ -573,6 +573,16 @@ svg.tchart .cross line{stroke:var(--text2);stroke-width:1;stroke-dasharray:3 3;}
   </div>
 </div>
 
+<div class="modal-bg" id="modal-walk">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Log a Walk</div><button class="modal-close" onclick="closeModal('modal-walk')">✕</button></div>
+    <div style="font-size:11px;color:var(--text2);line-height:1.4;margin-bottom:10px;">For walks Oura missed. Heart-rate fills in on the next sync if your ring recorded it; distance lets us compute pace for the Engine Trend.</div>
+    <div class="inp-row"><input class="inp" id="mw-date" type="date"><input class="inp" id="mw-start" type="time"></div>
+    <div class="inp-row"><input class="inp" id="mw-dur" placeholder="Duration (mins)" type="number" step="1" inputmode="numeric"><input class="inp" id="mw-dist" placeholder="Distance (miles, optional)" type="number" step="0.01" inputmode="decimal"></div>
+    <button class="btn btn-lime btn-full" onclick="saveWalkFromModal()" style="margin-top:4px;">LOG WALK</button>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-supp">
   <div class="modal">
     <div class="modal-hdr"><div class="modal-title" id="supp-modal-title">Add Supplement</div><button class="modal-close" onclick="closeModal('modal-supp')">&#10005;</button></div>

@@ -12,7 +12,7 @@ const router = Router();
 //   ouraToken         — Oura PAT (encrypted, v1: prefix; legacy plaintext during migration)
 //   withings          — { accessToken, refreshToken (both encrypted), expiresAt, … }
 //   withingsOAuthState — short-lived OAuth state secret
-export const SERVER_ONLY_FIELDS = ["coachingKey", "ouraToken", "withings", "withingsOAuthState"] as const;
+export const SERVER_ONLY_FIELDS = ["coachingKey", "ouraToken", "withings", "withingsOAuthState", "ouraHeartrate"] as const;
 
 export function stripServerOnlyFields(state: any): any {
   if (!state || typeof state !== "object") return state;
@@ -867,6 +867,7 @@ dateKeyedRoute("/stretch-log/:date", "stretchLog"); // Phase 41 (owner-only feat
 dateKeyedRoute("/cardio-log/:date", "cardioLog"); // Phase 41i (zone-2 cardio sessions, any user)
 dateKeyedRoute("/food-complete/:date", "foodComplete"); // Phase 48a ("that's everything I ate today")
 dateKeyedRoute("/energy-log/:date", "energyLog"); // Phase 88 (evening "how was your day" — level + why tags)
+dateKeyedRoute("/walk-log/:date", "walkLog"); // Phase 89 (manual walk entries: {id, start, end, distanceM})
 dateKeyedRoute("/session-feel/:date", "sessionFeel"); // Phase 44 (pre-session feel tap)
 dateKeyedRoute("/recovery-overrides/:date", "recoveryOverrides"); // Phase 44 (advisory gate choices)
 

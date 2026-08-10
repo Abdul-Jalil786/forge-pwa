@@ -347,6 +347,42 @@ test("Phase 88: energy card logs level + why tags; on Food page + calendar backf
   assert.ok(!/energy-card-dd/.test(q(`document.getElementById('ddContent').innerHTML`)), "no energy card on a future day");
 });
 
+// ---- Phase 89: Engine Trend + vitals + manual walk logging ----
+test("Phase 89: Engine Trend charts same-pace walks; vitals 30d; manual walk logs; reconnect prompt", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  // Three ~3.0mph walks with falling avg HR → 'fitter engine' trend.
+  q(`STATE.walkAnalysis={
+    w1:{id:'w1',day:'2026-07-01',start:'2026-07-01T09:00:00Z',end:'2026-07-01T09:30:00Z',durationMin:30,distanceM:2414,paceMph:3.0,avgHR:120,maxHR:132,hrDrift:9,hrSamples:31,source:'oura'},
+    w2:{id:'w2',day:'2026-07-15',start:'2026-07-15T09:00:00Z',end:'2026-07-15T09:30:00Z',durationMin:30,distanceM:2414,paceMph:3.0,avgHR:114,maxHR:126,hrDrift:7,hrSamples:31,source:'oura'},
+    w3:{id:'w3',day:'2026-07-29',start:'2026-07-29T09:00:00Z',end:'2026-07-29T09:30:00Z',durationMin:30,distanceM:2414,paceMph:3.0,avgHR:108,maxHR:120,hrDrift:6,hrSamples:31,source:'oura'},
+    wRun:{id:'wRun',day:'2026-07-20',paceMph:5.5,avgHR:150,source:'oura'}
+  }`);
+  const et = q(`renderEngineTrend()`);
+  assert.ok(/Engine Trend/.test(et), "engine trend card title");
+  assert.ok(/<svg/.test(et), "chart svg rendered");
+  assert.ok(/fitter engine/.test(et), "falling HR flagged as fitter");
+  assert.ok(!/150/.test(et), "the 5.5mph run is excluded (pace out of 2.8–3.2 band)");
+  // Real RHR/HRV 30-day trend
+  q(`STATE.ouraVitals={'2026-07-27':{rhr:58,hrv:42},'2026-07-28':{rhr:57,hrv:45},'2026-07-29':{rhr:55,hrv:48}}`);
+  const vt = q(`renderVitalsTrend()`);
+  assert.ok(/Resting HR/.test(vt) && /HRV/.test(vt), "RHR + HRV trend rendered");
+  // Reconnect prompt on 401
+  q(`STATE.ouraTokenInvalid=true`);
+  assert.ok(/connection expired/.test(q(`renderEngineTrend()`)), "reconnect banner shown when token invalid");
+  // Manual walk logging persists to walkLog
+  q(`STATE.ouraTokenInvalid=false; STATE.walkLog={}`);
+  q(`addManualWalk('2026-08-10','2026-08-10T09:00:00.000Z','2026-08-10T09:30:00.000Z',2414)`);
+  assert.equal(q(`STATE.walkLog['2026-08-10'].length`), 1, "manual walk saved");
+  assert.equal(q(`STATE.walkLog['2026-08-10'][0].source`), "manual", "tagged manual");
+  assert.equal(q(`typeof openWalkModal`), "function", "walk modal opener defined");
+  assert.equal(q(`typeof saveWalkFromModal`), "function", "walk save handler defined");
+  // Track page includes the Engine Trend section
+  q(`renderTrack()`);
+  assert.ok(/Engine Trend/.test(q(`document.getElementById('page-track').innerHTML`)), "engine section on Track page");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
