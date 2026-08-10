@@ -1167,6 +1167,49 @@ async function seedJayDaalFibrePlanV1() {
   }
 }
 
+// Phase 84: two more quick-log templates the user has "sometimes" — Asian tea
+// (chai, up to 3/day) + honey (up to 2 tsp/day). APPENDS to the live meal plan
+// (doesn't rewrite it) so it composes with the daal+fibre plan and survives a
+// macros recompute. Per-serving values (one tap = one cup / one tsp); log it as
+// many times as consumed, or use the portion stepper. Chai macros assume a cup
+// brewed with semi-skimmed milk + 1 tsp sugar (flagged to the user). Guarded.
+async function seedJayChaiHoneyQuicklogsV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.jayChaiHoneyQuicklogsV1) return;
+    const mp: any = state.mealPlan;
+    if (!mp || !Array.isArray(mp.meals)) return; // nothing to append to yet
+    const have = new Set(mp.meals.map((m: any) => m.id));
+    const additions = [
+      {
+        id: "ql-chai", name: "Asian tea (chai)", time: "10:00",
+        cals: 80, protein: 4, carbs: 10, fat: 2,
+        ingredients: [
+          { name: "1 cup chai (semi-skimmed milk + 1 tsp sugar)", cals: 80, protein: 4, carbs: 10, fat: 2, gi: "moderate" },
+        ],
+        supplements: [],
+      },
+      {
+        id: "ql-honey", name: "Honey", time: "10:00",
+        cals: 21, protein: 0, carbs: 6, fat: 0,
+        ingredients: [
+          { name: "1 tsp honey", cals: 21, protein: 0, carbs: 6, fat: 0, gi: "high" },
+        ],
+        supplements: [],
+      },
+    ];
+    let added = 0;
+    for (const a of additions) if (!have.has(a.id)) { mp.meals.push(a); added++; }
+    state.jayChaiHoneyQuicklogsV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] Jay chai+honey quick-logs seeded (${added} added)`);
+  } catch (err) {
+    console.error("[migration] seedJayChaiHoneyQuicklogsV1 failed:", err);
+  }
+}
+
 // Phase 54a: correct the whey scoop to 20g protein (was 28g) in the live meal plan
 // and re-derive that ingredient's calories + the meal totals from the ingredients.
 async function fixAbdulWheyV1() {
@@ -2392,6 +2435,7 @@ const server = app.listen(PORT, async () => {
   await fixAbdulPeasFibreRebalanceV1();
   await seedAbdulRebalancedPlanV1(); // 200P/185C/72F rebalance
   await seedJayDaalFibrePlanV1(); // final word on the meal plan — daal dinner + quick-logs
+  await seedJayChaiHoneyQuicklogsV1(); // Phase 84: append chai + honey quick-logs
   await fixJayLegPressSledV1();
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();
