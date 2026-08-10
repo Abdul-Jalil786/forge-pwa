@@ -383,6 +383,23 @@ test("Phase 89: Engine Trend charts same-pace walks; vitals 30d; manual walk log
   assert.ok(/Engine Trend/.test(q(`document.getElementById('page-track').innerHTML`)), "engine section on Track page");
 });
 
+// ---- Phase 90: strength-session HR link ----
+test("Phase 90: session HR shows on the day detail when present", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  q(`STATE.sessionHR={'2026-07-20':{avgHR:128,maxHR:154,minHR:96,hrDrift:11,calories:340,durationMin:52,sessionType:'upperA',source:'oura'}}`);
+  assert.equal(q(`getSessionHR('2026-07-20').avgHR`), 128, "helper reads sessionHR");
+  q(`renderDayDetail('2026-07-20')`);
+  const dd = q(`document.getElementById('ddContent').innerHTML`);
+  assert.ok(/Session heart rate/.test(dd), "session HR card on the day detail");
+  assert.ok(/128/.test(dd) && /max 154/.test(dd), "avg + max shown");
+  assert.ok(/340 kcal/.test(dd), "calories shown");
+  // a day with no session HR shows no card
+  q(`renderDayDetail('2020-01-01')`);
+  assert.ok(!/Session heart rate/.test(q(`document.getElementById('ddContent').innerHTML`)), "no HR card without data");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
