@@ -915,6 +915,34 @@ function buildCalibrationContext(state: any): string {
   return lines.join("\n");
 }
 
+// Phase 90: strength-session heart rate — Oura HR overlaid on each logged session's
+// own time window (see oura.ts). Lets the coach read the cardiac cost of lifting and
+// flag rising HR on similar work (a recovery / overreaching signal).
+function buildSessionHrContext(state: any): string {
+  const shr = state.sessionHR || {};
+  const days = Object.keys(shr).filter((d) => shr[d] && shr[d].avgHR != null).sort();
+  if (days.length < 2) return "";
+  const recent = days.slice(-6);
+  const rows = recent.map((d) => {
+    const s = shr[d];
+    const parts = [`avg ${s.avgHR}`, `max ${s.maxHR}`];
+    if (s.hrDrift != null) parts.push(`drift ${s.hrDrift > 0 ? "+" : ""}${s.hrDrift}`);
+    if (s.calories != null) parts.push(`${s.calories} kcal`);
+    return `  ${d}${s.sessionType ? ` (${s.sessionType})` : ""}: ${parts.join(", ")} bpm`;
+  });
+  let trend = "";
+  if (recent.length >= 4) {
+    const vals = recent.map((d) => shr[d].avgHR);
+    const half = Math.floor(vals.length / 2);
+    const oAvg = vals.slice(0, half).reduce((a, b) => a + b, 0) / half;
+    const nAvg = vals.slice(-half).reduce((a, b) => a + b, 0) / half;
+    const delta = Math.round(nAvg - oAvg);
+    if (delta >= 3) trend = `\nAvg session HR is UP ~${delta} bpm recently — at similar training load this can signal accumulating fatigue / under-recovery.`;
+    else if (delta <= -3) trend = `\nAvg session HR is DOWN ~${Math.abs(delta)} bpm — improving cardiovascular efficiency at the same work.`;
+  }
+  return `SESSION HEART RATE (Oura HR over each logged workout's window, last ${recent.length}):\n${rows.join("\n")}${trend}`;
+}
+
 export function buildContext(state: any): string {
   const today = ukToday();
   const cutoff14 = daysAgoUK(14);
@@ -1518,6 +1546,8 @@ export function buildContext(state: any): string {
   if (trainingDetail) lines.push(trainingDetail);
   const strengthBaseline = buildStrengthBaseline(state);
   if (strengthBaseline) lines.push(strengthBaseline);
+  const sessionHr = buildSessionHrContext(state);
+  if (sessionHr) lines.push(sessionHr);
   const sleepPerf = buildSleepPerformance(state);
   if (sleepPerf) lines.push(sleepPerf);
   // Phase 47: user-written training notes (per-exercise running + per-session)

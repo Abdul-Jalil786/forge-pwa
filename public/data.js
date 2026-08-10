@@ -264,6 +264,7 @@ let STATE = {
   walkLog: {},          // Phase 89: {date:[{id,start,end,distanceM,source:'manual'}]} — manual walks
   ouraVitals: {},       // Phase 89: {date:{rhr(bpm),hrv(ms)}} — real values from sleep endpoint
   walkAnalysis: {},     // Phase 89: {walkId:{durationMin,distanceM,paceMph,avgHR,maxHR,hrDrift,...}}
+  sessionHR: {},        // Phase 90: {date:{avgHR,maxHR,minHR,hrDrift,calories,durationMin}} — Oura HR over a logged session
   swimLog: {},
   supps: [],
   suppDone: {},
@@ -922,6 +923,7 @@ function toggleEnergyTag(date,tag){
 
 // ---- Phase 89: Oura walk analysis + vitals ----
 function getWalkAnalysis(){return pGet('walkAnalysis',{});}
+function getSessionHR(date){return (pGet('sessionHR',{})[date])||null;}
 function getOuraVitals(){return pGet('ouraVitals',{});}
 function getManualWalks(){return pGet('walkLog',{});}
 function ouraNeedsReconnect(){return !!STATE.ouraTokenInvalid;}

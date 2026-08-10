@@ -2341,6 +2341,19 @@ function renderDayDetail(date){
 
   // TRAINING
   html+=`<div class="sec-label">Training</div>`;
+  // Phase 90: Oura HR overlaid on the logged session's own time window.
+  const _shr=(typeof getSessionHR==='function')?getSessionHR(date):null;
+  if(_shr&&_shr.avgHR!=null){
+    const _drift=_shr.hrDrift!=null?` · drift ${_shr.hrDrift>0?'+':''}${_shr.hrDrift}`:'';
+    const _kcal=_shr.calories!=null?` · ${_shr.calories} kcal`:'';
+    html+=`<div class="card" style="margin-bottom:10px;">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Session heart rate <span style="color:var(--text3);">· Oura</span></div>
+      <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;">
+        <div><span style="font-family:'Archivo Black',sans-serif;font-size:26px;color:var(--orange);">${_shr.avgHR}</span><span style="font-size:11px;color:var(--text2);"> avg bpm</span></div>
+        <div style="font-size:13px;color:var(--text2);">max ${_shr.maxHR}${_shr.minHR!=null?` · low ${_shr.minHR}`:''}${_drift}${_kcal}</div>
+      </div>
+    </div>`;
+  }
   // Phase 56: a made-up session logged on a calendar rest day still shows here.
   const _isMakeupDay=!sessionType&&!!(sessionLog._session&&(sessionLog._session.makeup||sessionLog._session.forDate));
   const _trainType=sessionType||(_isMakeupDay&&typeof _classifyLoggedSession==='function'?_classifyLoggedSession(sessionLog):null);

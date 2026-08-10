@@ -1,7 +1,7 @@
 import prisma from "./db";
 import { readToken, isEncryptedToken, writeToken } from "./token-crypto";
 import { mergeStateMap, setStateKey } from "./state-merge";
-import { analyzeAllWalks, isWalkActivity, WalkInput } from "./walk-analysis";
+import { analyzeAllWalks, analyzeHrWindow, isWalkActivity, WalkInput, HrSample } from "./walk-analysis";
 
 const BASE = "https://api.ouraring.com/v2/usercollection";
 const HR_RETENTION_DAYS = 60; // raw HR kept ~60 days (server-only, pruned each sync)
@@ -256,6 +256,36 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     }
     const walkResults = analyzeAllWalks(walks, hrMap);
 
+    // Phase 90: strength-session HR link — overlay the Oura HR series onto each
+    // logged Forge session's own time window (exLog[date]._session.startedAt/
+    // completedAt, epoch ms) → avg/max HR + drift. Match an overlapping Oura
+    // workout's calories where present. Read-only join, keyed by date.
+    const samples: HrSample[] = [];
+    for (const iso in hrMap) { const t = Date.parse(iso); if (isFinite(t)) samples.push({ t, bpm: hrMap[iso] }); }
+    samples.sort((a, b) => a.t - b.t);
+    const sessionHrPartial: Record<string, any> = {};
+    const exLog = state.exLog || {};
+    for (const d in exLog) {
+      const sess = exLog[d] && exLog[d]._session;
+      if (!sess || !sess.startedAt || !sess.completedAt) continue;
+      if (sess.completedAt < cutMs) continue; // outside the raw-HR retention window
+      const h = analyzeHrWindow(sess.startedAt, sess.completedAt, samples);
+      if (h.avgHR == null) continue; // no HR overlap yet — leave any prior result untouched
+      // calories: the Oura workout whose window overlaps this session (if any)
+      let calories: number | null = null;
+      for (const w of (mergedWorkouts[d] || [])) {
+        if (!w.start || !w.end) continue;
+        const ws = Date.parse(w.start), we = Date.parse(w.end);
+        if (ws <= sess.completedAt && we >= sess.startedAt && typeof w.calories === "number") { calories = w.calories; break; }
+      }
+      sessionHrPartial[d] = {
+        avgHR: h.avgHR, maxHR: h.maxHR, minHR: h.minHR, hrDrift: h.hrDrift,
+        durationMin: Math.round(((sess.completedAt - sess.startedAt) / 60000) * 10) / 10,
+        calories, samples: h.samples, sessionType: sess.sessionType || null, source: "oura",
+      };
+      updated++;
+    }
+
     // Phase 64: write each key on its own (atomic merge of only the changed
     // days), never the whole state object. Concurrent writes to other keys/dates
     // survive. No cross-key invariant here, so no transaction needed — a crash
@@ -268,6 +298,7 @@ export async function syncOuraForUser(userId: string): Promise<{ updated: number
     await mergeStateMap(userId, "vo2maxLog", vo2Partial);
     await mergeStateMap(userId, "ouraVitals", vitalsByDay);        // Phase 89: real RHR/HRV
     await mergeStateMap(userId, "walkAnalysis", walkResults);      // Phase 89: per-walk metrics
+    await mergeStateMap(userId, "sessionHR", sessionHrPartial);    // Phase 90: strength-session HR
     await setStateKey(userId, "ouraHeartrate", hrMap);             // Phase 89: raw HR (server-only)
     await setStateKey(userId, "ouraLastSync", new Date().toISOString());
     if (state.ouraTokenInvalid) await setStateKey(userId, "ouraTokenInvalid", false); // clear a prior re-auth prompt

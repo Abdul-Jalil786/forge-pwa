@@ -30,6 +30,33 @@ export interface WalkResult {
 
 const METERS_PER_MILE = 1609.344;
 
+export interface HrWindowResult { avgHR: number | null; maxHR: number | null; minHR: number | null; hrDrift: number | null; samples: number; }
+
+// Core HR-window analysis, shared by walks (Phase 89) and strength sessions
+// (Phase 90). avg / max / min bpm + drift (final-third avg − first-third avg,
+// split by TIME so an uneven sample cadence doesn't bias it).
+export function analyzeHrWindow(startMs: number, endMs: number, hr: HrSample[]): HrWindowResult {
+  const win = hr
+    .filter((s) => s && isFinite(s.t) && s.t >= startMs && s.t <= endMs && typeof s.bpm === "number" && s.bpm > 0)
+    .sort((a, b) => a.t - b.t);
+  if (!win.length) return { avgHR: null, maxHR: null, minHR: null, hrDrift: null, samples: 0 };
+  const avgHR = Math.round(win.reduce((s, x) => s + x.bpm, 0) / win.length);
+  const maxHR = win.reduce((m, x) => Math.max(m, x.bpm), 0);
+  const minHR = win.reduce((m, x) => Math.min(m, x.bpm), Infinity);
+  let hrDrift: number | null = null;
+  const t0 = win[0].t, t1 = win[win.length - 1].t, span = t1 - t0;
+  if (span > 0 && win.length >= 6) {
+    const first = win.filter((x) => x.t <= t0 + span / 3);
+    const last = win.filter((x) => x.t >= t0 + (2 * span) / 3);
+    if (first.length && last.length) {
+      const a1 = first.reduce((s, x) => s + x.bpm, 0) / first.length;
+      const a3 = last.reduce((s, x) => s + x.bpm, 0) / last.length;
+      hrDrift = Math.round(a3 - a1);
+    }
+  }
+  return { avgHR, maxHR, minHR: minHR === Infinity ? null : minHR, hrDrift, samples: win.length };
+}
+
 // Analyse a single walk against the HR samples that fall in its window.
 export function analyzeWalk(walk: WalkInput, hr: HrSample[]): WalkResult {
   const startMs = Date.parse(walk.start);
@@ -41,32 +68,11 @@ export function analyzeWalk(walk: WalkInput, hr: HrSample[]): WalkResult {
   const paceMph = (distanceM != null && durationMin != null && durationMin > 0)
     ? Math.round(((distanceM / METERS_PER_MILE) / (durationMin / 60)) * 100) / 100
     : null;
-
-  const win = hr
-    .filter((s) => s && isFinite(s.t) && s.t >= startMs && s.t <= endMs && typeof s.bpm === "number" && s.bpm > 0)
-    .sort((a, b) => a.t - b.t);
-
-  let avgHR: number | null = null, maxHR: number | null = null, hrDrift: number | null = null;
-  if (win.length) {
-    avgHR = Math.round(win.reduce((s, x) => s + x.bpm, 0) / win.length);
-    maxHR = win.reduce((m, x) => Math.max(m, x.bpm), 0);
-    // HR drift: split the window into thirds by TIME (not by sample count), so an
-    // uneven sample cadence doesn't bias it. Need enough points to be meaningful.
-    const t0 = win[0].t, t1 = win[win.length - 1].t, span = t1 - t0;
-    if (span > 0 && win.length >= 6) {
-      const first = win.filter((x) => x.t <= t0 + span / 3);
-      const last = win.filter((x) => x.t >= t0 + (2 * span) / 3);
-      if (first.length && last.length) {
-        const a1 = first.reduce((s, x) => s + x.bpm, 0) / first.length;
-        const a3 = last.reduce((s, x) => s + x.bpm, 0) / last.length;
-        hrDrift = Math.round(a3 - a1);
-      }
-    }
-  }
+  const h = analyzeHrWindow(startMs, endMs, hr);
   return {
     id: walk.id, day: walk.day, start: walk.start, end: walk.end,
-    durationMin, distanceM, paceMph, avgHR, maxHR, hrDrift,
-    hrSamples: win.length, source: walk.source,
+    durationMin, distanceM, paceMph, avgHR: h.avgHR, maxHR: h.maxHR, hrDrift: h.hrDrift,
+    hrSamples: h.samples, source: walk.source,
   };
 }
 

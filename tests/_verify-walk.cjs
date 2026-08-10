@@ -1,7 +1,7 @@
 // Phase 89 walk-analysis verification (manual — run `npx tsc && node tests/_verify-walk.cjs`).
 // Proves the pure walk-analysis math: duration, pace, avg/max HR, and HR drift.
 const assert = require("node:assert/strict");
-const { analyzeWalk, analyzeAllWalks, isWalkActivity } = require("../dist/server/walk-analysis.js");
+const { analyzeWalk, analyzeAllWalks, isWalkActivity, analyzeHrWindow } = require("../dist/server/walk-analysis.js");
 
 const checks = [];
 function check(name, fn) { try { fn(); checks.push([name, true]); } catch (e) { checks.push([name, false, e.message]); } }
@@ -51,6 +51,22 @@ check("HR outside the walk window is ignored", () => {
   for (let i = 0; i <= 10; i++) map[new Date(Date.parse(start) + i * 60000).toISOString()] = 115;
   const r = analyzeAllWalks([{ id: "w4", day: "2026-08-10", start, end, distanceM: null, source: "oura", activity: "walking" }], map).w4;
   assert.equal(r.avgHR, 115, "only in-window samples counted, not the 60bpm rest before/after");
+});
+
+check("Phase 90: analyzeHrWindow (strength session) — avg/max/min/drift", () => {
+  const t0 = Date.parse("2026-08-10T16:00:00Z");
+  const hr = [];
+  for (let i = 0; i <= 40; i++) hr.push({ t: t0 + i * 60000, bpm: 110 + i }); // 110→150 over 40 min
+  const r = analyzeHrWindow(t0, t0 + 40 * 60000, hr);
+  assert.equal(r.avgHR, 130, "mean of 110..150");
+  assert.equal(r.maxHR, 150);
+  assert.equal(r.minHR, 110);
+  assert.ok(r.hrDrift > 20, "HR climbs through the session → positive drift");
+  assert.equal(r.samples, 41);
+  // empty window → all null
+  const e = analyzeHrWindow(t0, t0 + 60000, []);
+  assert.equal(e.avgHR, null);
+  assert.equal(e.samples, 0);
 });
 
 check("isWalkActivity matches only walking", () => {
