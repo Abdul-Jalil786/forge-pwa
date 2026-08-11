@@ -1919,6 +1919,38 @@ async function seedFiveDaySplitV1() {
   }
 }
 
+// Phase 91: coaching notes for the lower-day restructure (Jay + Naveed). Written
+// to state.exerciseNotes (per-profile), same shape the in-app note editor uses.
+// The template REORDER itself (RDL → Lower B, Leg Curl → Lower A) lives in the
+// global WORKOUTS/SESSION_EXERCISE_IDS, so it applies to everyone on the 5-day
+// split (Jay, Naveed, Farukh); only these personal notes are per-profile here.
+async function seedJayNaveedLowerNotesV1() {
+  const emails = ["jay@afjltd.co.uk", "mohammed.naveed@birmingham.gov.uk"];
+  const notes: Record<string, string> = {
+    l2: "Restart at 90–100kg × 6–8 after break. Use straps. Progress +5kg/week max. Stop the set if lower-left back exceeds 3/10.",
+    u6: "Golfer's elbow protocol: neutral/hammer grip preferred, ≤3/10 during, skip if worse next day.",
+    u7: "Golfer's elbow protocol: neutral/hammer grip preferred, ≤3/10 during, skip if worse next day.",
+  };
+  for (const email of emails) {
+    try {
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (!user) { console.log(`[migration] lower notes: no account for ${email} (skipped)`); continue; }
+      const state: any = user.state || {};
+      if (state.jayNaveedLowerNotesV1) continue;
+      if (!state.exerciseNotes || typeof state.exerciseNotes !== "object") state.exerciseNotes = {};
+      const at = new Date().toISOString();
+      for (const [exId, note] of Object.entries(notes)) {
+        state.exerciseNotes[exId] = { note, addedAt: at, source: "coach" };
+      }
+      state.jayNaveedLowerNotesV1 = true;
+      await prisma.user.update({ where: { id: user.id }, data: { state } });
+      console.log(`[migration] lower-day coaching notes seeded for ${email}`);
+    } catch (err) {
+      console.error(`[migration] seedJayNaveedLowerNotesV1 failed for ${email}:`, err);
+    }
+  }
+}
+
 // Phase 41n: swap breakfast eggs from "4 whole boiled" to "3 whole boiled +
 // 4 egg whites" (what Jay actually eats). Adds 9g protein, saves 5g fat,
 // virtually the same calories. Meal totals updated to reflect the swap.
@@ -2539,6 +2571,7 @@ const server = app.listen(PORT, async () => {
   await fixAbdulTretinoinLadderV1();
   await seedAbdulBoditraxV1();
   await seedFiveDaySplitV1();
+  await seedJayNaveedLowerNotesV1(); // Phase 91: RDL + golfer's-elbow coaching notes
   if (IS_DEV) await seedDevTestUser(); // DEV/staging only — never runs in production
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when

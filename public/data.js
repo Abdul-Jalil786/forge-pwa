@@ -99,7 +99,7 @@ const WORKOUTS = {
     exercises:[
       {id:'h1',name:'Goblet Squat',sets:3,reps:'10–12',rest:90,muscle:'Quads',size:'medium',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=goblet+squat+form'},
       {id:'l1',name:'Leg Press',sets:4,reps:'8–10',rest:120,muscle:'Quads',size:'large',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
-      {id:'l2',name:'Romanian Deadlift',sets:3,reps:'6–8',rest:120,muscle:'Hamstrings',size:'large',fillers:['fill_pallof'],yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
+      {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
       {id:'l6',name:'Calf Raise',sets:3,reps:'12–15',rest:45,muscle:'Calves',size:'medium',fillers:['fill_deep_squat'],yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
       {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10–12 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
     ]
@@ -127,8 +127,8 @@ const WORKOUTS = {
     duration:'50–60',
     exercises:[
       {id:'l5',name:'Hip Thrust',sets:4,reps:'8–10',rest:90,muscle:'Glutes',size:'large',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
+      {id:'l2',name:'Romanian Deadlift',sets:3,reps:'6–8',rest:120,muscle:'Hamstrings',size:'large',fillers:['fill_pallof'],yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
       {id:'l1',name:'Leg Press',sets:3,reps:'10–12',rest:120,muscle:'Quads',size:'large',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
-      {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
       {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'40–60s/side',metric:'carry',targetSeconds:40,targetSecondsLow:40,targetSecondsHigh:60,rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
     ]
   },
