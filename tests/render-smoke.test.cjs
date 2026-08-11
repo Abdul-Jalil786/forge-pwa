@@ -400,6 +400,34 @@ test("Phase 90: session HR shows on the day detail when present", () => {
   assert.ok(!/Session heart rate/.test(q(`document.getElementById('ddContent').innerHTML`)), "no HR card without data");
 });
 
+// ---- Phase 91: lower-day restructure (RDL → Lower B, Leg Curl → Lower A) ----
+test("Phase 91: lower A/B reordered; schemes + cross-runtime map stay in sync", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const ids = (tmpl) => vm.runInContext(`JSON.stringify(WORKOUTS['${tmpl}'].exercises.map(e=>e.id))`, ctx);
+  assert.equal(ids("lowerA"), JSON.stringify(["h1", "l1", "l4", "l6", "core_pallof"]), "Lower A: Goblet, Leg Press, Leg Curl, Calf, Pallof");
+  assert.equal(ids("lowerB"), JSON.stringify(["l5", "l2", "l1", "core_suitcase"]), "Lower B: Hip Thrust, RDL, Leg Press, Suitcase");
+  // schemes preserved on the moved lifts
+  const ex = (tmpl, id) => vm.runInContext(`JSON.stringify(WORKOUTS['${tmpl}'].exercises.find(e=>e.id==='${id}'))`, ctx);
+  const rdl = JSON.parse(ex("lowerB", "l2"));
+  assert.equal(rdl.reps, "6–8"); assert.equal(rdl.sets, 3); assert.equal(rdl.rest, 120);
+  const curl = JSON.parse(ex("lowerA", "l4"));
+  assert.equal(curl.reps, "10–12"); assert.equal(curl.sets, 3); assert.equal(curl.rest, 60);
+  // the cross-runtime session→exercise map matches WORKOUTS (used by classification)
+  const map = vm.runInContext(`JSON.stringify(SESSION_EXERCISE_IDS.lowerA)+'|'+JSON.stringify(SESSION_EXERCISE_IDS.lowerB)`, ctx);
+  assert.ok(/"l4"/.test(map.split("|")[0]) && !/"l2"/.test(map.split("|")[0]), "map lowerA has l4, not l2");
+  assert.ok(/"l2"/.test(map.split("|")[1]) && !/"l4"/.test(map.split("|")[1]), "map lowerB has l2, not l4");
+  // weekly schedule unchanged: Mon upperA · Tue lowerA · Wed rest · Thu upperB · Fri lowerB · Sat zone2 · Sun rest
+  const sess = (dow) => vm.runInContext(`FORGE_PROGRAMME.sessionTypeForDate('upper-lower-5d-fixed','${dow}','2026-07-20')`, ctx);
+  assert.equal(sess("2026-08-10"), "upperA", "Mon = Upper A"); // 2026-08-10 is a Monday
+  assert.equal(sess("2026-08-11"), "lowerA", "Tue = Lower A");
+  assert.equal(sess("2026-08-12"), null, "Wed = rest");
+  assert.equal(sess("2026-08-13"), "upperB", "Thu = Upper B");
+  assert.equal(sess("2026-08-14"), "lowerB", "Fri = Lower B");
+  assert.equal(sess("2026-08-15"), "zone2", "Sat = Zone 2");
+  assert.equal(sess("2026-08-16"), null, "Sun = rest");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
@@ -974,13 +1002,14 @@ test("weighted compounds get set-to-set guidance; accessories left alone", () =>
     `!!_autoregNextSet(WORKOUTS['${tmpl}'].exercises.find(e=>e.id==='${id}'), {kg:40,reps:99,effort:'easy'}, 1)`, ctx);
 
   // Fixed: these weighted lifts now carry a rep range → guidance on every day.
-  assert.ok(guided('lowerA', 'l2'),          "RDL (lowerA) now gets guidance");
+  assert.ok(guided('lowerB', 'l2'),          "RDL (lowerB, Phase 91 moved) now gets guidance");
+  assert.ok(guided('lowerA', 'l4'),          "Leg Curl (lowerA, Phase 91 moved) now gets guidance");
   assert.ok(guided('upperB', 'h3'),          "One-Arm Row (upperB) now gets guidance");
   assert.ok(guided('upperB', 'u8'),          "Face Pull (upperB) now gets guidance");
   assert.ok(guided('upperB', 'u6'),          "Bicep Curl (upperB) now gets guidance");
   assert.ok(guided('lowerA', 'core_pallof'), "Pallof (lowerA) now gets guidance");
   // The add-weight reps target is the range floor (double progression):
-  const rdl = vm.runInContext(`_autoregNextSet(WORKOUTS.lowerA.exercises.find(e=>e.id==='l2'), {kg:100,reps:8,effort:'easy'}, 1)`, ctx);
+  const rdl = vm.runInContext(`_autoregNextSet(WORKOUTS.lowerB.exercises.find(e=>e.id==='l2'), {kg:100,reps:8,effort:'easy'}, 1)`, ctx);
   assert.equal(rdl.reps, 6, "RDL 6–8: topped → reps reset to floor (6)");
 
   // Left alone: bodyweight + rehab accessories get NO weight autoregulation.
