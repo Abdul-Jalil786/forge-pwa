@@ -1952,18 +1952,58 @@ function wmRedoTimedSet(idx){
 // minute, a soft 55s warning, pause + honest end-early, screen kept awake. Reuses
 // setInterval + navigator.vibrate; adds a small WebAudio beep + wakeLock (no refactor
 // of the existing wm/rest timers). Target comes from the per-load engine (kb-emom.js).
+// Capability detection (iOS/PWA): wakeLock lands in Safari 16.4+; navigator.vibrate
+// is NOT implemented on iOS at all. Detect both so cues degrade gracefully.
+function _kbCanWake(){ try{ return typeof navigator!=='undefined' && 'wakeLock' in navigator && !!navigator.wakeLock; }catch(e){ return false; } }
+function _kbCanVibrate(){ try{ return typeof navigator!=='undefined' && typeof navigator.vibrate==='function'; }catch(e){ return false; } }
 let _kbAudioCtx=null;
+// iOS blocks audio that isn't started from a user gesture — call this from the
+// Start button tap to create/resume the context (+ a near-silent blip to unlock).
+function _kbAudioInit(){ try{
+  const AC=window.AudioContext||window.webkitAudioContext; if(!AC)return;
+  if(!_kbAudioCtx)_kbAudioCtx=new AC();
+  if(_kbAudioCtx.state==='suspended'&&_kbAudioCtx.resume)_kbAudioCtx.resume();
+  const o=_kbAudioCtx.createOscillator(),g=_kbAudioCtx.createGain();
+  g.gain.value=0.0001; o.connect(g); g.connect(_kbAudioCtx.destination);
+  o.start(); o.stop(_kbAudioCtx.currentTime+0.02);
+}catch(e){} }
 function _kbBeep(freq,ms,vol){ try{
   const AC=window.AudioContext||window.webkitAudioContext; if(!AC)return;
   if(!_kbAudioCtx)_kbAudioCtx=new AC();
+  if(_kbAudioCtx.state==='suspended'&&_kbAudioCtx.resume)_kbAudioCtx.resume();
   const o=_kbAudioCtx.createOscillator(),g=_kbAudioCtx.createGain();
   o.type='sine'; o.frequency.value=freq||880; g.gain.value=(vol==null?0.25:vol);
   o.connect(g); g.connect(_kbAudioCtx.destination);
   o.start(); o.stop(_kbAudioCtx.currentTime+((ms||160)/1000));
 }catch(e){} }
+// Screen-edge flash — the primary non-audio cue on iOS (no vibration there). Bright
+// border pulse, readable from the floor. Universal (also runs on Android alongside vibrate).
+function _kbFlash(strong){ try{
+  if(typeof document==='undefined'||!document.body)return;
+  let f=document.getElementById('kb-flash');
+  if(!f){ f=document.createElement('div'); f.id='kb-flash'; f.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:99999;border-style:solid;border-color:var(--lime);border-width:0;opacity:0;transition:opacity .12s ease-out;'; document.body.appendChild(f); }
+  f.style.borderColor=strong?'var(--lime)':'var(--orange)';
+  f.style.borderWidth=(strong?'14px':'7px'); f.style.opacity='1';
+  setTimeout(function(){ f.style.opacity='0'; }, strong?280:150);
+}catch(e){} }
+// One cue call — audio always; vibrate only where supported; flash always.
+function _kbCue(strong){
+  _kbBeep(strong?900:520, strong?180:90, strong?0.3:0.14);
+  if(_kbCanVibrate())navigator.vibrate(strong?[180,60,180]:60);
+  _kbFlash(strong);
+}
 let _kbWakeLock=null;
-function _kbWakeAcquire(){ try{ if(navigator.wakeLock&&navigator.wakeLock.request){ navigator.wakeLock.request('screen').then(w=>{_kbWakeLock=w;}).catch(()=>{}); } }catch(e){} }
+function _kbWakeAcquire(){ try{ if(_kbCanWake()&&navigator.wakeLock.request){ navigator.wakeLock.request('screen').then(function(w){_kbWakeLock=w;}).catch(function(){}); } }catch(e){} }
 function _kbWakeRelease(){ try{ if(_kbWakeLock){_kbWakeLock.release();_kbWakeLock=null;} }catch(e){} }
+// iOS drops the wake lock on ANY interruption (lock, call, app switch) — re-acquire
+// when the tab becomes visible again during an active EMOM. Wired once.
+let _kbVisWired=false;
+function _kbWireVisibility(){ try{
+  if(_kbVisWired||typeof document==='undefined'||!document.addEventListener)return; _kbVisWired=true;
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState==='visible'&&wm&&wm.active&&wm.mode==='kbRun')_kbWakeAcquire();
+  });
+}catch(e){} }
 function _kbClearTimer(){ if(wm.kb&&wm.kb.interval){clearInterval(wm.kb.interval);wm.kb.interval=null;} }
 
 // Session-start screen: today's target + reason + PB + inline load change + manual override.
@@ -1975,10 +2015,20 @@ function renderWmKbStart(sug){
   const mins=(wm.kbOverrideMin!=null)?wm.kbOverrideMin:sug.minutes;
   const overridden=(wm.kbOverrideMin!=null&&wm.kbOverrideMin!==sug.minutes);
   wm._kbSug=sug;
+  // iOS < 16.4 (no Wake Lock): one-time notice to set Auto-Lock to Never, rather
+  // than the screen silently sleeping mid-EMOM.
+  let autoLockNote='';
+  try{
+    if(!_kbCanWake()&&!localStorage.getItem('kb_autolock_seen')){
+      localStorage.setItem('kb_autolock_seen','1');
+      autoLockNote=`<div style="background:rgba(255,193,7,.1);border:1px solid #ffc107;border-radius:10px;padding:10px 12px;margin:0 0 12px;font-size:12px;color:#ffc107;line-height:1.5;">📱 Your device can't keep the screen awake automatically. Set <b>Auto-Lock to Never</b> during workouts (Settings → Display &amp; Brightness → Auto-Lock).</div>`;
+    }
+  }catch(e){}
   document.getElementById('wmContent').innerHTML=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Finisher · Kettlebell Swing</div>
     <div class="wm-title" style="font-size:20px;margin-top:6px;">Today's target</div>
+    ${autoLockNote}
     <div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.28);border-radius:14px;padding:16px;margin:14px 0;">
       <div style="font-family:'Archivo Black',sans-serif;font-size:26px;color:var(--lime);letter-spacing:-1px;">EMOM ${mins} min × ${sug.reps}</div>
       <div style="font-size:13px;color:var(--text2);margin-top:6px;">@ ${load}kg${overridden?' · <span style="color:#ffc107;">manual override</span>':''}</div>
@@ -2023,7 +2073,8 @@ function wmKbBegin(){
   wm.kb={ target:mins, reps:sug.reps||12, load:(typeof getKbLoad==='function')?getKbLoad():20,
     roundsTarget:mins, startedAt:Date.now(), pausedMs:0, pausedAt:0, paused:false,
     interval:null, lastMin:-1, lastTick:-1, overridden:(wm.kbOverrideMin!=null&&wm.kbOverrideMin!==sug.minutes) };
-  _kbWakeAcquire();
+  _kbAudioInit();       // iOS: unlock audio from THIS user-gesture tap
+  _kbWakeAcquire(); _kbWireVisibility(); // keep screen awake + re-acquire on iOS interruptions
   renderWmKbTimer();
   _kbClearTimer();
   wm.kb.interval=setInterval(updateWmKbTimer,200);
@@ -2071,10 +2122,12 @@ function updateWmKbTimer(){
   const ring=document.getElementById('kb-ring');
   if(ring){ const C=603.2; ring.setAttribute('stroke-dashoffset',String(C*(secIn/60))); }
   if(!kb.paused){
-    // minute-start beep + vibrate (round 1 at t=0, then each new minute)
-    if(minIdx!==kb.lastMin&&minIdx<kb.roundsTarget){ kb.lastMin=minIdx; _kbBeep(900,180,0.3); if(navigator.vibrate)navigator.vibrate([180,60,180]); }
-    // soft 5-second warning tick at 55s
-    if(secIn>=55&&kb.lastTick!==minIdx&&minIdx<kb.roundsTarget-0){ kb.lastTick=minIdx; _kbBeep(520,90,0.14); if(navigator.vibrate)navigator.vibrate(60); }
+    // minute-start cue (round 1 at t=0, then each new minute): audio + border flash
+    // everywhere, plus vibration on Android. iOS has no vibrate → flash is the tactile-
+    // equivalent visual cue.
+    if(minIdx!==kb.lastMin&&minIdx<kb.roundsTarget){ kb.lastMin=minIdx; _kbCue(true); }
+    // soft 5-second warning at 55s
+    if(secIn>=55&&kb.lastTick!==minIdx&&minIdx<kb.roundsTarget){ kb.lastTick=minIdx; _kbCue(false); }
   }
 }
 function wmKbTogglePause(){

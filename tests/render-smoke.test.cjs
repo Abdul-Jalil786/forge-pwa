@@ -524,6 +524,30 @@ test("Phase 92: KB EMOM start screen + finish logging + day-detail render", () =
   assert.ok(!/Kettlebell[\s\S]{0,120}no sets logged/.test(dd), "not falsely 'no sets logged'");
 });
 
+// ---- Phase 92 iOS/PWA: graceful degradation (no vibrate / no wakeLock) ----
+test("Phase 92: iOS-safe cues — audio+flash instead of vibrate, Auto-Lock notice", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  // this harness's navigator has neither vibrate nor wakeLock — i.e. iOS-like
+  assert.equal(q(`_kbCanVibrate()`), false, "no navigator.vibrate (like iOS)");
+  assert.equal(q(`_kbCanWake()`), false, "no wakeLock (like iOS < 16.4)");
+  q(`_kbCue(true); _kbCue(false); _kbAudioInit(); _kbWakeAcquire();`); // must not throw without vibrate/audio/wakeLock
+  // one-time Auto-Lock notice on the start screen when wakeLock is unsupported
+  q(`localStorage.removeItem('kb_autolock_seen'); STATE.profile.programId='upper-lower-5d-fixed';`);
+  q(`STATE.exLog={
+    '2026-09-01':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
+    '2026-09-02':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
+    '2026-09-03':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
+    '2026-09-04':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}}
+  }`);
+  q(`wm.active=true; wm.session='lowerB'; wm.exIdx=WORKOUTS.lowerB.exercises.findIndex(e=>e.id==='kb_swing');`);
+  q(`renderWmKbStart(kbSuggestion(getKbLoad()))`);
+  assert.ok(/Auto-Lock/.test(q(`document.getElementById('wmContent').innerHTML`)), "Auto-Lock notice shown once");
+  q(`renderWmKbStart(kbSuggestion(getKbLoad()))`);
+  assert.ok(!/Auto-Lock/.test(q(`document.getElementById('wmContent').innerHTML`)), "notice not repeated");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
