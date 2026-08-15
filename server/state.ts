@@ -688,6 +688,29 @@ router.put("/profile/about-me", requireAuth, async (req: Request, res: Response)
   }
 });
 
+// Phase 92: Kettlebell Swing configured load (kg), per profile. Editable any time.
+router.put("/profile/kb-load", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const v = Number((req.body || {}).value);
+    if (!isFinite(v) || v <= 0 || v > 200) { res.status(400).json({ error: "load must be 0–200 kg" }); return; }
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+        '{profile,kbSwingLoad}',
+        ${JSON.stringify(v)}::jsonb,
+        true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put kb-load error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Phase 38: injury flags — object keyed by injury id
 router.put("/injuries", requireAuth, async (req: Request, res: Response) => {
   try {

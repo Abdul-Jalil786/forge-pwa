@@ -926,6 +926,29 @@ function toggleEnergyTag(date,tag){
 // ---- Phase 89: Oura walk analysis + vitals ----
 function getWalkAnalysis(){return pGet('walkAnalysis',{});}
 function getSessionHR(date){return (pGet('sessionHR',{})[date])||null;}
+
+// ---- Phase 92: Kettlebell Swing EMOM — per-profile load + suggestion (engine in kb-emom.js) ----
+// Configured default load (kg), editable per profile. 20kg is only the initial default.
+function getKbLoad(){ const v=STATE.profile&&STATE.profile.kbSwingLoad; return (v!=null&&+v>0)?+v:20; }
+function setKbLoad(kg){ const n=parseFloat(kg); if(!n||n<=0)return null; if(!STATE.profile)STATE.profile={}; STATE.profile.kbSwingLoad=n; updateLocalCache(); saveFieldToServer('/api/state/profile/kb-load',{value:n}); return n; }
+function _kbReadinessToday(){ const r=pGet('recovery',{})[todayStr()]; return (r&&r.readiness!=null)?r.readiness:null; }
+// Next-session target at a load (defaults to the configured load); applies the Oura
+// readiness guard automatically (null readiness = no Oura → guard skipped).
+function kbSuggestion(load){ if(typeof KB_EMOM==='undefined')return null; const L=(load!=null)?+load:getKbLoad(); return KB_EMOM.suggest(getExLog(),L,{readiness:_kbReadinessToday()}); }
+function getKbPBs(){ return (typeof KB_EMOM!=='undefined')?KB_EMOM.pbsByLoad(getExLog()):{}; }
+// Log the EMOM finisher as one set entry (used by the guided timer — Part 2/PR 3).
+// Counts toward session progress like any done exercise.
+function logKbEmomSet(date,o){
+  o=o||{}; const dayLog=getExLogForDate(date);
+  if(!dayLog.kb_swing||typeof dayLog.kb_swing!=='object')dayLog.kb_swing={sets:[]};
+  if(!Array.isArray(dayLog.kb_swing.sets))dayLog.kb_swing.sets=[];
+  const rounds=parseInt(o.rounds)||0, target=parseInt(o.roundsTarget)||0;
+  const outcome=(rounds>=target&&target>0)?'FULL':rounds>0?'PARTIAL':'SKIPPED';
+  dayLog.kb_swing.sets.push({emom:true,load:parseFloat(o.load)||getKbLoad(),rounds,roundsTarget:target,repsPerMin:parseInt(o.repsPerMin)||12,durationMin:parseInt(o.durationMin)||target,outcome,overridden:!!o.overridden,done:true,doneAt:Date.now()});
+  dayLog.kb_swing.done=true;
+  saveExLogForDate(date,dayLog);
+  return outcome;
+}
 function getOuraVitals(){return pGet('ouraVitals',{});}
 function getManualWalks(){return pGet('walkLog',{});}
 function ouraNeedsReconnect(){return !!STATE.ouraTokenInvalid;}

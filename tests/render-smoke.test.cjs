@@ -62,7 +62,7 @@ function makeContext() {
   return { ctx, els };
 }
 
-const FILES = ["targets.js", "programme-shared.js", "proactive-core.js", "data.js", "workout.js", "pages.js", "app.js"];
+const FILES = ["targets.js", "programme-shared.js", "proactive-core.js", "kb-emom.js", "data.js", "workout.js", "pages.js", "app.js"];
 function bootApp() {
   const { ctx, els } = makeContext();
   for (const f of FILES) {
@@ -460,6 +460,34 @@ test("Phase 92: KB Swing is the final exercise on Lower A + Lower B", () => {
   assert.equal(ex.muscle, "Glutes/Posterior Chain");
   assert.equal(ex.sets, 3); assert.equal(ex.reps, "10"); assert.equal(ex.rest, 60);
   assert.equal(q(`FORGE_PROGRAMME.exerciseName('kb_swing')`), "Kettlebell Swing (two-handed, Russian)", "name map in sync");
+});
+
+// ---- Phase 92 Part 3 (engine + data plumbing): KB EMOM wired into the app ----
+test("Phase 92: KB EMOM engine is loaded and wired to data helpers", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  assert.equal(q(`typeof KB_EMOM`), "object", "kb-emom.js loaded as a global");
+  // default load + editable
+  assert.equal(q(`getKbLoad()`), 20, "default load 20kg");
+  q(`setKbLoad(24)`);
+  assert.equal(q(`STATE.profile.kbSwingLoad`), 24, "load persists to profile");
+  // no history → Phase 1 normal
+  q(`STATE.exLog={}`);
+  assert.equal(q(`kbSuggestion(20).type`), "normal", "cold start = Phase 1 normal");
+  // 4 FULL 3×10 → unlocks EMOM 5×12
+  q(`STATE.exLog={
+    '2026-09-01':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
+    '2026-09-02':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
+    '2026-09-03':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
+    '2026-09-04':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}}
+  }`);
+  const s = JSON.parse(q(`JSON.stringify(kbSuggestion(20))`));
+  assert.equal(s.type, "emom"); assert.equal(s.minutes, 5); assert.equal(s.reps, 12);
+  // logKbEmomSet writes a FULL emom set + PB reflects it
+  q(`logKbEmomSet('2026-09-05',{load:20,rounds:5,roundsTarget:5,repsPerMin:12,durationMin:5})`);
+  assert.equal(q(`STATE.exLog['2026-09-05'].kb_swing.sets[0].outcome`), "FULL", "outcome derived");
+  assert.equal(q(`getKbPBs()['20']`), "5×12", "PB per load");
 });
 
 test("Coach Settings save/remove handlers are all defined", () => {
