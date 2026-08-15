@@ -2370,11 +2370,16 @@ function renderDayDetail(date){
       const efMap={easy:' 😌',solid:' 💪',tough:' 🔥',hard:' 🔥',maybe:' 🤔'};
       const setRows=doneEx.map(ex=>{
         const timed=isTimeBased(ex);
-        const sets=(sessionLog[ex.id].sets||[]).filter(s=>timed?s.seconds:(s.kg||s.reps));
-        const exVol=timed?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
+        // Phase 90a: carries (Suitcase Carry) log per-side L/R seconds, not kg×reps
+        // or a single `seconds` — handle them so they don't read "no sets logged".
+        const carry=(typeof isCarry==='function')&&isCarry(ex);
+        const sets=(sessionLog[ex.id].sets||[]).filter(s=>carry?(s.leftSeconds!=null||s.rightSeconds!=null):timed?s.seconds:(s.kg||s.reps));
+        const exVol=(timed||carry)?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
         totalVolume+=exVol;
         const exEffort=sessionLog[ex.id].effort;
-        const summary=timed
+        const summary=carry
+          ?sets.map(s=>`L ${s.leftSeconds||0}s · R ${s.rightSeconds||0}s`).join(', ')+(exEffort?efMap[exEffort]||'':'')
+          :timed
           ?sets.map(s=>fmtSec(s.seconds)).join(', ')+(exEffort?efMap[exEffort]||'':'')
           :sets.map(s=>`${s.kg||'-'}×${s.reps||'-'}${s.effort?(efMap[s.effort]||''):''}`).join(', ');
         return `<div onclick="openSetEdit('${date}','${ex.id}')" style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;">
