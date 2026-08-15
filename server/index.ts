@@ -1951,6 +1951,31 @@ async function seedJayNaveedLowerNotesV1() {
   }
 }
 
+// Phase 92 (Part 1): Kettlebell Swing finisher — coaching note for Jay + Naveed
+// (per-profile, state.exerciseNotes). The exercise itself was added to the global
+// lowerA/lowerB templates (so it's on all 5-day-split users incl. Farukh); only
+// this note is scoped to Jay + Naveed. EMOM set type + adaptive progression is a
+// separate follow-up (Part 2/3).
+async function seedJayNaveedKbSwingNoteV1() {
+  const emails = ["jay@afjltd.co.uk", "mohammed.naveed@birmingham.gov.uk"];
+  const note = "Hinge like RDL — hips throw the bell, arms are ropes. Bell to chest height only. Neutral spine at the bottom, sharp exhale at top. Stop the set the moment form softens. 3/10 pain rule applies.";
+  for (const email of emails) {
+    try {
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (!user) { console.log(`[migration] kb-swing note: no account for ${email} (skipped)`); continue; }
+      const state: any = user.state || {};
+      if (state.jayNaveedKbSwingNoteV1) continue;
+      if (!state.exerciseNotes || typeof state.exerciseNotes !== "object") state.exerciseNotes = {};
+      state.exerciseNotes["kb_swing"] = { note, addedAt: new Date().toISOString(), source: "coach" };
+      state.jayNaveedKbSwingNoteV1 = true;
+      await prisma.user.update({ where: { id: user.id }, data: { state } });
+      console.log(`[migration] KB swing coaching note seeded for ${email}`);
+    } catch (err) {
+      console.error(`[migration] seedJayNaveedKbSwingNoteV1 failed for ${email}:`, err);
+    }
+  }
+}
+
 // Phase 41n: swap breakfast eggs from "4 whole boiled" to "3 whole boiled +
 // 4 egg whites" (what Jay actually eats). Adds 9g protein, saves 5g fat,
 // virtually the same calories. Meal totals updated to reflect the swap.
@@ -2572,6 +2597,7 @@ const server = app.listen(PORT, async () => {
   await seedAbdulBoditraxV1();
   await seedFiveDaySplitV1();
   await seedJayNaveedLowerNotesV1(); // Phase 91: RDL + golfer's-elbow coaching notes
+  await seedJayNaveedKbSwingNoteV1(); // Phase 92: KB swing finisher coaching note
   if (IS_DEV) await seedDevTestUser(); // DEV/staging only — never runs in production
   // Phase 46: heal a fully-missed Sunday report (process was down across the
   // 09:00 tick). Fire-and-forget; 150h threshold means it only generates when

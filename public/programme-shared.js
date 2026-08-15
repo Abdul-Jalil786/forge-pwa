@@ -50,6 +50,7 @@ var EXERCISE_NAMES = {
   l5: 'Hip Thrust',
   l6: 'Calf Raise',
   core_suitcase: 'Suitcase Carry',
+  kb_swing: 'Kettlebell Swing (two-handed, Russian)',
   // Home
   h1: 'Goblet Squat',
   h2: 'Push-Up',
@@ -110,9 +111,9 @@ var SESSION_EXERCISE_IDS = {
   full: ['l1', 'u1', 'u3', 'u4', 'l4', 'u5', 'u6', 'u7', 'u9'],
   home: ['h1', 'h2', 'h3', 'h4', 'u4', 'h5', 'u6', 'u9', 'core_dead_bug'],
   upperA: ['u4', 'u1', 'u3', 'u5', 'h5', 'reh_1', 'reh_2', 'reh_3'],
-  lowerA: ['h1', 'l1', 'l4', 'l6', 'core_pallof'],
+  lowerA: ['h1', 'l1', 'l4', 'l6', 'core_pallof', 'kb_swing'],
   upperB: ['u2', 'h3', 'u4', 'u8', 'u6', 'u7', 'core_dead_bug', 'reh_1', 'reh_2', 'reh_3'],
-  lowerB: ['l5', 'l2', 'l1', 'core_suitcase'],
+  lowerB: ['l5', 'l2', 'l1', 'core_suitcase', 'kb_swing'],
   zone2: ['cardio_z2'],
 };
 
