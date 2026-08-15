@@ -490,6 +490,40 @@ test("Phase 92: KB EMOM engine is loaded and wired to data helpers", () => {
   assert.equal(q(`getKbPBs()['20']`), "5×12", "PB per load");
 });
 
+// ---- Phase 92 Part 2: guided EMOM timer flow ----
+test("Phase 92: KB EMOM start screen + finish logging + day-detail render", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  q(`STATE.profile.programId='upper-lower-5d-fixed';`);
+  // 4 FULL 3×10 at 20kg → EMOM unlocked (5×12)
+  q(`STATE.exLog={
+    '2026-09-01':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
+    '2026-09-02':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
+    '2026-09-03':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
+    '2026-09-04':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}}
+  }`);
+  q(`wm.active=true; wm.session='lowerB'; wm.exIdx=WORKOUTS.lowerB.exercises.findIndex(e=>e.id==='kb_swing'); wm.setIdx=0;`);
+  // session-start screen
+  q(`renderWmKbStart(kbSuggestion(getKbLoad()))`);
+  const start = q(`document.getElementById('wmContent').innerHTML`);
+  assert.ok(/EMOM 5 min × 12/.test(start), "target shown");
+  assert.ok(/START EMOM/.test(start), "start button");
+  assert.ok(/Weight/.test(start) && /20kg/.test(start), "inline load change @ 20kg");
+  // run + complete the EMOM → logs a FULL set
+  q(`wm._kbSug=kbSuggestion(getKbLoad()); wmKbBegin(); wmKbEnd(true);`);
+  const T = q(`todayStr()`);
+  const set = JSON.parse(q(`JSON.stringify(STATE.exLog['${T}'].kb_swing.sets.find(s=>s.emom))`));
+  assert.equal(set.outcome, "FULL"); assert.equal(set.rounds, 5); assert.equal(set.roundsTarget, 5);
+  assert.ok(/EMOM 5\/5/.test(q(`document.getElementById('wmContent').innerHTML`)), "completion screen shows rounds");
+  // day-detail renders the EMOM set (not "no sets logged")
+  q(`STATE.profile.programmeStartDate='2026-07-20'; STATE.exLog['2026-08-14']={kb_swing:{done:true,sets:[{emom:true,load:20,rounds:6,roundsTarget:8,repsPerMin:12,outcome:'PARTIAL',done:true}]},_session:{sessionType:'lowerB',startedAt:1,completedAt:2}};`);
+  q(`renderDayDetail('2026-08-14')`);
+  const dd = q(`document.getElementById('ddContent').innerHTML`);
+  assert.ok(/EMOM 6\/8/.test(dd), "day-detail shows the EMOM result");
+  assert.ok(!/Kettlebell[\s\S]{0,120}no sets logged/.test(dd), "not falsely 'no sets logged'");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
