@@ -405,8 +405,8 @@ test("Phase 91: lower A/B reordered; schemes + cross-runtime map stay in sync", 
   const { ctx } = bootApp();
   seed(ctx);
   const ids = (tmpl) => vm.runInContext(`JSON.stringify(WORKOUTS['${tmpl}'].exercises.map(e=>e.id))`, ctx);
-  assert.equal(ids("lowerA"), JSON.stringify(["h1", "l1", "l4", "l6", "core_pallof"]), "Lower A: Goblet, Leg Press, Leg Curl, Calf, Pallof");
-  assert.equal(ids("lowerB"), JSON.stringify(["l5", "l2", "l1", "core_suitcase"]), "Lower B: Hip Thrust, RDL, Leg Press, Suitcase");
+  assert.equal(ids("lowerA"), JSON.stringify(["h1", "l1", "l4", "l6", "core_pallof", "kb_swing"]), "Lower A: …Pallof, KB Swing (Phase 92)");
+  assert.equal(ids("lowerB"), JSON.stringify(["l5", "l2", "l1", "core_suitcase", "kb_swing"]), "Lower B: …Suitcase, KB Swing (Phase 92)");
   // schemes preserved on the moved lifts
   const ex = (tmpl, id) => vm.runInContext(`JSON.stringify(WORKOUTS['${tmpl}'].exercises.find(e=>e.id==='${id}'))`, ctx);
   const rdl = JSON.parse(ex("lowerB", "l2"));
@@ -445,6 +445,21 @@ test("Phase 90a: Suitcase Carry sets show L/R seconds in the day detail", () => 
   assert.ok(/L 45s · R 42s/.test(dd), "carry L/R seconds rendered");
   // the carry row must NOT read 'no sets logged' now that it's handled
   assert.ok(!/Suitcase Carry[\s\S]{0,120}no sets logged/.test(dd), "carry no longer falsely 'no sets logged'");
+});
+
+// ---- Phase 92 Part 1: Kettlebell Swing finisher on both lower days ----
+test("Phase 92: KB Swing is the final exercise on Lower A + Lower B", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  const last = (t) => q(`(()=>{const e=WORKOUTS['${t}'].exercises;return e[e.length-1].id;})()`);
+  assert.equal(last("lowerA"), "kb_swing", "Lower A ends with KB Swing (after Pallof)");
+  assert.equal(last("lowerB"), "kb_swing", "Lower B ends with KB Swing (after Suitcase)");
+  const ex = JSON.parse(q(`JSON.stringify(WORKOUTS.lowerA.exercises.find(e=>e.id==='kb_swing'))`));
+  assert.equal(ex.name, "Kettlebell Swing (two-handed, Russian)");
+  assert.equal(ex.muscle, "Glutes/Posterior Chain");
+  assert.equal(ex.sets, 3); assert.equal(ex.reps, "10"); assert.equal(ex.rest, 60);
+  assert.equal(q(`FORGE_PROGRAMME.exerciseName('kb_swing')`), "Kettlebell Swing (two-handed, Russian)", "name map in sync");
 });
 
 test("Coach Settings save/remove handlers are all defined", () => {
