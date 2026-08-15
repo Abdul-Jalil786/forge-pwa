@@ -2373,11 +2373,15 @@ function renderDayDetail(date){
         // Phase 90a: carries (Suitcase Carry) log per-side L/R seconds, not kg×reps
         // or a single `seconds` — handle them so they don't read "no sets logged".
         const carry=(typeof isCarry==='function')&&isCarry(ex);
-        const sets=(sessionLog[ex.id].sets||[]).filter(s=>carry?(s.leftSeconds!=null||s.rightSeconds!=null):timed?s.seconds:(s.kg||s.reps));
-        const exVol=(timed||carry)?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
+        // Phase 92: KB Swing EMOM sets store rounds/roundsTarget/reps/load, not kg×reps.
+        const emom=(sessionLog[ex.id].sets||[]).some(s=>s&&s.emom);
+        const sets=(sessionLog[ex.id].sets||[]).filter(s=>emom?s.emom:carry?(s.leftSeconds!=null||s.rightSeconds!=null):timed?s.seconds:(s.kg||s.reps));
+        const exVol=(timed||carry||emom)?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
         totalVolume+=exVol;
         const exEffort=sessionLog[ex.id].effort;
-        const summary=carry
+        const summary=emom
+          ?sets.map(s=>`EMOM ${s.rounds||0}/${s.roundsTarget||0} · ${s.repsPerMin||12}×/min @ ${s.load||'?'}kg${s.outcome?' ('+s.outcome+')':''}`).join(', ')
+          :carry
           ?sets.map(s=>`L ${s.leftSeconds||0}s · R ${s.rightSeconds||0}s`).join(', ')+(exEffort?efMap[exEffort]||'':'')
           :timed
           ?sets.map(s=>fmtSec(s.seconds)).join(', ')+(exEffort?efMap[exEffort]||'':'')

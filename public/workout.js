@@ -632,6 +632,7 @@ function exitGuidedWorkout(){
   // lower day), so finishing your real lifts and closing meant no recap + no
   // low-down. Now any close after real work surfaces the report; the recap screen's
   // own ✕ then closes cleanly (recapShown guards against a re-trigger loop).
+  if(typeof _kbClearTimer==='function')_kbClearTimer(); if(typeof _kbWakeRelease==='function')_kbWakeRelease(); // Phase 92: stop EMOM timer + release wake lock
   if(wm.active&&!wm.recapShown&&typeof wmFinish==='function'&&_wmHasLoggedWork()){
     if(wm.restInterval)clearInterval(wm.restInterval);
     if(wm.transitionInterval)clearInterval(wm.transitionInterval);
@@ -740,6 +741,10 @@ function resumeGuidedWorkout(){
                             ((typeof isCarry==='function'&&_ex&&isCarry(_ex))?renderWmCarryEffort:renderWmEffort)(); break; }
     case 'timed-effort':  renderWmTimedEffort(); break;
     case 'exDone':        renderWmExerciseDone(); break;
+    // Phase 92: don't resume a live EMOM mid-round — return to its start screen.
+    case 'kbStart':
+    case 'kbRun':
+    case 'kbDone':        if(wm.kb&&wm.kb.interval){clearInterval(wm.kb.interval);wm.kb.interval=null;} renderWmKbStart(kbSuggestion((typeof getKbLoad==='function')?getKbLoad():20)); break;
     default:              renderWmOutline();
   }
 }
@@ -1441,6 +1446,13 @@ function renderWmSet(){
   if(typeof isCarry==='function'&&isCarry(ex)){renderWmSetCarry();return;}
   const timed=isTimeBased(ex);
   if(timed){renderWmSetTimed();return;}
+  // Phase 92 Part 2: KB Swing switches from normal 3×10 (Phase 1) to the guided
+  // EMOM timer (Phase 2+), driven by the per-load progression engine. Phase 1 falls
+  // through to the normal weighted path below.
+  if(ex.id==='kb_swing'&&typeof kbSuggestion==='function'){
+    const kbSug=kbSuggestion((typeof getKbLoad==='function')?getKbLoad():20);
+    if(kbSug&&kbSug.type==='emom'){ renderWmKbStart(kbSug); return; }
+  }
   const date=todayStr();
   const dayLog=getExLogForDate(date);
   const prev=getPreviousSessionData(date,wm.session);
@@ -1450,7 +1462,8 @@ function renderWmSet(){
   const existingSet=dayLog[ex.id]?.sets?.[wm.setIdx];
   const startKg=existingSet?.kg||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx)?wm.autoReg.kg:null)||sug?.kg||'';
   const repMatch=String(ex.reps).match(/(\d+)[–-](\d+)/);
-  const targetReps=existingSet?.reps||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx&&wm.autoReg.reps)?wm.autoReg.reps:null)||sug?.reps||(repMatch?parseInt(repMatch[2]):8);
+  const singleRep=String(ex.reps).match(/^\s*(\d+)\s*$/); // Phase 92: fixed-rep lifts (KB 3×10) target that number
+  const targetReps=existingSet?.reps||((wm.autoReg&&wm.autoReg.forSetIdx===wm.setIdx&&wm.autoReg.reps)?wm.autoReg.reps:null)||sug?.reps||(repMatch?parseInt(repMatch[2]):(singleRep?parseInt(singleRep[1]):8));
   // Phase 38: warm-up prompt on the very first working set of the session
   const isSessionOpener=wm.exIdx===0&&wm.setIdx===0;
   const workKg=parseFloat(startKg)||0;
@@ -1933,6 +1946,186 @@ function wmRedoTimedSet(idx){
   wm.setIdx=idx;
   renderWmSetTimed();
 }
+
+// ===================== Phase 92 Part 2: KB Swing guided EMOM =====================
+// Full-screen EMOM finisher: per-minute rounds, progress ring, beep+vibrate each
+// minute, a soft 55s warning, pause + honest end-early, screen kept awake. Reuses
+// setInterval + navigator.vibrate; adds a small WebAudio beep + wakeLock (no refactor
+// of the existing wm/rest timers). Target comes from the per-load engine (kb-emom.js).
+let _kbAudioCtx=null;
+function _kbBeep(freq,ms,vol){ try{
+  const AC=window.AudioContext||window.webkitAudioContext; if(!AC)return;
+  if(!_kbAudioCtx)_kbAudioCtx=new AC();
+  const o=_kbAudioCtx.createOscillator(),g=_kbAudioCtx.createGain();
+  o.type='sine'; o.frequency.value=freq||880; g.gain.value=(vol==null?0.25:vol);
+  o.connect(g); g.connect(_kbAudioCtx.destination);
+  o.start(); o.stop(_kbAudioCtx.currentTime+((ms||160)/1000));
+}catch(e){} }
+let _kbWakeLock=null;
+function _kbWakeAcquire(){ try{ if(navigator.wakeLock&&navigator.wakeLock.request){ navigator.wakeLock.request('screen').then(w=>{_kbWakeLock=w;}).catch(()=>{}); } }catch(e){} }
+function _kbWakeRelease(){ try{ if(_kbWakeLock){_kbWakeLock.release();_kbWakeLock=null;} }catch(e){} }
+function _kbClearTimer(){ if(wm.kb&&wm.kb.interval){clearInterval(wm.kb.interval);wm.kb.interval=null;} }
+
+// Session-start screen: today's target + reason + PB + inline load change + manual override.
+function renderWmKbStart(sug){
+  wm.mode='kbStart';
+  const load=(typeof getKbLoad==='function')?getKbLoad():20;
+  const pbs=(typeof getKbPBs==='function')?getKbPBs():{};
+  const pbStr=Object.keys(pbs).sort((a,b)=>+a-+b).map(k=>`${k}kg: ${pbs[k]} ✓`).join(' · ');
+  const mins=(wm.kbOverrideMin!=null)?wm.kbOverrideMin:sug.minutes;
+  const overridden=(wm.kbOverrideMin!=null&&wm.kbOverrideMin!==sug.minutes);
+  wm._kbSug=sug;
+  document.getElementById('wmContent').innerHTML=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Finisher · Kettlebell Swing</div>
+    <div class="wm-title" style="font-size:20px;margin-top:6px;">Today's target</div>
+    <div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.28);border-radius:14px;padding:16px;margin:14px 0;">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:26px;color:var(--lime);letter-spacing:-1px;">EMOM ${mins} min × ${sug.reps}</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:6px;">@ ${load}kg${overridden?' · <span style="color:#ffc107;">manual override</span>':''}</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:8px;line-height:1.5;">${sug.reason}${sug.capped?' 🛡️':''}</div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--text2);">Weight</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button onclick="wmKbLoadStep(-2)" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:20px;cursor:pointer;">−</button>
+        <div style="min-width:64px;text-align:center;font-family:'Archivo Black',sans-serif;font-size:18px;">${load}kg</div>
+        <button onclick="wmKbLoadStep(2)" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:20px;cursor:pointer;">+</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px;">
+      <div style="font-size:12px;color:var(--text2);">Minutes <span style="color:var(--text3);">(override)</span></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button onclick="wmKbMinStep(-1)" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:20px;cursor:pointer;">−</button>
+        <div style="min-width:64px;text-align:center;font-family:'Archivo Black',sans-serif;font-size:18px;">${mins} min</div>
+        <button onclick="wmKbMinStep(1)" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:20px;cursor:pointer;">+</button>
+      </div>
+    </div>
+    ${pbStr?`<div style="font-size:11px;color:var(--text3);margin-bottom:14px;">🏆 ${pbStr}</div>`:''}
+    <button class="wm-cta" onclick="wmKbBegin()">START EMOM →</button>
+    <button class="wm-cta ghost" style="margin-top:8px;" onclick="wmKbSkip()">Skip finisher</button>
+  `;
+}
+function wmKbLoadStep(delta){
+  const cur=(typeof getKbLoad==='function')?getKbLoad():20;
+  const next=Math.max(4,cur+delta);
+  if(typeof setKbLoad==='function')setKbLoad(next);
+  wm.kbOverrideMin=null; // new weight → re-enter on the new load's ladder
+  renderWmKbStart(kbSuggestion(next));
+}
+function wmKbMinStep(delta){
+  const base=(wm.kbOverrideMin!=null)?wm.kbOverrideMin:(wm._kbSug?wm._kbSug.minutes:5);
+  wm.kbOverrideMin=Math.max(1,base+delta);
+  renderWmKbStart(wm._kbSug);
+}
+function wmKbBegin(){
+  const sug=wm._kbSug||{}; const mins=(wm.kbOverrideMin!=null)?wm.kbOverrideMin:sug.minutes;
+  wm.mode='kbRun';
+  wm.kb={ target:mins, reps:sug.reps||12, load:(typeof getKbLoad==='function')?getKbLoad():20,
+    roundsTarget:mins, startedAt:Date.now(), pausedMs:0, pausedAt:0, paused:false,
+    interval:null, lastMin:-1, lastTick:-1, overridden:(wm.kbOverrideMin!=null&&wm.kbOverrideMin!==sug.minutes) };
+  _kbWakeAcquire();
+  renderWmKbTimer();
+  _kbClearTimer();
+  wm.kb.interval=setInterval(updateWmKbTimer,200);
+  updateWmKbTimer();
+}
+function _kbElapsedSec(){
+  const kb=wm.kb; if(!kb)return 0;
+  const ref=kb.paused?kb.pausedAt:Date.now();
+  return Math.max(0,(ref-kb.startedAt-kb.pausedMs)/1000);
+}
+function renderWmKbTimer(){
+  const kb=wm.kb;
+  document.getElementById('wmContent').innerHTML=`
+    <div style="text-align:center;padding-top:24px;">
+      <div id="kb-round" style="font-family:'Archivo Black',sans-serif;font-size:30px;color:var(--lime);letter-spacing:-1px;">ROUND 1/${kb.roundsTarget}</div>
+      <div style="position:relative;width:220px;height:220px;margin:18px auto 8px;">
+        <svg viewBox="0 0 220 220" style="width:100%;height:100%;transform:rotate(-90deg);">
+          <circle cx="110" cy="110" r="96" fill="none" stroke="var(--border)" stroke-width="12"/>
+          <circle id="kb-ring" cx="110" cy="110" r="96" fill="none" stroke="var(--lime)" stroke-width="12" stroke-linecap="round" stroke-dasharray="603.2" stroke-dashoffset="0"/>
+        </svg>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+          <div id="kb-sec" style="font-family:'Archivo Black',sans-serif;font-size:64px;line-height:1;color:var(--text);">60</div>
+          <div style="font-size:11px;color:var(--text3);letter-spacing:1px;">SEC THIS MINUTE</div>
+        </div>
+      </div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:34px;color:var(--orange);letter-spacing:-1px;">${kb.reps} SWINGS</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px;">every minute · @ ${kb.load}kg</div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:22px;">
+      <button id="kb-pausebtn" class="wm-cta ghost" style="flex:1;" onclick="wmKbTogglePause()">⏸ PAUSE</button>
+      <button class="wm-cta" style="flex:1;background:rgba(255,85,0,.14);border-color:var(--red);color:var(--red);" onclick="wmKbEnd(false)">END EARLY</button>
+    </div>
+  `;
+}
+function updateWmKbTimer(){
+  const kb=wm.kb; if(!kb||wm.mode!=='kbRun')return;
+  const el=_kbElapsedSec();
+  const totalSec=kb.roundsTarget*60;
+  if(el>=totalSec){ wmKbEnd(true); return; }
+  const minIdx=Math.floor(el/60);
+  const secIn=el-minIdx*60;
+  const round=Math.min(kb.roundsTarget,minIdx+1);
+  const rEl=document.getElementById('kb-round'); if(rEl)rEl.textContent=`ROUND ${round}/${kb.roundsTarget}`;
+  const sEl=document.getElementById('kb-sec'); if(sEl)sEl.textContent=Math.max(0,Math.ceil(60-secIn));
+  const ring=document.getElementById('kb-ring');
+  if(ring){ const C=603.2; ring.setAttribute('stroke-dashoffset',String(C*(secIn/60))); }
+  if(!kb.paused){
+    // minute-start beep + vibrate (round 1 at t=0, then each new minute)
+    if(minIdx!==kb.lastMin&&minIdx<kb.roundsTarget){ kb.lastMin=minIdx; _kbBeep(900,180,0.3); if(navigator.vibrate)navigator.vibrate([180,60,180]); }
+    // soft 5-second warning tick at 55s
+    if(secIn>=55&&kb.lastTick!==minIdx&&minIdx<kb.roundsTarget-0){ kb.lastTick=minIdx; _kbBeep(520,90,0.14); if(navigator.vibrate)navigator.vibrate(60); }
+  }
+}
+function wmKbTogglePause(){
+  const kb=wm.kb; if(!kb)return;
+  if(kb.paused){ kb.pausedMs+=(Date.now()-kb.pausedAt); kb.paused=false; kb.pausedAt=0; }
+  else { kb.paused=true; kb.pausedAt=Date.now(); }
+  const b=document.getElementById('kb-pausebtn'); if(b)b.textContent=kb.paused?'▶ RESUME':'⏸ PAUSE';
+}
+function wmKbEnd(complete){
+  const kb=wm.kb; if(!kb)return;
+  const el=_kbElapsedSec();
+  // rounds completed = full minutes elapsed (a minute counts once its swings are done);
+  // "complete" (timer ran out) = the full target.
+  const rounds=complete?kb.roundsTarget:Math.min(kb.roundsTarget,Math.floor(el/60));
+  wmKbFinish(rounds);
+}
+function wmKbSkip(){
+  // Skip the finisher entirely — no set logged, exercise marked skipped (no deload).
+  const date=todayStr(); const dayLog=getExLogForDate(date);
+  dayLog.kb_swing={done:false,skipped:true,skippedAt:Date.now(),sets:[]};
+  saveExLogForDate(date,dayLog);
+  wm.kbOverrideMin=null;
+  if(typeof wmNextExercise==='function')wmNextExercise();
+}
+function wmKbFinish(rounds){
+  _kbClearTimer(); _kbWakeRelease();
+  const kb=wm.kb||{}; const date=todayStr();
+  const outcome=(typeof logKbEmomSet==='function')
+    ? logKbEmomSet(date,{load:kb.load,rounds:rounds,roundsTarget:kb.roundsTarget,repsPerMin:kb.reps,durationMin:kb.roundsTarget,overridden:kb.overridden})
+    : 'PARTIAL';
+  _wmMarkExerciseDone();
+  wm.kbOverrideMin=null;
+  wm.mode='kbDone'; renderWmKbDone(rounds,outcome);
+}
+function renderWmKbDone(rounds,outcome){
+  const kb=wm.kb||{};
+  const emoji=outcome==='FULL'?'🔥':outcome==='PARTIAL'?'💪':'·';
+  const col=outcome==='FULL'?'var(--lime)':outcome==='PARTIAL'?'#ffc107':'var(--text3)';
+  // preview next session's target on this load now that history includes this set
+  const next=(typeof kbSuggestion==='function')?kbSuggestion(kb.load):null;
+  document.getElementById('wmContent').innerHTML=`
+    <div style="text-align:center;padding-top:40px;">
+      <div style="font-size:56px;">${emoji}</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:30px;color:${col};margin-top:8px;">EMOM ${rounds}/${kb.roundsTarget}</div>
+      <div style="font-size:14px;color:var(--text2);margin-top:4px;">${outcome} · ${kb.reps} swings/min @ ${kb.load}kg</div>
+      ${next?`<div style="font-size:12px;color:var(--text3);margin-top:16px;line-height:1.5;">Next ${kb.load}kg target: <b>EMOM ${next.minutes} min × ${next.reps}</b><br>${next.reason}</div>`:''}
+    </div>
+    <button class="wm-cta" style="margin-top:28px;" onclick="wmKbDoneContinue()">FINISH WORKOUT 🎉</button>
+  `;
+}
+function wmKbDoneContinue(){ if(typeof wmNextExercise==='function')wmNextExercise(); }
 
 function renderWmTimedEffort(){
   const w=getWorkout(wm.session);
