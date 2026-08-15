@@ -428,6 +428,25 @@ test("Phase 91: lower A/B reordered; schemes + cross-runtime map stay in sync", 
   assert.equal(sess("2026-08-16"), null, "Sun = rest");
 });
 
+// ---- Phase 90a: day-detail renders carry (Suitcase) sets, not "no sets logged" ----
+test("Phase 90a: Suitcase Carry sets show L/R seconds in the day detail", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  q(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.profile.programmeStartDate='2026-07-20';`);
+  q(`STATE.exLog['2026-08-14']={
+    l5:{done:true,sets:[{kg:110,reps:10,done:true}]},
+    core_suitcase:{done:true,sets:[{leftSeconds:45,rightSeconds:42,leftKg:24,rightKg:24,done:true}]},
+    _session:{sessionType:'lowerB',startedAt:1,completedAt:2}
+  }`); // 2026-08-14 is a Friday → Lower B on the 5-day split
+  q(`renderDayDetail('2026-08-14')`);
+  const dd = q(`document.getElementById('ddContent').innerHTML`);
+  assert.ok(/Suitcase Carry/.test(dd), "carry exercise listed");
+  assert.ok(/L 45s · R 42s/.test(dd), "carry L/R seconds rendered");
+  // the carry row must NOT read 'no sets logged' now that it's handled
+  assert.ok(!/Suitcase Carry[\s\S]{0,120}no sets logged/.test(dd), "carry no longer falsely 'no sets logged'");
+});
+
 test("Coach Settings save/remove handlers are all defined", () => {
   const { ctx } = bootApp();
   for (const fn of [
