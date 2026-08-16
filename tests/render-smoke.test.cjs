@@ -1648,3 +1648,26 @@ test("Boditrax CRUD round-trips through STATE with validation", () => {
   ctx.deleteBoditraxEntry(added.id);
   assert.equal(ctx.getBoditraxLog().length, 1, "delete failed");
 });
+
+// A scan is blocked by the four REQUIRED fields, never by the (optional) Time —
+// the source of "I changed the time but can't submit". Time also round-trips.
+test("Boditrax: Time is optional and round-trips; empty required fields are the blocker", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const startLen = ctx.getBoditraxLog().length;
+  // Changing only the time with the required fields empty → REJECTED, and the errors
+  // name Weight/Muscle/Fat/Visceral, NOT time.
+  const blocked = ctx.addBoditraxEntry({ date: "2026-08-14", time: "04:12" });
+  assert.equal(blocked.ok, false, "empty required fields block the save");
+  assert.ok(blocked.errors.weight && blocked.errors.muscle && blocked.errors.fat && blocked.errors.visceral, "the four required fields are flagged");
+  assert.ok(!blocked.errors.time, "time is never the blocker (it's optional)");
+  assert.equal(ctx.getBoditraxLog().length, startLen, "blocked entry not persisted");
+  // A complete scan WITH a chosen time keeps that exact time.
+  const withTime = ctx.addBoditraxEntry({ date: "2026-08-14", time: "04:12", weight: 106.1, muscle: 73.5, fat: 28.0, visceral: 13 });
+  assert.equal(withTime.ok, true, JSON.stringify(withTime.errors));
+  assert.equal(withTime.entry.time, "04:12", "the chosen time is saved verbatim");
+  // A complete scan WITHOUT a time still saves (time → null).
+  const noTime = ctx.addBoditraxEntry({ date: "2026-08-15", weight: 106.0, muscle: 73.4, fat: 27.9, visceral: 13 });
+  assert.equal(noTime.ok, true, "a scan without a time still saves");
+  assert.equal(noTime.entry.time, null, "a missing time is stored as null, not an error");
+});

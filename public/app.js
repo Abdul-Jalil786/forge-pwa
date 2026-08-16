@@ -2487,6 +2487,10 @@ function showDexaHistory(){
 // PHASE 58 — BODITRAX LOGGING (trusted BIA; source:'boditrax')
 // ============================================================
 const BDX_NUM_FIELDS=['weight','muscle','fat','visceral','water','bone','ffm','cellular','bmr','metabolicAge','physique','legMuscle','boditraxScore','proteinPct'];
+// Human labels for the toast/highlight when a save is blocked, so it's obvious WHICH
+// field is missing (Time is optional and never blocks — a common point of confusion).
+const _BDX_LABELS={date:'Date',weight:'Weight',muscle:'Muscle',fat:'Fat',visceral:'Visceral',water:'Water',bone:'Bone',ffm:'FFM',cellular:'Cellular',bmr:'BMR',metabolicAge:'Met age',physique:'Physique',legMuscle:'Leg muscle',boditraxScore:'Boditrax score',proteinPct:'Protein %'};
+function _bdxClearHighlights(){['date','time'].concat(BDX_NUM_FIELDS).forEach(f=>{const el=document.getElementById('bdx-'+f);if(el)el.style.borderColor='var(--border)';});}
 function openBoditraxEdit(id){
   const existing=id?getBoditraxLog().find(s=>s&&s.id===id):null;
   const set=(elId,v)=>{const el=document.getElementById(elId);if(el)el.value=v==null?'':v;};
@@ -2496,6 +2500,7 @@ function openBoditraxEdit(id){
   set('bdx-time',existing?existing.time:(typeof fmtNow==='function'?fmtNow():''));
   BDX_NUM_FIELDS.forEach(f=>set('bdx-'+f,existing?existing[f]:''));
   const err=document.getElementById('bdx-error');if(err){err.style.display='none';err.textContent='';}
+  _bdxClearHighlights();
   document.getElementById('bdx-delete-btn').style.display=id?'block':'none';
   openModal('modal-boditrax');
 }
@@ -2504,11 +2509,18 @@ function saveBoditraxScan(){
   const val=elId=>{const el=document.getElementById(elId);const v=el?el.value:'';return v===''?null:v;};
   const raw={date:document.getElementById('bdx-date').value||'',time:document.getElementById('bdx-time').value||''};
   BDX_NUM_FIELDS.forEach(f=>{raw[f]=val('bdx-'+f);});
+  _bdxClearHighlights();
   const res=id?updateBoditraxEntry(id,raw):addBoditraxEntry(raw);
   if(res&&res.ok===false){
+    const errs=res.errors||{'':'Check the values'};
+    // Red-border every offending field so the block is obvious at a glance (the
+    // starred Weight/Muscle/Fat/Visceral must be filled — Time is not one of them).
+    const bad=[];
+    Object.keys(errs).forEach(k=>{const el=document.getElementById('bdx-'+k);if(el)el.style.borderColor='var(--red)';if(_BDX_LABELS[k])bad.push(_BDX_LABELS[k]);});
     const err=document.getElementById('bdx-error');
-    const msgs=Object.values(res.errors||{'':'Check the values'});
-    if(err){err.textContent='⚠ '+msgs.join(' · ');err.style.display='block';}
+    if(err){err.textContent='⚠ '+Object.values(errs).join(' · ');err.style.display='block';if(err.scrollIntoView)err.scrollIntoView({block:'nearest'});}
+    // Toast too — the inline note can sit under the on-screen keyboard / time picker.
+    if(typeof showToast==='function')showToast(bad.length?('Fill in: '+bad.join(', ')):'Check the highlighted fields');
     return;
   }
   closeModal('modal-boditrax');
