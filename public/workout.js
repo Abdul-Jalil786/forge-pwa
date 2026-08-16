@@ -1515,8 +1515,9 @@ function renderWmSet(){
       <button class="wm-step-btn" onclick="wmStepReps(1)">+</button>
     </div>
     <button class="wm-cta" onclick="wmMarkSetDone(${ex.rest})">SET DONE</button>
-    <div style="display:flex;gap:14px;justify-content:center;margin-top:12px;">
+    <div style="display:flex;gap:14px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
       <span onclick="wmAddExerciseNote('${ex.id}')" style="font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;">+ note</span>
+      ${_wmHasOtherPending()?`<span onclick="wmDeferExercise()" style="font-size:11px;color:var(--blue);text-decoration:underline;cursor:pointer;">⏸ Machine busy — do later</span>`:''}
       <span onclick="wmSkipExercise()" style="font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;">Skip this exercise</span>
     </div>
   `;
@@ -2336,6 +2337,10 @@ function renderWmRest(){
   // two separate items (band pull-apart done in a rest gap still showing up later).
   // Logging never touches the countdown — it re-renders only the panel's own rows.
   const accessoryPanel=_wmAccessoryPanelHTML(ex.id);
+  // Phase 93: antagonist-superset partner offered above the accessories during a
+  // normal between-set rest (not the between-exercise post rest, where the next
+  // exercise is already queued). Wrapped in a stable id so wmRestLogSet can refresh it.
+  const supersetCard=wm.postExercise?'':`<div id="wm-rest-superset">${_wmSupersetCardHTML(ex.id)}</div>`;
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Resting</div>
@@ -2344,6 +2349,7 @@ function renderWmRest(){
       <div id="wm-timer" style="font-family:'Archivo Black',sans-serif;font-size:88px;letter-spacing:-4px;color:var(--lime);line-height:1;">${wm.restTarget}s</div>
       <div id="wm-timer-status" style="font-size:14px;color:var(--text2);margin-top:8px;">counting down</div>
     </div>
+    ${supersetCard}
     ${accessoryPanel}
     ${arPanel}
     ${wm.postExercise
@@ -2390,6 +2396,100 @@ function updateWmRest(){
     s.textContent=post?'Done — tap to continue':'GO! Tap to start next set';
     if(b){b.textContent=post?'CONTINUE →':'START NEXT SET';b.classList.remove('ghost');b.classList.add('over');}
   }
+}
+
+// ===================== Phase 93: antagonist supersets in rest gaps =========
+// "Pair the exercises" — during a compound's rest, offer its antagonist / non-
+// competing partner for THIS session so the two run as a superset (rest one muscle
+// while you work its opposite → in and out faster). Logging a partner set goes
+// through the SAME wmRestLogSet path as a rehab accessory, so it writes a REAL
+// viaRest set: partial progress carries (do 1 set now → the main flow resumes it at
+// set 2, showing "2 of 3"), and finishing it in the gaps drops it off the end. Only
+// safe antagonist / non-fatiguing pairs, both present in the same session. Heavy
+// competing days (lowerB posterior chain, cardio) get NO pair — the existing
+// rehab/mobility fallback stands. Never forced: the countdown/next-set are never
+// gated, and one filler item per rest (shared lock with the accessory panel).
+const SUPERSET_PAIRS = {
+  upper:  [['u1','u3'], ['u4','u5'], ['u6','u7']],
+  upperA: [['u1','u3'], ['u4','u5']],
+  upperB: [['u2','h3'], ['u4','u8'], ['u6','u7']],
+  lower:  [['l3','l4']],
+  lowerA: [['l1','l4']],
+  full:   [['u1','u3'], ['u4','u5'], ['u6','u7']],
+};
+// The antagonist partner for `curId` in the current session, if it's present and
+// still pending (not done/skipped) and is a normal weighted lift. Else null.
+function _wmSupersetPartner(curId){
+  const pairs=SUPERSET_PAIRS[wm.session]||[];
+  const w=getWorkout(wm.session);
+  for(const pr of pairs){
+    const pid=pr[0]===curId?pr[1]:pr[1]===curId?pr[0]:null;
+    if(!pid)continue;
+    const ex=(w.exercises||[]).find(e=>e.id===pid);
+    if(!ex)continue;
+    if(isTimeBased(ex))continue;
+    if(typeof isCarry==='function'&&isCarry(ex))continue;
+    if(_wmExComplete(pid))continue;
+    return ex;
+  }
+  return null;
+}
+// The superset card shown above the accessory panel during a lift's rest. Reuses the
+// wm-acc-* input ids + wmRestLogSet + _wmAccStep so the whole log/lock/carry pipeline
+// is shared with the rehab accessories. Empty string when there's no valid partner.
+function _wmSupersetCardHTML(curId){
+  const ex=_wmSupersetPartner(curId);
+  if(!ex)return '';
+  // One filler item per rest: if something was already logged this gap, show the
+  // locked note if it was THIS partner, otherwise hide the card until the next rest.
+  if(wm.restAccLoggedId&&wm.restAccGapLogged===wm.restStarted){
+    return wm.restAccLoggedId===ex.id?_wmSupersetShellHTML(ex,_wmAccessoryLockedHTML(ex.id)):'';
+  }
+  const date=todayStr();
+  const dayLog=getExLogForDate(date);
+  const prev=(typeof getPreviousSessionData==='function')?getPreviousSessionData(date,wm.session):null;
+  const btnS='width:34px;height:34px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:18px;font-weight:700;cursor:pointer;line-height:1;';
+  const inS='width:46px;text-align:center;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:15px;padding:7px 0;';
+  const sets=(dayLog[ex.id]&&Array.isArray(dayLog[ex.id].sets))?dayLog[ex.id].sets.filter(s=>s.done):[];
+  const doneCount=sets.length;
+  const target=_effectiveSets(ex);
+  const repNums=String(ex.reps).match(/\d+/g);
+  const rangeTop=repNums?parseInt(repNums[repNums.length-1]):10;
+  const sug=suggestWeight(ex.id,prev,doneCount,{exObj:ex});
+  const last=(typeof getLastExercisePerformance==='function')?getLastExercisePerformance(ex.id,date):null;
+  const lastSets=(last&&last.log&&last.log[ex.id]&&Array.isArray(last.log[ex.id].sets))?last.log[ex.id].sets.filter(s=>s.reps||s.kg):[];
+  const refSet=lastSets[doneCount]||lastSets[lastSets.length-1]||null;
+  const defReps=(refSet&&parseInt(refSet.reps))||rangeTop;
+  const lastKg=(refSet&&parseFloat(refSet.kg))||null;
+  const defKg=(sug&&sug.kg!=null)?sug.kg:(lastKg!=null?lastKg:'');
+  const lastRef=refSet?`last ${refSet.kg?refSet.kg+'kg×':''}${refSet.reps||'—'}`:'';
+  const rows=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+        <div style="font-size:14px;color:var(--text);font-weight:700;min-width:0;">${ex.name}</div>
+        <div style="font-size:11px;color:var(--text2);flex-shrink:0;">${target}×${ex.reps}${lastRef?` · <span style="color:var(--text3);">${lastRef}</span>`:''} · <span style="color:var(--lime);">${doneCount}/${target} done</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:5px;">
+          <button onclick="_wmAccStep('reps-${ex.id}',-1)" style="${btnS}">−</button>
+          <input id="wm-acc-reps-${ex.id}" type="number" inputmode="numeric" value="${defReps}" style="${inS}">
+          <span style="font-size:11px;color:var(--text3);">reps</span>
+          <button onclick="_wmAccStep('reps-${ex.id}',1)" style="${btnS}">+</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <button onclick="_wmAccStep('kg-${ex.id}',-2.5)" style="${btnS}">−</button>
+          <input id="wm-acc-kg-${ex.id}" type="number" step="0.5" inputmode="decimal" value="${defKg}" style="${inS}">
+          <span style="font-size:11px;color:var(--text3);">kg</span>
+          <button onclick="_wmAccStep('kg-${ex.id}',2.5)" style="${btnS}">+</button>
+        </div>
+        <button onclick="wmRestLogSet('${ex.id}')" style="margin-left:auto;padding:9px 14px;background:rgba(200,255,0,.14);border:1px solid var(--lime);border-radius:8px;color:var(--lime);font-size:12px;font-weight:700;cursor:pointer;">✓ Log set</button>
+      </div>`;
+  return _wmSupersetShellHTML(ex,rows);
+}
+function _wmSupersetShellHTML(ex,inner){
+  return `<div style="background:rgba(61,155,255,.06);border:1px solid rgba(61,155,255,.3);border-radius:12px;padding:12px 14px;margin:0 0 14px;">
+      <div style="font-size:10px;color:var(--blue);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">⚡ Superset — do a set now</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4;">Pair <strong>${ex.name}</strong> into this rest — logged for real, so it drops off the end. Skip it if you'd rather just rest.</div>
+      <div id="wm-rest-superset-rows">${inner}</div>
+    </div>`;
 }
 
 // ===================== Phase 63: rest-gap accessories =====================
@@ -2672,6 +2772,9 @@ function wmRestLogSet(exId){
   const box=document.getElementById('wm-rest-acc-rows');
   const curId=(w.exercises[wm.exIdx]||{}).id;
   if(box)box.innerHTML=_wmAccessoryRowsHTML(curId);
+  // Phase 93: keep the superset card in sync with the shared one-per-rest lock.
+  const sup=document.getElementById('wm-rest-superset');
+  if(sup)sup.innerHTML=_wmSupersetCardHTML(curId);
   showToast(doneCount>=target?`✓ ${ex.name} complete`:`✓ ${ex.name} · set ${doneCount}/${target} — next set on your next rest`);
 }
 
@@ -2696,6 +2799,38 @@ function _wmNextPendingIdx(from){
 }
 // First pending exercise index in the session (-1 = none left).
 function _wmFirstPendingIdx(){ return _wmNextPendingIdx(-1); }
+
+// Phase 93: "come back to this later" — the gym's busy and the machine's taken, so
+// park the current exercise (leave it PENDING, don't skip it) and jump to the next
+// pending one, wrapping to the top if we're near the end. Because it stays pending,
+// the natural end-of-session flow (wmNextExercise) loops back to it, and its
+// per-set carry is intact — you resume exactly where you left off. Frictionless (no
+// confirm): parking a machine you're waiting on shouldn't cost a tap of ceremony.
+function _wmHasOtherPending(){
+  const ex=getWorkout(wm.session).exercises;
+  let cnt=0; for(let i=0;i<ex.length;i++)if(!_wmExComplete(ex[i].id))cnt++;
+  return cnt>1;
+}
+function wmDeferExercise(){
+  const w=getWorkout(wm.session);
+  const cur=w.exercises[wm.exIdx];
+  let n=_wmNextPendingIdx(wm.exIdx);
+  if(n===-1){ // nothing pending after this one → wrap to the earliest pending that isn't current
+    for(let i=0;i<w.exercises.length;i++){ if(i!==wm.exIdx&&!_wmExComplete(w.exercises[i].id)){n=i;break;} }
+  }
+  if(n===-1||n===wm.exIdx){ showToast("Nothing else to jump to — this is the last one left"); return; }
+  wm.autoReg=null;
+  wm.postExercise=false;
+  if(wm.restInterval){clearInterval(wm.restInterval);wm.restInterval=null;}
+  if(wm._mobInterval){clearInterval(wm._mobInterval);wm._mobInterval=null;}
+  wm.exIdx=n;
+  wm.setIdx=_wmFirstUndoneSetIdx(w.exercises[n].id);
+  wm.mode='set';
+  wm.setStartedAt=Date.now();
+  _wmMarkExerciseStart();
+  renderWmSet();
+  showToast(`${cur.name} parked — come back to it when the machine's free`);
+}
 
 function wmStartNextSet(){
   wm.postExercise=false; // Phase 83: normal between-set rest, not the post-exercise one
@@ -2814,7 +2949,7 @@ function renderWmExerciseDone(){
   const sets=dayLog[ex.id]?.sets||[];
   const exEffort=dayLog[ex.id]?.effort;
   const volume=(timed||carry)?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
-  const isLastEx=_wmNextPendingIdx(wm.exIdx)===-1; // Phase 63: nothing left once rest-done accessories are excluded
+  const isLastEx=_wmNextPendingIdx(wm.exIdx)===-1&&_wmFirstPendingIdx()===-1; // Phase 63/93: nothing left (incl. parked exercises earlier in the list)
   const effortEmoji={easy:'😌',solid:'💪',tough:'🔥',hard:'🔥',maybe:'🤔'};
   const effortLabel={easy:'easy',solid:'solid',tough:'tough'};
   const subText=carry
@@ -2842,7 +2977,10 @@ function wmNextExercise(){
   wm.autoReg=null; // Phase 47: don't carry a set-to-set call across exercises
   wm.postExercise=false; // Phase 83: clear the between-exercise rest flag
   // Phase 63: skip exercises already completed during rest (or skipped).
-  const nextIdx=_wmNextPendingIdx(wm.exIdx);
+  // Phase 93: if nothing pending remains forward, wrap to a parked exercise earlier
+  // in the list before finishing (see wmDeferExercise).
+  let nextIdx=_wmNextPendingIdx(wm.exIdx);
+  if(nextIdx===-1)nextIdx=_wmFirstPendingIdx();
   if(nextIdx===-1){wmFinish();return;}
   wm.exIdx=nextIdx;
   wm.setIdx=_wmFirstUndoneSetIdx(w.exercises[nextIdx].id);
@@ -2866,7 +3004,9 @@ function wmSkipExercise(){
   wm.autoReg=null;
   showToast(`${ex.name} skipped — no harm done`);
   // Phase 63: advance past anything already completed during rest.
-  const nextIdx=_wmNextPendingIdx(wm.exIdx);
+  // Phase 93: wrap to a parked exercise earlier in the list before finishing.
+  let nextIdx=_wmNextPendingIdx(wm.exIdx);
+  if(nextIdx===-1)nextIdx=_wmFirstPendingIdx();
   if(nextIdx===-1){wmFinish();return;}
   wm.exIdx=nextIdx;
   wm.setIdx=_wmFirstUndoneSetIdx(w.exercises[nextIdx].id);
