@@ -1078,6 +1078,62 @@ test("rest screen falls back to the Deep Squat mobility hold (Phase 69)", () => 
   assert.equal(vm.runInContext(`!getExLogForDate('${T}')._fillers`, ctx), true, "no _fillers written (superseded)");
 });
 
+// Phase 93: antagonist superset offered during a lift's rest — the partner logs a
+// REAL viaRest set, partial progress carries, heavy days get no pair.
+test("Phase 93: rest offers the antagonist partner; logging it carries partial progress", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
+  // Resting after Shoulder Press (u4) on Upper A — its antagonist partner is Lat Pulldown (u5).
+  vm.runInContext(`STATE.exLog={'${T}':{u4:{sets:[{kg:50,reps:10,done:true}]}}};`, ctx);
+  vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:1};`, ctx);
+  vm.runInContext(`renderWmRest()`, ctx);
+  let html = els['wmContent']._html;
+  assert.ok(/Superset/.test(html), "superset card is shown");
+  assert.ok(/wmRestLogSet\('u5'\)/.test(html), "u4's antagonist partner (u5 Lat Pulldown) is offered");
+  assert.ok(!/wmRestLogSet\('u4'\)/.test(html), "the lift being rested is not offered as its own partner");
+  // Log ONE set of the partner during the rest → real viaRest set, no timer touched.
+  const before = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
+  vm.runInContext(`document.getElementById('wm-acc-reps-u5').value='11'; wmRestLogSet('u5');`, ctx);
+  const after = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
+  assert.equal(before, after, "rest timer untouched by logging the superset set");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').u5.sets.filter(s=>s.done).length`, ctx), 1, "one real set logged on u5");
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').u5.sets[0].viaRest`, ctx), true, "tagged as done during rest");
+  // Partial carry: u5 has 3 sets, one done → main flow resumes at set index 1 ("2 sets left").
+  assert.equal(vm.runInContext(`_wmFirstUndoneSetIdx('u5')`, ctx), 1, "resumes at set 2 (one already done during rest)");
+  assert.equal(vm.runInContext(`_wmExComplete('u5')`, ctx), false, "u5 still pending after 1 of 3 sets");
+  // Heavy posterior-chain day (Lower B) gets NO superset partner for Hip Thrust.
+  vm.runInContext(`wm={active:true,session:'lowerB',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:9};`, ctx);
+  vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed';`, ctx);
+  assert.equal(vm.runInContext(`_wmSupersetPartner('l5')`, ctx), null, "no antagonist pair on the heavy lower day");
+});
+
+// Phase 93: "come back to this later" parks a busy-machine exercise and loops back.
+test("Phase 93: deferring an exercise keeps it pending and revisits it before finishing", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const T = "2026-07-25";
+  vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
+  vm.runInContext(`STATE.exLog={'${T}':{}};`, ctx);
+  vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'set'};`, ctx);
+  // At exercise 0, machine busy → defer. Should jump forward and leave 0 pending.
+  vm.runInContext(`wmDeferExercise()`, ctx);
+  assert.equal(vm.runInContext(`wm.exIdx`, ctx), 1, "jumped to the next exercise");
+  assert.equal(vm.runInContext(`_wmExComplete(getWorkout('upperA').exercises[0].id)`, ctx), false, "parked exercise stays pending (not skipped)");
+  // Complete every exercise EXCEPT the parked index 0, then advance from the last one.
+  vm.runInContext(`(function(){
+    var w=getWorkout('upperA'); var dl=getExLogForDate('${T}');
+    for(var i=1;i<w.exercises.length;i++){ dl[w.exercises[i].id]={done:true,skipped:true,sets:[]}; }
+    saveExLogForDate('${T}',dl);
+    wm.exIdx=w.exercises.length-1;
+  })()`, ctx);
+  // From the last index, wmNextExercise should WRAP back to the parked index 0, not finish.
+  vm.runInContext(`wm.mode='exDone'; wmNextExercise();`, ctx);
+  assert.equal(vm.runInContext(`wm.exIdx`, ctx), 0, "loops back to the parked exercise before finishing");
+  assert.equal(vm.runInContext(`wm.active`, ctx), true, "workout not finished while a parked exercise remains");
+});
+
 // Dev-only "Clear today's training" wipes the day's log so a test can re-run.
 test("dev clear-today wipes today's training log (dev-gated)", () => {
   const { ctx } = bootApp();
