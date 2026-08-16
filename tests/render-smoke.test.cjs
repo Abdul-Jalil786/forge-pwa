@@ -1671,3 +1671,21 @@ test("Boditrax: Time is optional and round-trips; empty required fields are the 
   assert.equal(noTime.ok, true, "a scan without a time still saves");
   assert.equal(noTime.entry.time, null, "a missing time is stored as null, not an error");
 });
+
+// Phase 93b: the Time field is two <select> dropdowns feeding a hidden #bdx-time,
+// so the value is always changeable (native time pickers can refuse inside a PWA).
+test("Boditrax: hour+minute dropdowns drive the submitted time (native-picker-proof)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  ctx._bdxSetTime("04:12");
+  assert.equal(ctx.document.getElementById("bdx-time").value, "04:12", "hidden value set from HH:MM");
+  assert.equal(ctx.document.getElementById("bdx-time-h").value, "04", "hour dropdown reflects the time");
+  assert.equal(ctx.document.getElementById("bdx-time-m").value, "12", "minute dropdown reflects the time");
+  // Changing a dropdown (as its onchange does) changes the value that gets saved.
+  ctx.document.getElementById("bdx-time-m").value = "37";
+  ctx._bdxSyncTime();
+  assert.equal(ctx.document.getElementById("bdx-time").value, "04:37", "changing the dropdown changes the submitted time");
+  // No time selected → hidden stays empty (optional → saved as null).
+  ctx._bdxSetTime("");
+  assert.equal(ctx.document.getElementById("bdx-time").value, "", "empty time stays empty");
+});

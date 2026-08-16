@@ -2490,14 +2490,37 @@ const BDX_NUM_FIELDS=['weight','muscle','fat','visceral','water','bone','ffm','c
 // Human labels for the toast/highlight when a save is blocked, so it's obvious WHICH
 // field is missing (Time is optional and never blocks — a common point of confusion).
 const _BDX_LABELS={date:'Date',weight:'Weight',muscle:'Muscle',fat:'Fat',visceral:'Visceral',water:'Water',bone:'Bone',ffm:'FFM',cellular:'Cellular',bmr:'BMR',metabolicAge:'Met age',physique:'Physique',legMuscle:'Leg muscle',boditraxScore:'Boditrax score',proteinPct:'Protein %'};
-function _bdxClearHighlights(){['date','time'].concat(BDX_NUM_FIELDS).forEach(f=>{const el=document.getElementById('bdx-'+f);if(el)el.style.borderColor='var(--border)';});}
+function _bdxClearHighlights(){['date','time-h','time-m'].concat(BDX_NUM_FIELDS).forEach(f=>{const el=document.getElementById('bdx-'+f);if(el)el.style.borderColor='var(--border)';});}
+// Phase 93b: the Time control is two plain <select> dropdowns (hour + minute) with a
+// hidden #bdx-time holding the "HH:MM" the rest of the code reads/writes. Native
+// <input type="time"> pickers can silently refuse to open or commit inside an
+// installed Android PWA — dropdowns always open and always change, on every device.
+function _bdxBuildTimeSelects(){
+  const hSel=document.getElementById('bdx-time-h'), mSel=document.getElementById('bdx-time-m');
+  if(hSel&&(!hSel.options||!hSel.options.length)){for(let h=0;h<24;h++){const o=document.createElement('option');const v=String(h).padStart(2,'0');o.value=v;o.textContent=v;hSel.appendChild(o);}}
+  if(mSel&&(!mSel.options||!mSel.options.length)){for(let m=0;m<60;m++){const o=document.createElement('option');const v=String(m).padStart(2,'0');o.value=v;o.textContent=v;mSel.appendChild(o);}}
+}
+function _bdxSetTime(hhmm){
+  _bdxBuildTimeSelects();
+  const m=String(hhmm||'').match(/^(\d{1,2}):(\d{2})/);
+  const hh=m?String(Math.min(23,Math.max(0,parseInt(m[1],10)))).padStart(2,'0'):'';
+  const mm=m?m[2]:'';
+  const hSel=document.getElementById('bdx-time-h'), mSel=document.getElementById('bdx-time-m'), hid=document.getElementById('bdx-time');
+  if(hSel)hSel.value=hh;
+  if(mSel)mSel.value=mm;
+  if(hid)hid.value=(hh&&mm)?(hh+':'+mm):'';
+}
+function _bdxSyncTime(){
+  const hSel=document.getElementById('bdx-time-h'), mSel=document.getElementById('bdx-time-m'), hid=document.getElementById('bdx-time');
+  if(hid)hid.value=(hSel&&mSel&&hSel.value!==''&&mSel.value!=='')?(hSel.value+':'+mSel.value):'';
+}
 function openBoditraxEdit(id){
   const existing=id?getBoditraxLog().find(s=>s&&s.id===id):null;
   const set=(elId,v)=>{const el=document.getElementById(elId);if(el)el.value=v==null?'':v;};
   document.getElementById('bdx-title').textContent=existing?'Edit Boditrax Scan':'Add Boditrax Scan';
   document.getElementById('bdx-id').value=id||'';
   set('bdx-date',existing?existing.date:todayStr());
-  set('bdx-time',existing?existing.time:(typeof fmtNow==='function'?fmtNow():''));
+  _bdxSetTime(existing?existing.time:(typeof fmtNow==='function'?fmtNow():''));
   BDX_NUM_FIELDS.forEach(f=>set('bdx-'+f,existing?existing[f]:''));
   const err=document.getElementById('bdx-error');if(err){err.style.display='none';err.textContent='';}
   _bdxClearHighlights();
