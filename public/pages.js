@@ -917,6 +917,8 @@ function _foodDisplayTime(f){
   return f?.time||'';
 }
 function _qtyBadge(f){
+  // Phase 95: weight-based entries show the actual grams instead of a portion fraction.
+  if(f&&typeof f.grams==='number'&&f.grams>0)return ` <span style="font-size:10px;color:var(--orange);font-weight:600;">(${f.grams}g)</span>`;
   if(!f||f.quantity==null||Math.abs(f.quantity-1)<0.01)return '';
   return ` <span style="font-size:10px;color:var(--orange);font-weight:600;">(${_fmtQty(f.quantity)})</span>`;
 }
@@ -968,7 +970,10 @@ function openMealDetail(mealId,date){
     ingQty=ingredients.map(()=>1);
     suppChecked=supplements.map(()=>true);
   }
-  _mds={mealId:m.id,meal:m,date:targetDate,ingredients,supplements,ingQty,suppChecked,isStringFormat,
+  // Phase 95: weight-based ingredients (e.g. weighed avocado) track grams; derive
+  // the starting grams from the portion multiplier so re-opening a logged 54g reads 54g.
+  const ingGrams=ingredients.map((ing,i)=> (ing&&ing.weighed) ? Math.round((ingQty[i]||0)*_mealIngDef(ing)) : null);
+  _mds={mealId:m.id,meal:m,date:targetDate,ingredients,supplements,ingQty,suppChecked,isStringFormat,ingGrams,
     ingInit:[...ingQty],suppInit:[...suppChecked]};
   _renderMealDetail();
   openModal('modal-meal-detail');
@@ -989,6 +994,27 @@ function _getMealLogStatus(){
 
 function setMealIngQty(i,q){_mds.ingQty[i]=q;_renderMealDetail();}
 function toggleMealSupplement(i){_mds.suppChecked[i]=!_mds.suppChecked[i];_renderMealDetail();}
+
+// Phase 95: weight-based ingredient helpers. A weighed ingredient's macros scale
+// per gram; internally its portion multiplier is grams / default-grams, so all the
+// existing macro-sum + logging code works unchanged.
+function _mealIngDef(ing){return (ing&&ing.grams)||100;}
+function setMealIngGrams(i,g){const ing=_mds.ingredients[i];const def=_mealIngDef(ing);g=Math.max(0,Math.round(+g||0));_mds.ingGrams[i]=g;_mds.ingQty[i]=def?g/def:0;_renderMealDetail();}
+function stepMealIngGrams(i,delta){setMealIngGrams(i,(_mds.ingGrams[i]||0)+delta);}
+function skipMealIng(i){setMealIngGrams(i,0);}
+function _weighedControlHTML(i,ing){
+  const g=_mds.ingGrams[i]||0;
+  const perG=ing.perGram?ing.perGram.cals:((ing.cals||0)/_mealIngDef(ing));
+  const btn='flex-shrink:0;width:34px;height:34px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:16px;font-weight:700;cursor:pointer;';
+  return `<div style="display:flex;align-items:center;gap:6px;">
+      <button onclick="skipMealIng(${i})" title="Not eaten" style="${btn}${g===0?'border-color:var(--lime);color:var(--lime);':''}">✕</button>
+      <button onclick="stepMealIngGrams(${i},-5)" style="${btn}">−</button>
+      <input type="number" inputmode="numeric" value="${g}" onchange="setMealIngGrams(${i},this.value)" style="flex:1;min-width:0;text-align:center;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:15px;padding:8px 4px;font-family:'Archivo Black',sans-serif;">
+      <span style="font-size:12px;color:var(--text3);flex-shrink:0;">g</span>
+      <button onclick="stepMealIngGrams(${i},5)" style="${btn}">+</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:4px;">${(Math.round(perG*100)/100)} kcal/g</div>`;
+}
 
 function _renderMealDetail(){
   const s=_mds;if(!s)return;
@@ -1041,12 +1067,13 @@ function _renderMealDetail(){
             <div style="font-size:11px;color:var(--text3);flex-shrink:0;text-align:right;">${dim?'—':`${ingCals} kcal`}</div>
           </div>
           <div style="font-size:10px;color:var(--text3);margin-bottom:8px;">${dim?'skipped':`${ingP}g P · ${ingC}g C · ${ingF}g F`}${(()=>{let gi=null;if(ing.gi){const b=ing.gi;gi={band:b,label:b==='high'?'🔴 Higher GI':b==='moderate'?'🟡 Moderate GI':'🟢 Low GI'};}else if(typeof estimateGI==='function')gi=estimateGI(ing.name);return (gi&&gi.label)?` · <span style="color:${gi.band==='high'?'var(--red)':gi.band==='moderate'?'var(--orange)':'var(--green)'};">${gi.label}</span>`:'';})()}</div>
-          <div style="display:flex;gap:4px;">
+          ${ing.weighed&&ing.note?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-bottom:8px;">⚖ ${ing.note}</div>`:''}
+          ${ing.weighed?_weighedControlHTML(i,ing):`<div style="display:flex;gap:4px;">
             ${PORTION_OPTIONS.map(opt=>{
               const active=Math.abs((q||0)-opt.qty)<0.01;
               return `<button onclick="setMealIngQty(${i},${opt.qty})" style="flex:1;padding:8px 0;border-radius:6px;border:1px solid ${active?'var(--lime)':'var(--border)'};background:${active?'var(--lime)':'transparent'};color:${active?'var(--bg)':'var(--text2)'};font-weight:${active?'700':'500'};font-size:13px;cursor:pointer;">${opt.label}</button>`;
             }).join('')}
-          </div>
+          </div>`}
         </div>`;}).join('')}
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:12px;" onclick="openIngredientEdit(null)">+ Add ingredient</button>
     </div>
@@ -1081,7 +1108,7 @@ function logMealFromModal(){
   s.ingredients.forEach((ing,i)=>{
     const q=s.ingQty[i]||0;
     if(q>0){
-      newEntries.push({
+      const entry={
         name:ing.name,
         cals   :Math.round((ing.cals   ||0)*q),
         protein:Math.round((ing.protein||0)*q),
@@ -1092,7 +1119,10 @@ function logMealFromModal(){
         mealName:m.name,
         quantity:q,
         loggedAt:loggedAtIso,
-      });
+      };
+      // Phase 95: weight-based ingredient — record the actual grams eaten.
+      if(ing.weighed)entry.grams=s.ingGrams[i];
+      newEntries.push(entry);
     }
   });
   const finalFoods=[...filtered,...newEntries];

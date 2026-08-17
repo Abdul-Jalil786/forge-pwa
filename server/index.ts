@@ -1210,6 +1210,49 @@ async function seedJayChaiHoneyQuicklogsV1() {
   }
 }
 
+// Phase 95: make the breakfast avocado weight-based. Replaces the "1/2 avocado"
+// ingredient in Jay's live plan with "Avocado (flesh, weighed)" — default 100g
+// (= 170 kcal / 2P / 9C / 15F, so nothing changes at the default), per-gram macros
+// (1.70 kcal, 0.02P, 0.09C, 0.15F) so grams can be edited at logging time, a
+// "weigh without skin & seed" helper note, and the Low GI tag kept. Matched by name
+// and replaced in place, so its position in the breakfast list is preserved.
+async function seedJayAvocadoWeighedV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.jayAvocadoWeighedV1) return;
+    const mp: any = state.mealPlan;
+    if (!mp || !Array.isArray(mp.meals)) return;
+    const breakfast: any =
+      mp.meals.find((m: any) => m.id === "breakfast") ||
+      mp.meals.find((m: any) => /breakfast/i.test((m && m.name) || ""));
+    if (!breakfast || !Array.isArray(breakfast.ingredients)) return;
+    const idx = breakfast.ingredients.findIndex((ing: any) => /avocado/i.test((ing && ing.name) || ""));
+    if (idx < 0) return;
+    breakfast.ingredients[idx] = {
+      name: "Avocado (flesh, weighed)",
+      cals: 170, protein: 2, carbs: 9, fat: 15,
+      gi: "low",
+      weighed: true,
+      grams: 100,
+      perGram: { cals: 1.7, protein: 0.02, carbs: 0.09, fat: 0.15 },
+      note: "weigh without skin & seed",
+    };
+    // Recompute the breakfast meal's totals from its ingredients so the plan card stays consistent.
+    const sum = (k: string) => breakfast.ingredients.reduce((s: number, ing: any) => s + (Number(ing && ing[k]) || 0), 0);
+    breakfast.cals = Math.round(sum("cals"));
+    breakfast.protein = Math.round(sum("protein"));
+    breakfast.carbs = Math.round(sum("carbs"));
+    breakfast.fat = Math.round(sum("fat"));
+    state.jayAvocadoWeighedV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay avocado → weight-based (flesh, weighed, default 100g)");
+  } catch (err) {
+    console.error("[migration] seedJayAvocadoWeighedV1 failed:", err);
+  }
+}
+
 // Phase 86: fix the user's "2 scoops whey" quick template — protein was entered as
 // 480g (a 10× typo); a 2-scoop shake is ~48g. Corrects the saved template AND any
 // historical food log that used the wrong value (day totals are summed live from
@@ -2588,6 +2631,7 @@ const server = app.listen(PORT, async () => {
   await seedAbdulRebalancedPlanV1(); // 200P/185C/72F rebalance
   await seedJayDaalFibrePlanV1(); // final word on the meal plan — daal dinner + quick-logs
   await seedJayChaiHoneyQuicklogsV1(); // Phase 84: append chai + honey quick-logs
+  await seedJayAvocadoWeighedV1(); // Phase 95: breakfast avocado → weight-based (flesh, weighed)
   await fixJayWheyTemplateProteinV1(); // Phase 86: whey template protein 480→48 + logs
   await fixJayWheyScoop20gV1(); // Phase 86a: 1 scoop = 20g (2-scoop template 48→40)
   await fixJayLegPressSledV1();
