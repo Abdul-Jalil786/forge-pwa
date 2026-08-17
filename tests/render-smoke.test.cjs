@@ -1178,6 +1178,38 @@ test("Phase 94: Food page shows the owner-only Eating Out button", () => {
   assert.ok(/Eating out/.test(html), "button labelled");
 });
 
+// Phase 95: weight-based meal-plan ingredient (weighed avocado) — edit grams at
+// logging time, macros scale per gram, Low GI + helper note kept, grams recorded.
+test("Phase 95: weighed ingredient scales macros per gram and logs the grams", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  q(`todayStr=function(){return '2026-08-17';};`);
+  q(`STATE.foods={}; STATE.mealPlan={name:'t',meals:[{id:'breakfast',name:'Breakfast',time:'12:00',cals:170,protein:2,carbs:9,fat:15,ingredients:[{name:'Avocado (flesh, weighed)',cals:170,protein:2,carbs:9,fat:15,gi:'low',weighed:true,grams:100,perGram:{cals:1.7,protein:0.02,carbs:0.09,fat:0.15},note:'weigh without skin & seed'}],supplements:[]}]};`);
+  q(`openMealDetail('breakfast','2026-08-17')`);
+  let html = els["md-body"]._html;
+  assert.ok(/weigh without skin & seed/.test(html), "helper note shown");
+  assert.ok(/Low GI/.test(html), "Low GI tag kept");
+  assert.ok(/setMealIngGrams\(0/.test(html), "grams control rendered");
+  assert.ok(/value="100"/.test(html), "defaults to 100g");
+  assert.ok(!/setMealIngQty\(0,/.test(html), "portion buttons replaced by the grams control for a weighed ingredient");
+  // Edit to 54g → macros scale per gram (1.70×54≈92 kcal, 0.15×54≈8g fat).
+  q(`setMealIngGrams(0,54)`);
+  html = els["md-body"]._html;
+  assert.ok(/>92</.test(html), "total kcal scales to ~92 at 54g");
+  // Log it → entry carries the scaled macros + the actual grams.
+  q(`logMealFromModal()`);
+  const foods = JSON.parse(q(`JSON.stringify(getFoods('2026-08-17'))`));
+  assert.equal(foods.length, 1, "one entry logged");
+  assert.equal(foods[0].grams, 54, "grams recorded on the entry");
+  assert.equal(foods[0].cals, 92, "cals = round(170 × 54/100)");
+  assert.equal(foods[0].fat, 8, "fat = round(15 × 54/100)");
+  assert.equal(foods[0].protein, 1, "protein = round(2 × 54/100)");
+  // Re-opening reads the logged grams back into the control.
+  q(`openMealDetail('breakfast','2026-08-17')`);
+  assert.ok(/value="54"/.test(els["md-body"]._html), "re-opening shows the logged 54g");
+});
+
 // Dev-only "Clear today's training" wipes the day's log so a test can re-run.
 test("dev clear-today wipes today's training log (dev-gated)", () => {
   const { ctx } = bootApp();
