@@ -200,6 +200,86 @@ export async function estimateFood(userId: string, description: string): Promise
   };
 }
 
+// Phase 94: "Eating Out" — estimate a restaurant/takeaway meal from a plain-text
+// description. Distinct from estimateFood (the everyday auto-fill): eating-out
+// portions run bigger, desi/takeaway food carries restaurant-level oil, and we
+// deliberately round UP when torn (a treat meal is better over- than under-counted).
+// Also returns a confidence + a one-line assumptions note so the user can sanity-
+// check the guess, and so the entry can be flagged `estimated` for the coach.
+export interface MealOutEstimate {
+  name: string;
+  cals: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  confidence: "high" | "medium" | "low";
+  assumptions: string;
+}
+
+const MEALOUT_SYSTEM = `You estimate the nutrition of a RESTAURANT or TAKEAWAY meal the user describes in plain language, so it can be logged in a food tracker. This is a meal OUT, not home cooking — lean toward realistic eating-out values.
+
+Rules:
+- UK portions. Assume British takeaway / chippy / restaurant serving sizes, NOT US. "A big bag of chips" is a large UK chip-shop portion; "a doner in naan" is a full takeaway portion.
+- Desi / South Asian food: you know karahi, naan, biryani, doner, kebab, samosa, pakora, daal, curry, etc. Assume RESTAURANT-level oil and ghee — roughly 1.3x the fat of the same dish cooked at home.
+- The description may list several items — SUM them into a single total.
+- When you are torn between two plausible estimates, choose the HIGHER one.
+- Keep the macros internally consistent: kcal ≈ protein*4 + carbs*4 + fat*9. Whole numbers.
+- confidence: "high" when the items and portions are clear; "medium" when you are inferring the portion size; "low" when the description is vague.
+- assumptions: ONE short line naming the portion sizes / oil level you assumed (e.g. "large chippy chips ~350g, full doner in naan, restaurant oil").
+- name: a short tidy label for the log, max 60 chars.
+- If the input is not a food, return all zeros, confidence "low", and name "unknown".`;
+
+export async function estimateMealOut(userId: string, description: string): Promise<MealOutEstimate> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const state: any = user.state || {};
+  if (!state.coachingKey) throw new Error("No Anthropic API key configured");
+  let apiKey: string;
+  try { apiKey = decrypt(state.coachingKey); }
+  catch { throw new Error("Failed to decrypt stored API key"); }
+
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: HAIKU_MODEL,
+    max_tokens: 500,
+    system: MEALOUT_SYSTEM,
+    tools: [{
+      name: "submit_meal_out",
+      description: "Submit the estimated nutrition for the described meal out.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          name: { type: "string", description: "Short tidy label for the log, max 60 chars." },
+          kcal: { type: "number", description: "Total calories." },
+          protein_g: { type: "number", description: "Total protein in grams." },
+          carbs_g: { type: "number", description: "Total carbohydrate in grams." },
+          fat_g: { type: "number", description: "Total fat in grams." },
+          confidence: { type: "string", enum: ["high", "medium", "low"], description: "How sure you are of the estimate." },
+          assumptions: { type: "string", description: "One short line on the portions / oil level assumed." },
+        },
+        required: ["name", "kcal", "protein_g", "carbs_g", "fat_g", "confidence", "assumptions"],
+      },
+    }],
+    tool_choice: { type: "tool", name: "submit_meal_out" },
+    messages: [{ role: "user", content: `Meal out: ${description}` }],
+  });
+
+  const toolBlock: any = response.content.find((b: any) => b.type === "tool_use" && b.name === "submit_meal_out");
+  if (!toolBlock) throw new Error("Model did not return an estimate");
+  const f = toolBlock.input || {};
+  const clamp = (n: any) => Math.max(0, Math.round(+n || 0));
+  const conf = ["high", "medium", "low"].includes(f.confidence) ? f.confidence : "low";
+  return {
+    name: String(f.name || description).slice(0, 60),
+    cals: clamp(f.kcal),
+    protein: clamp(f.protein_g),
+    carbs: clamp(f.carbs_g),
+    fat: clamp(f.fat_g),
+    confidence: conf,
+    assumptions: String(f.assumptions || "").slice(0, 200),
+  };
+}
+
 // Phase 55: Health Records — one-time AI extraction of a pasted lab report / DEXA
 // scan into structured items, EACH with the verbatim source snippet it was read
 // from (so the user verifies before saving) + a confidence flag, and conflicts

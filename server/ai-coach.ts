@@ -1238,6 +1238,19 @@ export function buildContext(state: any): string {
   lines.push("FOOD INTAKE (last 7d, daily totals):");
   if (foodDays.length === 0) lines.push("  (no entries)");
   else for (const d of foodDays) lines.push(`  ${d.date}: ${d.kcal}kcal P${d.p} C${d.c} F${d.f}`);
+  // Phase 94: flag AI-estimated eating-out meals so the coach treats them as
+  // approximate (they lean high on purpose — see the "round up" rule in the estimator).
+  const estAgg = foodDays.reduce(
+    (acc, d) => {
+      const arr: any[] = (state.foods && state.foods[d.date]) || [];
+      const est = arr.filter((f: any) => f && f.estimated);
+      return { n: acc.n + est.length, kcal: acc.kcal + est.reduce((s: number, f: any) => s + (+f.cals || 0), 0) };
+    },
+    { n: 0, kcal: 0 }
+  );
+  if (estAgg.n > 0) {
+    lines.push(`  NOTE: ${estAgg.n} of the last-7d entries were AI-ESTIMATED eating-out meals (~${estAgg.kcal} kcal total). Treat those macros as approximate (they round up on purpose); do NOT over-react to a single high day that is driven by an estimate.`);
+  }
   lines.push("");
 
   lines.push("TRAINING (last 7d, exercise:done/total sets):");
@@ -1828,7 +1841,7 @@ export async function generateWeeklyReport(userId: string): Promise<GeneratedRep
     const lines = [
       "ADAPTIVE NUTRITION (measured from what they ate vs how their weight moved — use these EXACT numbers, do not recompute):",
       `  Real TDEE: ${nutrition.observedTDEE} kcal/day${nutrition.ouraTDEE != null ? ` (Oura's estimate: ${nutrition.ouraTDEE} — informational only, NOT authoritative)` : ""} · avg intake ${nutrition.avgIntake} · logged ${nutrition.loggedDays}/14 days.`,
-      `  IMPORTANT: the user logs every meal they eat — treat logged intake as ACCURATE. A day below the meal plan means they ATE less (appetite suppression is expected if they are on a GLP-1 — see MEDICATIONS), not that they forgot to log. Use the MEAL-PLAN ADHERENCE block to comment on logged-vs-planned; do NOT call days "under-logged".`,
+      `  IMPORTANT: the user logs every meal they eat — treat logged intake as ACCURATE. A day below the meal plan means they ATE less (appetite suppression is expected if they are on a GLP-1 — see MEDICATIONS), not that they forgot to log. Use the MEAL-PLAN ADHERENCE block to comment on logged-vs-planned; do NOT call days "under-logged". The one exception: entries flagged AI-ESTIMATED in FOOD INTAKE (eating-out meals) are approximate and round up on purpose — weight them as rough, not precise.`,
       `  Loss rate: ${nutrition.rateKgPerWk ?? "?"} kg/week. Confidence: ${nutrition.confidence} — ${nutrition.confidenceReason}`,
       `  Muscle signals: strength ${nutrition.muscle.strength}, tape ${nutrition.muscle.tape} → verdict ${nutrition.muscle.verdict}.`,
       nutrition.confidence !== "high"
