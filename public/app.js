@@ -198,7 +198,8 @@ function nav(page){
 function openModal(id){
   document.getElementById(id)?.classList.add('open');
   if(id==='modal-food'){
-    document.getElementById('mf-time').value=fmtNow();
+    const dEl=document.getElementById('mf-date');if(dEl)dEl.value=(window._foodTargetDate||todayStr());
+    _setTimeSelects('mf-time-h','mf-time-m','mf-time',fmtNow());
     renderFoodTemplatesModal();
   }
   if(id==='modal-weight'){
@@ -267,11 +268,14 @@ function saveFood(){
   const protein=parseInt(document.getElementById('mf-protein').value)||0;
   const carbs=parseInt(document.getElementById('mf-carbs').value)||0;
   const fat=parseInt(document.getElementById('mf-fat').value)||0;
+  _syncTimeSelects('mf-time-h','mf-time-m','mf-time');
   const time=document.getElementById('mf-time').value||fmtNow();
   if(!name){showToast('Name is required');return;}
   if(!cals&&!protein&&!carbs&&!fat){showToast('Enter calories or at least one macro');return;}
-  const targetDate=window._foodTargetDate||todayStr();
-  const entry={name,cals,protein,carbs,fat,time,loggedAt:new Date().toISOString()};
+  // Phase 94: date is now editable in the modal (backdating); fall back to the
+  // legacy _foodTargetDate global, then today.
+  const targetDate=(document.getElementById('mf-date')&&document.getElementById('mf-date').value)||window._foodTargetDate||todayStr();
+  const entry={name,cals,protein,carbs,fat,time,loggedAt:_loggedAtFor(targetDate,time)};
   saveFoodEntry(entry,targetDate);
 
   // Phase 39: low-GI flag (HbA1c context) + eating-window break warning
@@ -299,6 +303,91 @@ function saveFood(){
   if(typeof renderFood==='function')renderFood();
   if(typeof renderToday==='function')renderToday();
   if(typeof renderDayDetail==='function'&&targetDate!==todayStr())renderDayDetail(targetDate);
+}
+
+// ===================== Phase 94: Eating Out (AI meal estimate) =====================
+// Owner-only. Describe a restaurant/takeaway meal → AI estimates macros (UK portions,
+// desi-aware, rounds up when unsure) with a confidence + assumptions line. Editable
+// before saving; the entry is flagged `estimated` so the coach treats it as rough.
+// Fully backdatable (date + time). On ANY API failure it falls back to manual entry
+// so the log is never blocked.
+let _eoBusy=false, _eoLastEst=null;
+function openEatingOut(){
+  document.getElementById('eo-desc').value='';
+  const dEl=document.getElementById('eo-date');if(dEl)dEl.value=(typeof getFoodViewDate==='function'?getFoodViewDate():todayStr());
+  _setTimeSelects('eo-time-h','eo-time-m','eo-time',fmtNow());
+  _eoLastEst=null;
+  document.getElementById('eo-result').style.display='none';
+  const err=document.getElementById('eo-error');err.style.display='none';err.textContent='';
+  const eb=document.getElementById('eo-estimate-btn');eb.disabled=false;eb.textContent='✨ Estimate macros';
+  ['eo-name','eo-cals','eo-protein','eo-carbs','eo-fat'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  openModal('modal-eatout');
+}
+function _eoConfColor(c){return c==='high'?'var(--green)':c==='medium'?'var(--orange)':'var(--red)';}
+async function estimateEatingOut(){
+  const desc=(document.getElementById('eo-desc').value||'').trim();
+  const err=document.getElementById('eo-error');
+  const showErr=t=>{err.textContent=t;err.style.display='block';};
+  err.style.display='none';
+  if(desc.length<3){showErr('Describe what you ate first');return;}
+  if(_eoBusy)return;_eoBusy=true;
+  const eb=document.getElementById('eo-estimate-btn');eb.disabled=true;eb.textContent='✨ working out the macros…';
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/coach/estimate-meal-out',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},body:JSON.stringify({description:desc})});
+    if(!res.ok){
+      const e=await res.json().catch(()=>({}));
+      _eoManualFallback((e.error||'').includes('API key')?'Add your AI key in More to auto-estimate — or enter the macros yourself below.':'Couldn\'t estimate — enter the macros yourself below.');
+      return;
+    }
+    const {estimate}=await res.json();
+    if(!estimate){_eoManualFallback('Couldn\'t estimate — enter the macros yourself below.');return;}
+    _eoFill(estimate);
+  }catch{
+    _eoManualFallback('Couldn\'t reach the estimator (offline?) — enter the macros yourself below.');
+  }finally{
+    _eoBusy=false;eb.disabled=false;eb.textContent='✨ Re-estimate';
+  }
+}
+function _eoFill(est){
+  _eoLastEst=est;
+  document.getElementById('eo-name').value=est.name||'';
+  document.getElementById('eo-cals').value=est.cals||'';
+  document.getElementById('eo-protein').value=est.protein||'';
+  document.getElementById('eo-carbs').value=est.carbs||'';
+  document.getElementById('eo-fat').value=est.fat||'';
+  const conf=est.confidence||'low',col=_eoConfColor(conf);
+  const asum=(est.assumptions||'estimated from your description').replace(/</g,'&lt;');
+  document.getElementById('eo-assumptions').innerHTML=`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px;vertical-align:middle;"></span><strong style="color:${col};text-transform:capitalize;">${conf} confidence</strong> — ${asum}`;
+  document.getElementById('eo-result').style.display='block';
+}
+function _eoManualFallback(msg){
+  _eoLastEst=null;
+  document.getElementById('eo-assumptions').innerHTML=`<span style="color:var(--text2);">${msg.replace(/</g,'&lt;')}</span>`;
+  const nameEl=document.getElementById('eo-name');
+  if(nameEl&&!nameEl.value)nameEl.value=(document.getElementById('eo-desc').value||'').trim().slice(0,60);
+  document.getElementById('eo-result').style.display='block';
+}
+function saveEatingOut(){
+  const name=(document.getElementById('eo-name').value||'').trim()||(document.getElementById('eo-desc').value||'').trim().slice(0,60);
+  const cals=parseInt(document.getElementById('eo-cals').value)||0;
+  const protein=parseInt(document.getElementById('eo-protein').value)||0;
+  const carbs=parseInt(document.getElementById('eo-carbs').value)||0;
+  const fat=parseInt(document.getElementById('eo-fat').value)||0;
+  if(!name){showToast('Add a meal name');return;}
+  if(!cals&&!protein&&!carbs&&!fat){showToast('Enter calories or at least one macro');return;}
+  _syncTimeSelects('eo-time-h','eo-time-m','eo-time');
+  const date=(document.getElementById('eo-date')&&document.getElementById('eo-date').value)||todayStr();
+  const time=document.getElementById('eo-time').value||fmtNow();
+  const entry={name,cals,protein,carbs,fat,time,loggedAt:_loggedAtFor(date,time),estimated:true,source:'eating-out'};
+  if(_eoLastEst){entry.estConfidence=_eoLastEst.confidence;entry.estAssumptions=_eoLastEst.assumptions;}
+  saveFoodEntry(entry,date);
+  closeModal('modal-eatout');
+  const lbl=date===todayStr()?'':' ('+date+')';
+  showToast(`${name} logged${lbl} ✓`);
+  if(typeof renderFood==='function')renderFood();
+  if(typeof renderToday==='function')renderToday();
+  if(typeof renderDayDetail==='function'&&date!==todayStr())renderDayDetail(date);
 }
 
 // Phase 49: auto-fill calories + macros for an ad-hoc food. Fires when the name
@@ -2491,28 +2580,43 @@ const BDX_NUM_FIELDS=['weight','muscle','fat','visceral','water','bone','ffm','c
 // field is missing (Time is optional and never blocks — a common point of confusion).
 const _BDX_LABELS={date:'Date',weight:'Weight',muscle:'Muscle',fat:'Fat',visceral:'Visceral',water:'Water',bone:'Bone',ffm:'FFM',cellular:'Cellular',bmr:'BMR',metabolicAge:'Met age',physique:'Physique',legMuscle:'Leg muscle',boditraxScore:'Boditrax score',proteinPct:'Protein %'};
 function _bdxClearHighlights(){['date','time-h','time-m'].concat(BDX_NUM_FIELDS).forEach(f=>{const el=document.getElementById('bdx-'+f);if(el)el.style.borderColor='var(--border)';});}
-// Phase 93b: the Time control is two plain <select> dropdowns (hour + minute) with a
-// hidden #bdx-time holding the "HH:MM" the rest of the code reads/writes. Native
-// <input type="time"> pickers can silently refuse to open or commit inside an
-// installed Android PWA — dropdowns always open and always change, on every device.
-function _bdxBuildTimeSelects(){
-  const hSel=document.getElementById('bdx-time-h'), mSel=document.getElementById('bdx-time-m');
+
+// Phase 93b/94: reusable "HH:MM" control built from two plain <select> dropdowns
+// (hour + minute) feeding a hidden input. Native <input type="time"> pickers can
+// silently refuse to open or commit inside an installed Android PWA — dropdowns
+// always open and always change, on every device. Shared by the Boditrax, Add Food,
+// and Eating Out modals. hId/mId are the two selects; hidId the hidden "HH:MM" field.
+function _mkTimeSelects(hId,mId){
+  const hSel=document.getElementById(hId), mSel=document.getElementById(mId);
   if(hSel&&(!hSel.options||!hSel.options.length)){for(let h=0;h<24;h++){const o=document.createElement('option');const v=String(h).padStart(2,'0');o.value=v;o.textContent=v;hSel.appendChild(o);}}
   if(mSel&&(!mSel.options||!mSel.options.length)){for(let m=0;m<60;m++){const o=document.createElement('option');const v=String(m).padStart(2,'0');o.value=v;o.textContent=v;mSel.appendChild(o);}}
 }
-function _bdxSetTime(hhmm){
-  _bdxBuildTimeSelects();
+function _setTimeSelects(hId,mId,hidId,hhmm){
+  _mkTimeSelects(hId,mId);
   const m=String(hhmm||'').match(/^(\d{1,2}):(\d{2})/);
   const hh=m?String(Math.min(23,Math.max(0,parseInt(m[1],10)))).padStart(2,'0'):'';
   const mm=m?m[2]:'';
-  const hSel=document.getElementById('bdx-time-h'), mSel=document.getElementById('bdx-time-m'), hid=document.getElementById('bdx-time');
+  const hSel=document.getElementById(hId), mSel=document.getElementById(mId), hid=document.getElementById(hidId);
   if(hSel)hSel.value=hh;
   if(mSel)mSel.value=mm;
   if(hid)hid.value=(hh&&mm)?(hh+':'+mm):'';
 }
-function _bdxSyncTime(){
-  const hSel=document.getElementById('bdx-time-h'), mSel=document.getElementById('bdx-time-m'), hid=document.getElementById('bdx-time');
+function _syncTimeSelects(hId,mId,hidId){
+  const hSel=document.getElementById(hId), mSel=document.getElementById(mId), hid=document.getElementById(hidId);
   if(hid)hid.value=(hSel&&mSel&&hSel.value!==''&&mSel.value!=='')?(hSel.value+':'+mSel.value):'';
+}
+// Thin Boditrax wrappers (kept so existing callers/tests are unchanged).
+function _bdxBuildTimeSelects(){ _mkTimeSelects('bdx-time-h','bdx-time-m'); }
+function _bdxSetTime(hhmm){ _setTimeSelects('bdx-time-h','bdx-time-m','bdx-time',hhmm); }
+function _bdxSyncTime(){ _syncTimeSelects('bdx-time-h','bdx-time-m','bdx-time'); }
+
+// Phase 94: build a loggedAt ISO for a possibly-backdated entry — real "now" for
+// today, else the chosen date + HH:MM (so a backfilled meal sorts/shows correctly).
+function _loggedAtFor(date,time){
+  if(!date||date===todayStr())return new Date().toISOString();
+  const t=/^\d{2}:\d{2}$/.test(time)?time:'12:00';
+  const ms=new Date(date+'T'+t+':00').getTime();
+  return isFinite(ms)?new Date(ms).toISOString():new Date().toISOString();
 }
 function openBoditraxEdit(id){
   const existing=id?getBoditraxLog().find(s=>s&&s.id===id):null;

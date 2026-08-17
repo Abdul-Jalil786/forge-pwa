@@ -1134,6 +1134,50 @@ test("Phase 93: deferring an exercise keeps it pending and revisits it before fi
   assert.equal(vm.runInContext(`wm.active`, ctx), true, "workout not finished while a parked exercise remains");
 });
 
+// Phase 94: Eating Out — AI-estimated restaurant meal, backdatable, flagged estimated.
+test("Phase 94: saveEatingOut logs an estimated, backdated entry via the shared time control", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  q(`todayStr=function(){return '2026-08-17';};`);
+  // Shared time-select control round-trips (used by Boditrax, Add Food, Eating Out).
+  q(`_setTimeSelects('eo-time-h','eo-time-m','eo-time','19:45')`);
+  assert.equal(q(`document.getElementById('eo-time').value`), "19:45", "dropdowns set the hidden HH:MM");
+  q(`document.getElementById('eo-time-m').value='30'; _syncTimeSelects('eo-time-h','eo-time-m','eo-time')`);
+  assert.equal(q(`document.getElementById('eo-time').value`), "19:30", "changing a dropdown updates the value");
+  // Simulate an estimate having filled the fields, then backdate to yesterday + save.
+  q(`_eoLastEst={confidence:'medium',assumptions:'large chippy chips, full doner in naan, restaurant oil'};`);
+  q(`document.getElementById('eo-name').value='Doner in naan + chips';
+     document.getElementById('eo-cals').value='1400';
+     document.getElementById('eo-protein').value='55';
+     document.getElementById('eo-carbs').value='140';
+     document.getElementById('eo-fat').value='70';
+     document.getElementById('eo-date').value='2026-08-16';
+     _setTimeSelects('eo-time-h','eo-time-m','eo-time','20:15');
+     saveEatingOut();`);
+  const entries = JSON.parse(q(`JSON.stringify(getFoods('2026-08-16'))`));
+  assert.equal(entries.length, 1, "entry landed on the backdated day, not today");
+  const e = entries[0];
+  assert.equal(e.name, "Doner in naan + chips");
+  assert.equal(e.cals, 1400);
+  assert.equal(e.estimated, true, "flagged estimated so the coach treats it as approximate");
+  assert.equal(e.source, "eating-out");
+  assert.equal(e.estConfidence, "medium", "confidence persisted");
+  assert.ok(/restaurant oil/.test(e.estAssumptions || ""), "assumptions persisted");
+  assert.ok(String(e.loggedAt).startsWith("2026-08-16T20:15"), "loggedAt uses the chosen date+time, not now");
+  assert.equal(q(`getFoods('2026-08-17').length`), 0, "nothing logged to today");
+});
+
+// Phase 94: owner sees the "Eating out" button on the Food page.
+test("Phase 94: Food page shows the owner-only Eating Out button", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext(`renderFood()`, ctx);
+  const html = els["page-food"]._html;
+  assert.ok(/openEatingOut\(\)/.test(html), "Eating Out button wired");
+  assert.ok(/Eating out/.test(html), "button labelled");
+});
+
 // Dev-only "Clear today's training" wipes the day's log so a test can re-run.
 test("dev clear-today wipes today's training log (dev-gated)", () => {
   const { ctx } = bootApp();

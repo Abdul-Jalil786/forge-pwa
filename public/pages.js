@@ -721,7 +721,10 @@ function renderFood(){
   document.getElementById('page-food').innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div class="pg-title">Food</div>
-      ${isToday?`<button class="btn btn-lime btn-sm" onclick="openModal('modal-food')">+ Log</button>`:`<button class="btn btn-ghost btn-sm" onclick="setFoodViewDate(todayStr())">← Today</button>`}
+      <div style="display:flex;gap:6px;">
+        ${isOwner()?`<button class="btn btn-ghost btn-sm" onclick="openEatingOut()">🍽️ Eating out</button>`:''}
+        ${isToday?`<button class="btn btn-lime btn-sm" onclick="openModal('modal-food')">+ Log</button>`:`<button class="btn btn-ghost btn-sm" onclick="setFoodViewDate(todayStr())">← Today</button>`}
+      </div>
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;">

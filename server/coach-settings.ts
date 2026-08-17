@@ -4,7 +4,7 @@ import prisma from "./db";
 import { requireAuth, requireOwnerCheck } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection, buildContext } from "./ai-coach";
-import { answerQuestion, estimateFood, extractHealthRecord, chatAnswer, deepAnalysis, eatingAdvice, ChatTurn } from "./ask";
+import { answerQuestion, estimateFood, estimateMealOut, extractHealthRecord, chatAnswer, deepAnalysis, eatingAdvice, ChatTurn } from "./ask";
 import { chargeAiBudget, AI_DAILY_LIMIT, ukToday } from "./ai-budget";
 import { analyzeNutrition, periodComparison } from "./nutrition";
 
@@ -335,6 +335,25 @@ router.post("/estimate-food", requireAuth, aiBudget(), async (req: Request, res:
     res.json({ success: true, estimate });
   } catch (err: any) {
     console.error("Estimate food error:", err);
+    res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to estimate" });
+  }
+});
+
+// Phase 94: "Eating Out" — estimate a restaurant/takeaway meal from free text.
+// Owner-only (the desi/UK-portion tuning is personal). aiBudget applies. On any
+// failure the client falls back to manual macro entry, so the log is never blocked.
+router.post("/estimate-meal-out", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+  try {
+    const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
+    if (!description) { res.status(400).json({ error: "Describe what you ate" }); return; }
+    if (description.length > 500) { res.status(400).json({ error: "Keep it under 500 characters" }); return; }
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
+    const st: any = user?.state || {};
+    if (!st.coachingKey) { res.status(400).json({ error: "No API key configured" }); return; }
+    const estimate = await estimateMealOut(req.userId as string, description);
+    res.json({ success: true, estimate });
+  } catch (err: any) {
+    console.error("Estimate meal-out error:", err);
     res.status(500).json({ error: err?.message?.slice(0, 200) || "Failed to estimate" });
   }
 });
