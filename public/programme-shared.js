@@ -53,6 +53,7 @@ var EXERCISE_NAMES = {
   l4: 'Leg Curl',
   l5: 'Hip Thrust',
   l6: 'Calf Raise',
+  back_squat: 'Back Squat',
   core_suitcase: 'Suitcase Carry',
   kb_swing: 'Kettlebell Swing (two-handed, Russian)',
   // Home
@@ -88,7 +89,7 @@ var EXERCISE_REPS = {
   u1: [6, 8], u2: [8, 10], u3: [6, 8], u4: [6, 8], u5: [8, 10], u6: [10, 12], u7: [12, 15], u8: [12, 15],
   rev_fly: [12, 20], shrug: [12, 20], cfly_mid: [12, 20], cfly_low: [12, 20],
   neck_ext: [12, 15], neck_front: [12, 15],
-  l1: [6, 8], l2: [6, 8], l3: [10, 12], l4: [10, 12], l5: [8, 10], l6: [15, 20],
+  l1: [6, 8], l2: [6, 8], l3: [10, 12], l4: [10, 12], l5: [8, 10], l6: [15, 20], back_squat: [8, 12],
   h1: [10, 12], h2: [8, 15], h3: [8, 10], h4: [10, 12], h5: [12, 15],
 };
 
@@ -116,7 +117,7 @@ var SESSION_EXERCISE_IDS = {
   full: ['l1', 'u1', 'u3', 'u4', 'l4', 'u5', 'u6', 'u7', 'u9'],
   home: ['h1', 'h2', 'h3', 'h4', 'u4', 'h5', 'u6', 'u9', 'core_dead_bug'],
   upperA: ['u4', 'cfly_mid', 'u1', 'u3', 'u5', 'h5', 'rev_fly', 'reh_1', 'reh_3'],
-  lowerA: ['h1', 'l1', 'l4', 'l6', 'core_pallof', 'kb_swing'],
+  lowerA: ['back_squat', 'l1', 'l4', 'l6', 'core_pallof', 'kb_swing'],
   upperB: ['cfly_low', 'u2', 'h3', 'u4', 'u8', 'h5', 'u6', 'u7', 'core_dead_bug', 'reh_1', 'reh_2', 'reh_3'],
   lowerB: ['l5', 'l2', 'l1', 'core_suitcase', 'h5', 'shrug', 'kb_swing'],
   zone2: ['cardio_z2'],

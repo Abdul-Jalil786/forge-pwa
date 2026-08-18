@@ -98,7 +98,7 @@ const WORKOUTS = {
     muscles:'Quads · Hamstrings · Calves · Core',
     duration:'50–60',
     exercises:[
-      {id:'h1',name:'Goblet Squat',sets:3,reps:'10–12',rest:90,muscle:'Quads',size:'medium',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=goblet+squat+form'},
+      {id:'back_squat',name:'Back Squat',sets:3,reps:'8–12',rest:120,muscle:'Quads',size:'large',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=barbell+back+squat+form'},
       {id:'l1',name:'Leg Press',sets:4,reps:'8–10',rest:120,muscle:'Quads',size:'large',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
       {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
       {id:'l6',name:'Calf Raise',sets:3,reps:'12–15',rest:45,muscle:'Calves',size:'medium',fillers:['fill_deep_squat'],yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
