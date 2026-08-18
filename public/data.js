@@ -83,6 +83,7 @@ const WORKOUTS = {
     duration:'50–60',
     exercises:[
       {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'cfly_mid',name:'Cable Fly',sets:2,reps:'12–20',rest:60,muscle:'Chest',size:'small',yt:'https://www.youtube.com/results?search_query=cable+fly+chest+form'},
       {id:'u1',name:'Chest Press',sets:3,reps:'8–10',rest:90,muscle:'Chest',size:'medium',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=chest+press+form'},
       {id:'u3',name:'Seated Row',sets:3,reps:'8–10',rest:90,muscle:'Back',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
       {id:'u5',name:'Lat Pulldown',sets:3,reps:'10–12',rest:90,muscle:'Lats',size:'medium',fillers:['fill_hip_switch'],yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
@@ -110,6 +111,7 @@ const WORKOUTS = {
     muscles:'Chest · Back · Shoulders · Arms · Core',
     duration:'50–60',
     exercises:[
+      {id:'cfly_low',name:'Low-to-High Cable Fly',sets:2,reps:'12–20',rest:60,muscle:'Upper Chest',size:'small',yt:'https://www.youtube.com/results?search_query=low+to+high+cable+fly+form'},
       {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Upper Chest',size:'medium',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
       {id:'h3',name:'One-Arm Dumbbell Row',sets:3,reps:'8–10 each side',rest:90,muscle:'Back',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=one+arm+dumbbell+row+form'},
       {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
