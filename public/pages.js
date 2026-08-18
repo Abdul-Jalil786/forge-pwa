@@ -2941,6 +2941,27 @@ function renderSkinSection(){
   return `<div id="skin-week">${renderSkinWeekStrip()}</div>`+renderSkinJournalPrompt()+renderSkinChecklist()+renderRetinolJourney();
 }
 
+// Phase 100: FFMI → rough percentile among adults. FFMI (= lean mass ÷ height²) is
+// the same number as the Lean Mass Index; this maps it to a population percentile +
+// band. Women's FFMI runs ~3 points lower for the same relative muscularity, so we
+// shift onto the male scale for the lookup. Approximate + BIA-based — a ballpark.
+function _ffmiPercentile(ffmi, sex){
+  if(ffmi==null) return null;
+  const v = ffmi + (sex==='female' ? 3 : 0);
+  const table = [
+    [25, 98, 'Elite — near the natural ceiling'],
+    [24, 96, 'Excellent'],
+    [23, 93, 'Excellent'],
+    [22, 88, 'Advanced'],
+    [21, 80, 'Above average'],
+    [20, 70, 'Above average'],
+    [19, 55, 'Average'],
+    [18, 35, 'Average'],
+    [17, 20, 'Below average'],
+  ];
+  for(const [thr,pct,band] of table){ if(v>=thr) return {pct,band}; }
+  return {pct:10, band:'Below average'};
+}
 function renderWhereYouStand(){
   const profile = STATE.profile || {};
   const personal = profile.personal || {};
@@ -2966,6 +2987,10 @@ function renderWhereYouStand(){
   const heightM = heightCm / 100;
   const bmi = cw ? Math.round((cw / (heightM*heightM)) * 10) / 10 : null;
   const lbmi = clbm ? Math.round((clbm / (heightM*heightM)) * 10) / 10 : null;
+  // Phase 100: FFMI = lean mass ÷ height² (same value as LBMI). Normalised FFMI
+  // height-adjusts to a 1.8m reference so it compares fairly across heights.
+  const nffmi = lbmi != null ? Math.round((lbmi + 6.1*(1.8 - heightM)) * 10) / 10 : null;
+  const ffmiPct = lbmi != null ? _ffmiPercentile(lbmi, sex) : null;
 
   // Visceral fat — latest reading
   let visceral = null;
@@ -3007,6 +3032,14 @@ function renderWhereYouStand(){
       ${_wysRow('Visceral Fat',  visceral, '',   visceralBands, ethnicity==='south-asian' ? 'South Asian threshold for elevated risk is ≥ 7 (vs ≥ 10 for European baseline).' : null)}
       ${_wysRow('Resting HR (7d avg)', avgRHR, ' bpm', WYS.rhr.bands, 'Lower RHR generally indicates better cardiovascular fitness.')}
       ${_wysRow('Sleep (7d avg)', avgSleep, ' h', WYS.sleep, 'NIH recommends 7-9 hours for adults.')}
+      ${(lbmi!=null && ffmiPct) ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+          <div style="font-size:13px;color:var(--text);font-weight:600;">FFMI · muscularity</div>
+          <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--lime);letter-spacing:-.5px;">${lbmi}</div>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5;">${ffmiPct.band} — about the <strong style="color:var(--lime);">${ffmiPct.pct}th percentile</strong> of ${sex==='female'?'women':'men'}.${nffmi!=null?` Height-adjusted ≈ <strong>${nffmi}</strong>.`:''}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:5px;line-height:1.5;">Fat-Free Mass Index = lean mass ÷ height² (the same number as Lean Mass Index above). From your latest BIA weight + body-fat, so treat it as a ballpark; ~25 is the natural drug-free ceiling.</div>
+      </div>` : ''}
     </div>`;
 }
 
