@@ -988,7 +988,7 @@ test("logging an accessory during rest records a real set without touching the c
   const T = "2026-07-25";
   vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
   // Resting after Shoulder Press (u4) set 1; reh_3 Banded Shoulder Flexion Raise is a 2×12 accessory.
-  vm.runInContext(`STATE.exLog={'${T}':{u4:{sets:[{kg:50,reps:10,done:true}]}}};`, ctx);
+  vm.runInContext(`STATE.exLog={'${T}':{u4:{sets:[{kg:50,reps:10,done:true}]},u5:{done:true,sets:[{kg:40,reps:10,done:true}]}}};`, ctx); // u5 done → no superset, so bands show (Phase 98)
   vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:123456,restInterval:null};`, ctx);
   vm.runInContext(`renderWmRest()`, ctx);
   const before = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
@@ -1007,7 +1007,7 @@ test("rest panel: one accessory set per rest, locks, then resumes/advances next 
   seed(ctx);
   const T = "2026-07-25";
   vm.runInContext(`todayStr=function(){return '${T}';};`, ctx);
-  vm.runInContext(`STATE.exLog={'${T}':{u4:{sets:[{kg:50,reps:10,done:true,effort:'solid'}]}}};`, ctx);
+  vm.runInContext(`STATE.exLog={'${T}':{u4:{sets:[{kg:50,reps:10,done:true,effort:'solid'}]},u5:{done:true,sets:[{kg:40,reps:10,done:true}]}}};`, ctx); // u5 done → superset suppressed, bands show (Phase 98)
   // ── Rest gap 1 ──
   vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:1};`, ctx);
   assert.doesNotThrow(() => vm.runInContext(`renderWmRest()`, ctx), "rest screen renders the accessory panel");
@@ -1048,7 +1048,7 @@ test("rest accessory defaults reference last session's reps + weight", () => {
   // cable Band External Rotation (reh_1, weighted:true) at 10kg×14.
   vm.runInContext(`STATE.exLog={
     '2026-07-21':{_session:{sessionType:'upperA'}, u4:{done:true,sets:[{kg:50,reps:10,done:true},{kg:50,reps:10,done:true},{kg:50,reps:10,done:true}]}, u1:{done:true,sets:[{kg:40,reps:8,done:true}]}, u3:{done:true,sets:[{kg:40,reps:8,done:true}]}, u5:{done:true,sets:[{kg:40,reps:10,done:true}]}, reh_3:{done:true,sets:[{reps:20,done:true},{reps:20,done:true}]}, reh_1:{done:true,sets:[{kg:10,reps:14,done:true},{kg:10,reps:14,done:true}]}},
-    '${T}':{u4:{sets:[{kg:50,reps:10,done:true}]}}
+    '${T}':{u4:{sets:[{kg:50,reps:10,done:true}]}, u5:{done:true,sets:[{kg:40,reps:10,done:true}]}}
   };`, ctx);
   vm.runInContext(`wm={active:true,session:'upperA',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:1};`, ctx);
   vm.runInContext(`renderWmRest()`, ctx);
@@ -1117,6 +1117,8 @@ test("Phase 93: rest offers the antagonist partner; logging it carries partial p
   assert.ok(/Superset/.test(html), "superset card is shown");
   assert.ok(/wmRestLogSet\('u5'\)/.test(html), "u4's antagonist partner (u5 Lat Pulldown) is offered");
   assert.ok(!/wmRestLogSet\('u4'\)/.test(html), "the lift being rested is not offered as its own partner");
+  // Phase 98: superset takes priority — the band/mobility panel is hidden while a superset is on offer.
+  assert.ok(!/Knock out accessories|Rest-gap mobility/.test(html), "bands + mobility hidden while a superset is offered");
   // Log ONE set of the partner during the rest → real viaRest set, no timer touched.
   const before = vm.runInContext(`JSON.stringify({t:wm.restTarget,s:wm.restStarted,m:wm.mode})`, ctx);
   vm.runInContext(`document.getElementById('wm-acc-reps-u5').value='11'; wmRestLogSet('u5');`, ctx);

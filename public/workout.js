@@ -2336,11 +2336,14 @@ function renderWmRest(){
   // instead of the old behaviour where the rest drill and its standalone twin were
   // two separate items (band pull-apart done in a rest gap still showing up later).
   // Logging never touches the countdown — it re-renders only the panel's own rows.
-  const accessoryPanel=_wmAccessoryPanelHTML(ex.id);
-  // Phase 93: antagonist-superset partner offered above the accessories during a
-  // normal between-set rest (not the between-exercise post rest, where the next
-  // exercise is already queued). Wrapped in a stable id so wmRestLogSet can refresh it.
-  const supersetCard=wm.postExercise?'':`<div id="wm-rest-superset">${_wmSupersetCardHTML(ex.id)}</div>`;
+  // Phase 98: superset takes PRIORITY in the rest gap. While the current lift has a
+  // pending antagonist partner, offer ONLY the superset; the band accessories +
+  // mobility surface once there's no superset left to do. This means doing a band can
+  // never hide the superset offer (they're never shown together), and you clear your
+  // supersets first with the bands coming afterward.
+  const hasSuperset=!wm.postExercise && !!_wmSupersetPartner(ex.id);
+  const supersetCard=hasSuperset?`<div id="wm-rest-superset">${_wmSupersetCardHTML(ex.id)}</div>`:'';
+  const accessoryPanel=hasSuperset?'':_wmAccessoryPanelHTML(ex.id);
   const html=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Resting</div>
