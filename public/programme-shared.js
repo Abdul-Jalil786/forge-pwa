@@ -23,7 +23,7 @@
 // templates (upper / lower / full / home), deduped by id.
 var EXERCISE_NAMES = {
   // Upper
-  u1: 'Chest Press',
+  u1: 'Flat Dumbbell Press',
   u2: 'Incline Dumbbell Press',
   u3: 'Seated Row',
   u4: 'Shoulder Press',

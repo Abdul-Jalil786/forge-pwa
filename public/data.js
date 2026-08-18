@@ -8,7 +8,7 @@ const WORKOUTS = {
     muscles:'Chest · Back · Shoulders · Biceps · Triceps · Core',
     duration:'55–60',
     exercises:[
-      {id:'u1',name:'Chest Press',sets:4,reps:'6–8',rest:90,muscle:'Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=chest+press+form'},
+      {id:'u1',name:'Flat Dumbbell Press',sets:4,reps:'6–8',rest:90,muscle:'Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=flat+dumbbell+press+form'},
       {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Upper Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
       {id:'u3',name:'Seated Row',sets:4,reps:'6–8',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
       {id:'u4',name:'Shoulder Press',sets:3,reps:'6–8',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
@@ -47,7 +47,7 @@ const WORKOUTS = {
     duration:'45–55',
     exercises:[
       {id:'l1',name:'Leg Press',sets:3,reps:'8–10',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
-      {id:'u1',name:'Chest Press',sets:3,reps:'8–10',rest:90,muscle:'Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=chest+press+form'},
+      {id:'u1',name:'Flat Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=flat+dumbbell+press+form'},
       {id:'u3',name:'Seated Row',sets:3,reps:'8–10',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
       {id:'u4',name:'Shoulder Press',sets:2,reps:'8–10',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
       {id:'l4',name:'Leg Curl',sets:2,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+machine+form'},
@@ -84,7 +84,7 @@ const WORKOUTS = {
     exercises:[
       {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',fillers:['fill_band_pull_apart'],yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
       {id:'cfly_mid',name:'Cable Fly',sets:2,reps:'12–20',rest:60,muscle:'Chest',size:'small',yt:'https://www.youtube.com/results?search_query=cable+fly+chest+form'},
-      {id:'u1',name:'Chest Press',sets:3,reps:'8–10',rest:90,muscle:'Chest',size:'medium',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=chest+press+form'},
+      {id:'u1',name:'Flat Dumbbell Press',sets:3,reps:'8–10',rest:90,muscle:'Chest',size:'medium',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=flat+dumbbell+press+form'},
       {id:'u3',name:'Seated Row',sets:3,reps:'8–10',rest:90,muscle:'Back',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
       {id:'u5',name:'Lat Pulldown',sets:3,reps:'10–12',rest:90,muscle:'Lats',size:'medium',fillers:['fill_hip_switch'],yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
       {id:'h5',name:'Lateral Raise',sets:4,reps:'12–15',rest:60,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
