@@ -86,9 +86,9 @@ const WORKOUTS = {
       {id:'u1',name:'Chest Press',sets:3,reps:'8–10',rest:90,muscle:'Chest',size:'medium',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=chest+press+form'},
       {id:'u3',name:'Seated Row',sets:3,reps:'8–10',rest:90,muscle:'Back',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=seated+cable+row+form'},
       {id:'u5',name:'Lat Pulldown',sets:3,reps:'10–12',rest:90,muscle:'Lats',size:'medium',fillers:['fill_hip_switch'],yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
-      {id:'h5',name:'Lateral Raise',sets:2,reps:'12–15',rest:60,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
+      {id:'h5',name:'Lateral Raise',sets:4,reps:'12–15',rest:60,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
+      {id:'rev_fly',name:'Reverse Fly',sets:3,reps:'12–20',rest:60,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=reverse+fly+rear+delt+form'},
       {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',weighted:true,yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
-      {id:'reh_2',name:'Band Pull-Apart',sets:2,reps:'15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+pull+apart+form'},
       {id:'reh_3',name:'Banded Shoulder Flexion Raise',sets:2,reps:'12',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=banded+shoulder+flexion+raise'},
     ]
   },
@@ -114,6 +114,7 @@ const WORKOUTS = {
       {id:'h3',name:'One-Arm Dumbbell Row',sets:3,reps:'8–10 each side',rest:90,muscle:'Back',size:'medium',fillers:['fill_dead_bug'],yt:'https://www.youtube.com/results?search_query=one+arm+dumbbell+row+form'},
       {id:'u4',name:'Shoulder Press',sets:3,reps:'10–12',rest:90,muscle:'Shoulders',size:'medium',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
       {id:'u8',name:'Face Pull',sets:3,reps:'12–15',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+exercise+form'},
+      {id:'h5',name:'Lateral Raise',sets:4,reps:'12–15',rest:60,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
       {id:'u6',name:'Bicep Curl',sets:2,reps:'10–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
       {id:'u7',name:'Tricep Rope Pushdown',sets:2,reps:'12–15',rest:60,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+rope+pushdown+form'},
       {id:'core_dead_bug',name:'Dead Bug',sets:3,reps:'10 each side',rest:45,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=dead+bug+exercise+form'},
@@ -131,6 +132,8 @@ const WORKOUTS = {
       {id:'l2',name:'Romanian Deadlift',sets:3,reps:'6–8',rest:120,muscle:'Hamstrings',size:'large',fillers:['fill_pallof'],yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
       {id:'l1',name:'Leg Press',sets:3,reps:'10–12',rest:120,muscle:'Quads',size:'large',fillers:['fill_band_ext_rot'],yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
       {id:'core_suitcase',name:'Suitcase Carry',sets:3,reps:'40–60s/side',metric:'carry',targetSeconds:40,targetSecondsLow:40,targetSecondsHigh:60,rest:60,muscle:'Core',size:'medium',yt:'https://www.youtube.com/results?search_query=suitcase+carry+form'},
+      {id:'h5',name:'Lateral Raise',sets:4,reps:'12–15',rest:60,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
+      {id:'shrug',name:'Dumbbell Shrug',sets:3,reps:'12–20',rest:60,muscle:'Traps',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shrug+form'},
       {id:'kb_swing',name:'Kettlebell Swing (two-handed, Russian)',sets:3,reps:'10',rest:60,muscle:'Glutes/Posterior Chain',size:'medium',finisher:true,yt:'https://www.youtube.com/results?search_query=russian+kettlebell+swing+two+handed+form'},
     ]
   },
