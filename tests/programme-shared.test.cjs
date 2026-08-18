@@ -46,7 +46,7 @@ test("EXERCISE_NAMES has no phantom ids (every id exists in WORKOUTS)", () => {
 });
 
 test("exerciseName resolves current, legacy, and unknown ids", () => {
-  assert.equal(shared.exerciseName("u1"), "Chest Press");
+  assert.equal(shared.exerciseName("u1"), "Flat Dumbbell Press");
   assert.equal(shared.exerciseName("h5"), "Lateral Raise");
   // legacy (retired) ids still resolve so historical exLog stays readable
   assert.equal(shared.exerciseName("l8"), "Ab Crunch");
