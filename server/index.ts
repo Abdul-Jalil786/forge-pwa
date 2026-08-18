@@ -1253,6 +1253,42 @@ async function seedJayAvocadoWeighedV1() {
   }
 }
 
+// Phase 96: bump Jay's post-workout shake from 1 scoop to 2 scoops of whey (= 40g
+// protein at the app's 20g/scoop — see Phase 86a). Same blueberries + creatine;
+// only the whey doubles. Matched by /whey/i and replaced in place so the meal keeps
+// its position; the meal totals are re-derived from the ingredient sum.
+async function updateJayPostShake2ScoopsV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.jayPostShake2ScoopsV1) return;
+    const mp: any = state.mealPlan;
+    if (!mp || !Array.isArray(mp.meals)) return;
+    const shake: any =
+      mp.meals.find((m: any) => m.id === "post-shake") ||
+      mp.meals.find((m: any) => /post.?workout shake/i.test((m && m.name) || ""));
+    if (!shake || !Array.isArray(shake.ingredients)) return;
+    const idx = shake.ingredients.findIndex((ing: any) => /whey/i.test((ing && ing.name) || ""));
+    if (idx < 0) return;
+    // 2 scoops whey (40g protein, ~220 kcal) + 100g blueberries (~57 kcal) + 5g creatine.
+    shake.ingredients[idx] = {
+      name: "2 scoops whey + water + 100g blueberries + 5g creatine",
+      cals: 277, protein: 40, carbs: 18, fat: 3, gi: "low",
+    };
+    const sum = (k: string) => shake.ingredients.reduce((s: number, ing: any) => s + (Number(ing && ing[k]) || 0), 0);
+    shake.cals = Math.round(sum("cals"));
+    shake.protein = Math.round(sum("protein"));
+    shake.carbs = Math.round(sum("carbs"));
+    shake.fat = Math.round(sum("fat"));
+    state.jayPostShake2ScoopsV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log("[migration] Jay post-workout shake → 2 scoops whey (40g protein)");
+  } catch (err) {
+    console.error("[migration] updateJayPostShake2ScoopsV1 failed:", err);
+  }
+}
+
 // Phase 86: fix the user's "2 scoops whey" quick template — protein was entered as
 // 480g (a 10× typo); a 2-scoop shake is ~48g. Corrects the saved template AND any
 // historical food log that used the wrong value (day totals are summed live from
@@ -2634,6 +2670,7 @@ const server = app.listen(PORT, async () => {
   await seedJayAvocadoWeighedV1(); // Phase 95: breakfast avocado → weight-based (flesh, weighed)
   await fixJayWheyTemplateProteinV1(); // Phase 86: whey template protein 480→48 + logs
   await fixJayWheyScoop20gV1(); // Phase 86a: 1 scoop = 20g (2-scoop template 48→40)
+  await updateJayPostShake2ScoopsV1(); // Phase 96: post-workout shake → 2 scoops (40g protein)
   await fixJayLegPressSledV1();
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();
