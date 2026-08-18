@@ -452,6 +452,24 @@ test("Phase 97: lateral raises (4×3 days), reverse fly on Upper A, shrug on Low
   assert.equal(q(`FORGE_PROGRAMME.exerciseName('shrug')`), "Dumbbell Shrug", "shrug name in sync");
 });
 
+// ---- Phase 100: FFMI + percentile on the Where You Stand card ----
+test("Phase 100: FFMI percentile line renders from lean mass + height", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  // FFMI helper maps lean-mass-index to a band + percentile (male scale).
+  assert.equal(q(`_ffmiPercentile(22, 'male').pct`), 88, "FFMI 22 → ~88th percentile");
+  assert.equal(q(`_ffmiPercentile(19, 'male').band`), "Average", "FFMI 19 → average");
+  assert.ok(q(`_ffmiPercentile(16, 'female').pct`) >= 55, "women's scale shifted (16 ≈ average+)");
+  // Card renders the FFMI line when weight + BF + height/sex are present.
+  q(`STATE.profile={...STATE.profile, personal:{age:52, heightCm:170, sex:'male'}};`);
+  q(`STATE.weightLog=[{date:'2026-08-01',weight:95}]; STATE.bfLog=[{date:'2026-08-01',bf:25}];`);
+  const html = q(`renderWhereYouStand()`);
+  assert.ok(/FFMI · muscularity/.test(html), "FFMI block shown");
+  assert.ok(/percentile/.test(html), "percentile stated");
+  assert.ok(/Height-adjusted/.test(html), "normalised FFMI shown");
+});
+
 // ---- Phase 99: cable-fly pre-exhaust before each chest press ----
 test("Phase 99: cable fly sits immediately before the press on both upper days", () => {
   const { ctx } = bootApp();
