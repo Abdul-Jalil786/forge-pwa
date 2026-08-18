@@ -452,6 +452,25 @@ test("Phase 97: lateral raises (4×3 days), reverse fly on Upper A, shrug on Low
   assert.equal(q(`FORGE_PROGRAMME.exerciseName('shrug')`), "Dumbbell Shrug", "shrug name in sync");
 });
 
+// ---- Phase 99: cable-fly pre-exhaust before each chest press ----
+test("Phase 99: cable fly sits immediately before the press on both upper days", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  const ids = (t) => JSON.parse(q(`JSON.stringify(WORKOUTS['${t}'].exercises.map(e=>e.id))`));
+  const a = ids("upperA"), b = ids("upperB");
+  // Upper A: mid cable fly directly before Chest Press (u1).
+  assert.equal(a[a.indexOf("u1") - 1], "cfly_mid", "Cable Fly is right before Chest Press");
+  assert.equal(q(`WORKOUTS.upperA.exercises.find(e=>e.id==='cfly_mid').sets`), 2, "2 sets (activation dose)");
+  // Upper B: low-to-high cable fly directly before Incline Press (u2), at the start.
+  assert.equal(b[b.indexOf("u2") - 1], "cfly_low", "Low-to-High Cable Fly is right before Incline Press");
+  assert.equal(b[0], "cfly_low", "incline day opens with the cable-fly activation");
+  assert.equal(q(`WORKOUTS.upperB.exercises.find(e=>e.id==='cfly_low').muscle`), "Upper Chest");
+  // Names resolve through the shared map (parity).
+  assert.equal(q(`FORGE_PROGRAMME.exerciseName('cfly_mid')`), "Cable Fly");
+  assert.equal(q(`FORGE_PROGRAMME.exerciseName('cfly_low')`), "Low-to-High Cable Fly");
+});
+
 // ---- Phase 90a: day-detail renders carry (Suitcase) sets, not "no sets logged" ----
 test("Phase 90a: Suitcase Carry sets show L/R seconds in the day detail", () => {
   const { ctx } = bootApp();
@@ -1330,8 +1349,9 @@ test("next-set prefill reflects the add-weight guidance (kg up + reps to bottom)
   seed(ctx);
   vm.runInContext(`todayStr = function(){ return '2026-07-25'; };`, ctx);
   vm.runInContext(`Object.assign(STATE, { exLog: { '2026-07-14': { _session:{sessionType:'upperA'}, u1:{ sets:[{kg:60,reps:9,effort:'solid'}], done:true } } } });`, ctx);
-  // Guided workout: upperA, exercise index 1 = u1 Chest Press (range 8–10), set 1.
-  vm.runInContext(`wm = { active:true, session:'upperA', exIdx:1, setIdx:0, mode:'set', restTarget:90, autoReg:null };`, ctx);
+  // Guided workout: upperA, exercise index 2 = u1 Chest Press (range 8–10), set 1
+  // (index 1 is now the cfly_mid Cable Fly pre-exhaust, Phase 99).
+  vm.runInContext(`wm = { active:true, session:'upperA', exIdx:2, setIdx:0, mode:'set', restTarget:90, autoReg:null };`, ctx);
   // Log set 1 = 60kg × 10 (top of range), rate SOLID → guidance "add weight".
   vm.runInContext(`document.getElementById('wm-kg').value='60'; document.getElementById('wm-reps').value='10';`, ctx);
   vm.runInContext(`wmMarkSetDone(90);`, ctx);
