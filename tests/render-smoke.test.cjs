@@ -405,7 +405,7 @@ test("Phase 91: lower A/B reordered; schemes + cross-runtime map stay in sync", 
   const { ctx } = bootApp();
   seed(ctx);
   const ids = (tmpl) => vm.runInContext(`JSON.stringify(WORKOUTS['${tmpl}'].exercises.map(e=>e.id))`, ctx);
-  assert.equal(ids("lowerA"), JSON.stringify(["h1", "l1", "l4", "l6", "core_pallof", "kb_swing"]), "Lower A: …Pallof, KB Swing (Phase 92)");
+  assert.equal(ids("lowerA"), JSON.stringify(["back_squat", "l1", "l4", "l6", "core_pallof", "kb_swing"]), "Lower A: …Pallof, KB Swing (Phase 92)");
   assert.equal(ids("lowerB"), JSON.stringify(["l5", "l2", "l1", "core_suitcase", "h5", "shrug", "kb_swing"]), "Lower B: …Suitcase, Lateral Raise, Shrug, KB Swing (Phase 97)");
   // schemes preserved on the moved lifts
   const ex = (tmpl, id) => vm.runInContext(`JSON.stringify(WORKOUTS['${tmpl}'].exercises.find(e=>e.id==='${id}'))`, ctx);
