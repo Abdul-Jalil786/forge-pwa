@@ -107,6 +107,10 @@ function renderPhaseSection(){
 function renderToday(){
   const p=getActive(); if(!p)return;
   const session=getTodaySession();
+  // Phase 106: optional "extra" KB conditioning on days that don't already schedule the
+  // swing (e.g. the Wednesday rest day). Only for the 5-day split (where kb_swing lives).
+  const _kbToday=!!(session&&WORKOUTS[session]&&WORKOUTS[session].exercises.some(e=>e.id==='kb_swing'));
+  const showKbExtra=p.programId==='upper-lower-5d-fixed'&&!_kbToday&&typeof startKbConditioning==='function';
   const cw=getCurrentWeight();
   const bf=getCurrentBf();
   const lost=Math.max(0,p.startWeight-cw);
@@ -206,6 +210,7 @@ function renderToday(){
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">${nextMealStr}</div>
       ${readiness?`<div style="font-size:12px;color:${recColor};font-weight:600;">${recRec} · Readiness ${readiness}</div>`:''}
       ${(()=>{const fs=(typeof getFastingStreak==='function')?getFastingStreak():0;return fs>0?`<div style="font-size:12px;color:var(--cyan);font-weight:600;margin-top:2px;">🔥 ${fs} day fasting streak</div>`:'';})()}
+      ${showKbExtra?`<button onclick="startKbConditioning()" style="width:100%;margin-top:10px;padding:10px;border-radius:9px;border:1px solid rgba(255,140,0,.4);background:rgba(255,140,0,.1);color:var(--orange);font-size:13px;font-weight:700;cursor:pointer;">⚡ Extra KB conditioning</button>`:''}
     </div>
 
     <div class="sec-label">Progress to Goal</div>
@@ -2408,12 +2413,16 @@ function renderDayDetail(date){
         const carry=(typeof isCarry==='function')&&isCarry(ex);
         // Phase 92: KB Swing EMOM sets store rounds/roundsTarget/reps/load, not kg×reps.
         const emom=(sessionLog[ex.id].sets||[]).some(s=>s&&s.emom);
-        const sets=(sessionLog[ex.id].sets||[]).filter(s=>emom?s.emom:carry?(s.leftSeconds!=null||s.rightSeconds!=null):timed?s.seconds:(s.kg||s.reps));
-        const exVol=(timed||carry||emom)?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
+        // Phase 106: KB Swing density sets store sets/reps/rest/load, not kg×reps.
+        const density=(sessionLog[ex.id].sets||[]).some(s=>s&&s.density);
+        const sets=(sessionLog[ex.id].sets||[]).filter(s=>emom?s.emom:density?s.density:carry?(s.leftSeconds!=null||s.rightSeconds!=null):timed?s.seconds:(s.kg||s.reps));
+        const exVol=(timed||carry||emom||density)?0:sets.reduce((s,x)=>s+(parseFloat(x.kg)||0)*(parseInt(x.reps)||0),0);
         totalVolume+=exVol;
         const exEffort=sessionLog[ex.id].effort;
         const summary=emom
           ?sets.map(s=>`EMOM ${s.rounds||0}/${s.roundsTarget||0} · ${s.repsPerMin||12}×/min @ ${s.load||'?'}kg${s.outcome?' ('+s.outcome+')':''}`).join(', ')
+          :density
+          ?sets.map(s=>`${s.setsCompleted||0}×${s.reps||15} @ ${s.restSec||60}s rest · ${s.load||'?'}kg${s.outcome?' ('+s.outcome+')':''}`).join(', ')
           :carry
           ?sets.map(s=>`L ${s.leftSeconds||0}s · R ${s.rightSeconds||0}s`).join(', ')+(exEffort?efMap[exEffort]||'':'')
           :timed

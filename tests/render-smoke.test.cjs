@@ -62,7 +62,7 @@ function makeContext() {
   return { ctx, els };
 }
 
-const FILES = ["targets.js", "programme-shared.js", "proactive-core.js", "kb-emom.js", "data.js", "workout.js", "pages.js", "app.js"];
+const FILES = ["targets.js", "programme-shared.js", "proactive-core.js", "kb-emom.js", "kb-density.js", "data.js", "workout.js", "pages.js", "app.js"];
 function bootApp() {
   const { ctx, els } = makeContext();
   for (const f of FILES) {
@@ -601,6 +601,59 @@ test("Phase 92: KB EMOM start screen + finish logging + day-detail render", () =
   const dd = q(`document.getElementById('ddContent').innerHTML`);
   assert.ok(/EMOM 6\/8/.test(dd), "day-detail shows the EMOM result");
   assert.ok(!/Kettlebell[\s\S]{0,120}no sets logged/.test(dd), "not falsely 'no sets logged'");
+});
+
+// ---- Phase 106: guided KB DENSITY conditioning flow ----
+test("Phase 106: KB density engine wired + guided set→rest→effort flow + day-detail", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  assert.equal(q(`typeof KB_DENSITY`), "object", "kb-density.js loaded as a global");
+  assert.equal(q(`typeof kbdSuggestion`), "function", "data helper wired");
+  // cold start suggestion = 3 sets × 15 @ 60s
+  q(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.exLog={};`);
+  const sug = JSON.parse(q(`JSON.stringify(kbdSuggestion(20))`));
+  assert.equal(sug.targetSets, 3); assert.equal(sug.reps, 15); assert.equal(sug.restSec, 60);
+  // renderWmSet on kb_swing routes to the density start screen (not EMOM, not weighted)
+  q(`wm.active=true; wm.session='lowerB'; wm.exIdx=WORKOUTS.lowerB.exercises.findIndex(e=>e.id==='kb_swing'); wm.setIdx=0;`);
+  q(`renderWmSet()`);
+  const start = q(`document.getElementById('wmContent').innerHTML`);
+  assert.ok(/3 sets × 15/.test(start), "density target shown");
+  assert.ok(/60s rest/.test(start), "rest shown");
+  assert.ok(/START →/.test(start) && !/EMOM/.test(start), "density start, not EMOM");
+  // begin → set screen
+  q(`wmKbdBegin()`);
+  const setScr = q(`document.getElementById('wmContent').innerHTML`);
+  assert.ok(/SET 1/.test(setScr) && /15 SWINGS/.test(setScr), "set 1 screen");
+  // do a set → rest screen; then stop → effort screen; rate solid → logs a density set
+  q(`wmKbdSetDone()`);
+  assert.equal(q(`wm.mode`), "kbdRest", "entered rest after a set");
+  q(`wmKbdStop()`);
+  assert.ok(/How did that feel/.test(q(`document.getElementById('wmContent').innerHTML`)), "effort screen after stop");
+  q(`wmKbdRecordEffort('solid')`);
+  const T = q(`todayStr()`);
+  const set = JSON.parse(q(`JSON.stringify(STATE.exLog['${T}'].kb_swing.sets.find(s=>s.density))`));
+  assert.equal(set.setsCompleted, 1); assert.equal(set.reps, 15); assert.equal(set.effort, "solid");
+  assert.equal(set.outcome, "PARTIAL", "1 of 3 target → PARTIAL");
+  assert.ok(/1 × 15/.test(q(`document.getElementById('wmContent').innerHTML`)), "done screen shows result");
+  // stopping before any set = skip (no set logged, marked skipped)
+  q(`STATE.exLog={}; wm.active=true; wm.session='lowerB'; wm.exIdx=WORKOUTS.lowerB.exercises.findIndex(e=>e.id==='kb_swing'); renderWmSet(); wmKbdBegin(); wmKbdStop();`);
+  assert.equal(q(`STATE.exLog['${T}']&&STATE.exLog['${T}'].kb_swing&&STATE.exLog['${T}'].kb_swing.skipped`), true, "stop with 0 sets → skipped");
+  // day-detail renders the density set (not "no sets logged")
+  q(`STATE.profile.programmeStartDate='2026-07-20'; STATE.exLog['2026-08-14']={kb_swing:{done:true,sets:[{density:true,load:20,reps:15,restSec:60,targetSets:3,setsCompleted:5,cleanLastSet:true,outcome:'FULL',done:true}]},_session:{sessionType:'lowerB',startedAt:1,completedAt:2}};`);
+  q(`renderDayDetail('2026-08-14')`);
+  const dd = q(`document.getElementById('ddContent').innerHTML`);
+  assert.ok(/5×15 @ 60s/.test(dd), "day-detail shows the density result");
+  assert.ok(!/Kettlebell[\s\S]{0,120}no sets logged/.test(dd), "not falsely 'no sets logged'");
+  // standalone "optional extra" entry (Wednesday etc.): opens the density timer, logs
+  // today's kb_swing, closes without a session recap / next-exercise.
+  assert.equal(q(`typeof startKbConditioning`), "function", "standalone entry defined");
+  q(`STATE.exLog={}; startKbConditioning();`);
+  assert.equal(q(`wm.kbdStandalone`), true, "standalone flag set");
+  assert.ok(/3 sets × 15/.test(q(`document.getElementById('wmContent').innerHTML`)), "standalone start screen");
+  q(`wmKbdBegin(); wmKbdSetDone(); wmKbdStop(); wmKbdRecordEffort('easy');`);
+  const T2 = q(`todayStr()`);
+  assert.equal(q(`STATE.exLog['${T2}'].kb_swing.sets.filter(s=>s.density).length`), 1, "standalone logged a density set");
 });
 
 // ---- Phase 92 iOS/PWA: graceful degradation (no vibrate / no wakeLock) ----
