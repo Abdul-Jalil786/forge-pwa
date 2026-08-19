@@ -533,6 +533,7 @@ function startGuidedWorkout(overrideSession,forDate){
   _saveWmState();
   _wmStartAutoSave();
   document.getElementById('workoutMode').classList.add('open');
+  if(typeof _kbWakeAcquire==='function'){_kbWakeAcquire();_kbWireVisibility();} // Phase 105: keep screen awake for the whole session
   _renderWmEntry();
 }
 
@@ -728,6 +729,7 @@ function resumeGuidedWorkout(){
   wm={...saved,active:true,restInterval:null,transitionInterval:null,timerInterval:null};
   _wmStartAutoSave();
   document.getElementById('workoutMode').classList.add('open');
+  if(typeof _kbWakeAcquire==='function'){_kbWakeAcquire();_kbWireVisibility();} // Phase 105: keep screen awake for the whole session
   switch(wm.mode){
     case 'feel':          _renderWmEntry(); break;
     case 'gate':          _renderWmEntry(); break;
@@ -2035,13 +2037,15 @@ function _kbCue(strong){
 let _kbWakeLock=null;
 function _kbWakeAcquire(){ try{ if(_kbCanWake()&&navigator.wakeLock.request){ navigator.wakeLock.request('screen').then(function(w){_kbWakeLock=w;}).catch(function(){}); } }catch(e){} }
 function _kbWakeRelease(){ try{ if(_kbWakeLock){_kbWakeLock.release();_kbWakeLock=null;} }catch(e){} }
-// iOS drops the wake lock on ANY interruption (lock, call, app switch) — re-acquire
-// when the tab becomes visible again during an active EMOM. Wired once.
+// Phase 105: the OS drops the wake lock on ANY interruption (screen off, a call,
+// switching apps, opening messages) — re-acquire when Forge becomes visible again
+// during ANY active guided workout (not just the EMOM), so the screen keeps staying
+// awake after you come back to the app. Wired once.
 let _kbVisWired=false;
 function _kbWireVisibility(){ try{
   if(_kbVisWired||typeof document==='undefined'||!document.addEventListener)return; _kbVisWired=true;
   document.addEventListener('visibilitychange',function(){
-    if(document.visibilityState==='visible'&&wm&&wm.active&&wm.mode==='kbRun')_kbWakeAcquire();
+    if(document.visibilityState==='visible'&&wm&&wm.active)_kbWakeAcquire();
   });
 }catch(e){} }
 function _kbClearTimer(){ if(wm.kb&&wm.kb.interval){clearInterval(wm.kb.interval);wm.kb.interval=null;} }
