@@ -470,6 +470,21 @@ test("Phase 100: FFMI percentile line renders from lean mass + height", () => {
   assert.ok(/Height-adjusted/.test(html), "normalised FFMI shown");
 });
 
+// ---- Phase 104: 5s get-ready countdown before the Dead Hang starts ----
+test("Phase 104: Dead Hang start runs a get-ready countdown; plank starts immediately", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  // Dead Hang → pressing START enters the get-ready countdown, hold not yet running.
+  q(`wm={active:true,session:'lowerA',exIdx:WORKOUTS.lowerA.exercises.findIndex(e=>e.id==='dead_hang'),setIdx:0,mode:'set'}; renderWmSetTimed(); wmToggleTimer(60);`);
+  assert.equal(q(`!!wmTimer.getReady`), true, "dead hang enters the 5s get-ready");
+  assert.equal(q(`!!wmTimer.running`), false, "hold timer not running during get-ready");
+  // A normal timed hold (Plank, u9 in the 4-day upper) still starts immediately.
+  q(`if(wmTimer.interval)clearInterval(wmTimer.interval); wmTimer={running:false,startedAt:0,interval:null,elapsed:0,getReady:false}; wm={active:true,session:'upper',exIdx:WORKOUTS.upper.exercises.findIndex(e=>e.id==='u9'),setIdx:0,mode:'set'}; renderWmSetTimed(); wmToggleTimer(45);`);
+  assert.equal(q(`!!wmTimer.running`), true, "plank hold starts immediately");
+  assert.equal(q(`!!wmTimer.getReady`), false, "no get-ready for the plank");
+});
+
 // ---- Phase 99: cable-fly pre-exhaust before each chest press ----
 test("Phase 99: cable fly sits immediately before the press on both upper days", () => {
   const { ctx } = bootApp();

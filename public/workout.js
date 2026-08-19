@@ -1582,7 +1582,8 @@ function renderWmSetTimed(){
     <button id="wm-timer-btn" class="wm-timer-start" onclick="wmToggleTimer(${ex.rest})">${alreadyDone?'REDO':'START'}</button>
   `;
   document.getElementById('wmContent').innerHTML=html;
-  wmTimer={running:false,startedAt:0,interval:null,elapsed:0};
+  if(wmTimer.interval)clearInterval(wmTimer.interval);
+  wmTimer={running:false,startedAt:0,interval:null,elapsed:0,getReady:false};
 }
 
 // Phase 53: reusable count-up stopwatch primitives. Shared by the plank/hold
@@ -1642,15 +1643,53 @@ function _wmCountDownStop(displayId){
 }
 
 function wmToggleTimer(restSec){
+  if(wmTimer.getReady)return; // ignore taps during the get-ready countdown
   if(wmTimer.running){
     _wmCountUpStop('wm-hold-timer');
     const btn=document.getElementById('wm-timer-btn');
     if(btn){btn.textContent='SET DONE';btn.className='wm-timer-start done';btn.onclick=()=>wmTimedSetDone(restSec);}
   }else{
-    _wmCountUpStart('wm-hold-timer');
+    const w=getWorkout(wm.session);
+    const ex=w.exercises[wm.exIdx];
     const btn=document.getElementById('wm-timer-btn');
-    if(btn){btn.textContent='STOP';btn.className='wm-timer-start stop';}
+    // Phase 104: the Dead Hang gets a 5s get-ready countdown so you can grab the bar
+    // and get hanging before the hold timer starts. Other holds (plank etc.) start now.
+    if(ex&&ex.id==='dead_hang'){
+      if(btn){btn.textContent='GET READY…';btn.className='wm-timer-start stop';}
+      _wmHoldGetReady('wm-hold-timer',5,()=>{
+        _wmCountUpStart('wm-hold-timer');
+        const b=document.getElementById('wm-timer-btn');
+        if(b){b.textContent='STOP';b.className='wm-timer-start stop';}
+      });
+    }else{
+      _wmCountUpStart('wm-hold-timer');
+      if(btn){btn.textContent='STOP';btn.className='wm-timer-start stop';}
+    }
   }
+}
+
+// Phase 104: "get ready" pre-countdown before a timed hold begins. Counts down N
+// seconds on the big timer display (5,4,3…), buzzes each tick, then fires onGo which
+// starts the actual count-up. Uses wmTimer.interval so the existing timer cleanups
+// (exit, re-render) stop it too; wmTimer.getReady gates repeat taps.
+function _wmHoldGetReady(displayId,seconds,onGo){
+  let remaining=seconds;
+  wmTimer.getReady=true;
+  const el=document.getElementById(displayId);
+  if(el)el.classList.add('active');
+  const set=(t)=>{const e=document.getElementById(displayId);if(e)e.textContent=t;};
+  set(String(remaining));
+  if(navigator.vibrate)navigator.vibrate(50);
+  wmTimer.interval=setInterval(()=>{
+    remaining--;
+    if(remaining>0){ set(String(remaining)); if(navigator.vibrate)navigator.vibrate(50); }
+    else{
+      clearInterval(wmTimer.interval); wmTimer.interval=null; wmTimer.getReady=false;
+      set('0:00');
+      if(navigator.vibrate)navigator.vibrate([150,70,150]);
+      if(typeof onGo==='function')onGo();
+    }
+  },1000);
 }
 
 function wmTimedSetDone(restSec){
