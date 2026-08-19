@@ -526,13 +526,13 @@ function getSkinPhaseReadiness(){
   if(phaseNum>=topN)return{ready:false,atMax:true,phaseNum,reason:'At nightly — the top of the ladder'};
   const ret=sc.products.find(p=>p.type==='retinol');
   const phaseStart=sc.phaseStartDate||ret?.frequencyStartedAt;
-  const weeksAtPhase=phaseStart?((Date.now()-new Date(phaseStart+'T12:00:00').getTime())/(7*86400000)):0;
+  const today=todayStr();
+  const weeksAtPhase=phaseStart?(_daysBetweenStr(phaseStart,today)/7):0;
   const irr=getSkinIrritationSummary(14);
   const badIrritation=irr.redness>0||irr.burning>0;
   let retDue=0,retDone=0;
   for(let i=0;i<14;i++){
-    const d=new Date();d.setDate(d.getDate()-i);
-    const ds=d.toISOString().slice(0,10);
+    const ds=_dateStrMinus(today,i); // anchor to todayStr(), not wall-clock
     if(ret&&skinDueOn(ret,ds)){retDue++;if(getSkinCareLog(ds)[`${ret.id}_pm`]===true)retDone++;}
   }
   const retComplete=retDue>0?(retDone/retDue):1;
@@ -785,6 +785,19 @@ let activePid = null;
 // ============================================================
 const _ukDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
 function todayStr(){return _ukDate(new Date());}
+// Calendar arithmetic on a YYYY-MM-DD string, timezone-proof (UTC math, no DST/BST
+// drift). Rolling windows should anchor to todayStr() (the app's canonical "today"),
+// not the machine wall-clock, so they're consistent + testable.
+function _dateStrMinus(dateStr,n){
+  const [y,m,d]=String(dateStr).split('-').map(Number);
+  const t=new Date(Date.UTC(y,m-1,d)-n*86400000);
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,'0')}-${String(t.getUTCDate()).padStart(2,'0')}`;
+}
+function _daysBetweenStr(fromStr,toStr){
+  const [fy,fm,fd]=String(fromStr).split('-').map(Number);
+  const [ty,tm,td]=String(toStr).split('-').map(Number);
+  return Math.round((Date.UTC(ty,tm-1,td)-Date.UTC(fy,fm-1,fd))/86400000);
+}
 function dayOfWeek(){return new Date().getDay();} // 0=Sun
 function getTodaySession(){return getSessionTypeForDate(todayStr());}
 
@@ -1519,8 +1532,7 @@ function getSupplementAdherence(days){
   const byId={};
   supps.forEach(s=>{byId[s.id]={taken:0,total:0,pct:0};});
   for(let i=days-1;i>=0;i--){
-    const d=new Date();d.setDate(d.getDate()-i);
-    const date=_ukDate(d);
+    const date=_dateStrMinus(today,i); // anchor the window to todayStr(), not wall-clock
     const dayLog=log[date]||{};
     let taken=0,due=0;
     supps.forEach(s=>{
