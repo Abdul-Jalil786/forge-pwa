@@ -1577,6 +1577,9 @@ test("exercise history survives a programme switch (id-keyed, not session-type-k
 test("skincare readiness needs 4 weeks/step (tretinoin is stronger than retinol)", () => {
   const { ctx } = bootApp();
   seed(ctx);
+  // Pin "today" 14 days (2.0 weeks) after the phase start so the "2 weeks in" scenario
+  // is deterministic — getSkinPhaseReadiness anchors its window to todayStr().
+  vm.runInContext(`todayStr=function(){return '2026-07-19';};`, ctx);
   vm.runInContext(`STATE.skinCare={products:[{id:'r',type:'retinol',frequency:'every-2-days',frequencyStartedAt:'2026-07-05'}],phase:1,phaseStartDate:'2026-07-05'};STATE.skinCareLog={};`, ctx);
   const r = vm.runInContext("getSkinPhaseReadiness()", ctx);
   assert.equal(r.ready, false, "2 weeks in → not ready");

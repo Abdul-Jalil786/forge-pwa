@@ -3187,11 +3187,12 @@ function renderSupplementsCoach(){
   const supps=getSupplements();
   if(!supps.length)return '';
   const log=pGet('supplementLog',{});
-  // 7-day heatmap
-  const last7=[];
-  for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);last7.push(_ukDate(d));}
-  const dayLabels=last7.map(d=>{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-GB',{weekday:'narrow'});});
+  // 7-day heatmap — anchor the window to todayStr() (not wall-clock) so it matches
+  // the adherence engine + the pinned "today", and is BST-correct near midnight.
   const today=todayStr();
+  const last7=[];
+  for(let i=6;i>=0;i--)last7.push(_dateStrMinus(today,i));
+  const dayLabels=last7.map(d=>{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-GB',{weekday:'narrow'});});
   const heatmap=supps.map(s=>{
     const cells=last7.map(d=>{
       if(typeof isSupplementDue==='function'&&!isSupplementDue(s,d))return 'na'; // not due that day
