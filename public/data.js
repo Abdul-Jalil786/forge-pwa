@@ -91,6 +91,7 @@ const WORKOUTS = {
       {id:'rev_fly',name:'Reverse Fly',sets:3,reps:'12–20',rest:60,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=reverse+fly+rear+delt+form'},
       {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',weighted:true,yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
       {id:'reh_3',name:'Banded Shoulder Flexion Raise',sets:2,reps:'12',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=banded+shoulder+flexion+raise'},
+      {id:'dead_hang',name:'Dead Hang',sets:2,reps:'20–40s',rest:60,muscle:'Grip · Shoulders',metric:'time',capSeconds:90,yt:'https://www.youtube.com/results?search_query=dead+hang+form'},
     ]
   },
   lowerA: {
@@ -104,6 +105,7 @@ const WORKOUTS = {
       {id:'l6',name:'Calf Raise',sets:3,reps:'12–15',rest:45,muscle:'Calves',size:'medium',fillers:['fill_deep_squat'],yt:'https://www.youtube.com/results?search_query=calf+raise+form'},
       {id:'core_pallof',name:'Pallof Press',sets:3,reps:'10–12 each side',rest:60,muscle:'Core',size:'small',yt:'https://www.youtube.com/results?search_query=pallof+press+form'},
       {id:'kb_swing',name:'Kettlebell Swing (two-handed, Russian)',sets:3,reps:'10',rest:60,muscle:'Glutes/Posterior Chain',size:'medium',finisher:true,yt:'https://www.youtube.com/results?search_query=russian+kettlebell+swing+two+handed+form'},
+      {id:'dead_hang',name:'Dead Hang',sets:2,reps:'20–40s',rest:60,muscle:'Grip · Shoulders',metric:'time',capSeconds:90,yt:'https://www.youtube.com/results?search_query=dead+hang+form'},
     ]
   },
   upperB: {
@@ -123,6 +125,7 @@ const WORKOUTS = {
       {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',weighted:true,yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
       {id:'reh_2',name:'Band Pull-Apart',sets:2,reps:'15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+pull+apart+form'},
       {id:'reh_3',name:'Banded Shoulder Flexion Raise',sets:2,reps:'12',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=banded+shoulder+flexion+raise'},
+      {id:'dead_hang',name:'Dead Hang',sets:2,reps:'20–40s',rest:60,muscle:'Grip · Shoulders',metric:'time',capSeconds:90,yt:'https://www.youtube.com/results?search_query=dead+hang+form'},
     ]
   },
   lowerB: {
@@ -137,6 +140,7 @@ const WORKOUTS = {
       {id:'h5',name:'Lateral Raise',sets:4,reps:'12–15',rest:60,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
       {id:'shrug',name:'Dumbbell Shrug',sets:3,reps:'12–20',rest:60,muscle:'Traps',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shrug+form'},
       {id:'kb_swing',name:'Kettlebell Swing (two-handed, Russian)',sets:3,reps:'10',rest:60,muscle:'Glutes/Posterior Chain',size:'medium',finisher:true,yt:'https://www.youtube.com/results?search_query=russian+kettlebell+swing+two+handed+form'},
+      {id:'dead_hang',name:'Dead Hang',sets:2,reps:'20–40s',rest:60,muscle:'Grip · Shoulders',metric:'time',capSeconds:90,yt:'https://www.youtube.com/results?search_query=dead+hang+form'},
     ]
   },
   zone2: {
