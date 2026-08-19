@@ -633,7 +633,10 @@ function exitGuidedWorkout(){
   // lower day), so finishing your real lifts and closing meant no recap + no
   // low-down. Now any close after real work surfaces the report; the recap screen's
   // own ✕ then closes cleanly (recapShown guards against a re-trigger loop).
-  if(typeof _kbClearTimer==='function')_kbClearTimer(); if(typeof _kbWakeRelease==='function')_kbWakeRelease(); // Phase 92: stop EMOM timer + release wake lock
+  if(typeof _kbClearTimer==='function')_kbClearTimer(); if(typeof _kbdClearTimer==='function')_kbdClearTimer(); if(typeof _kbWakeRelease==='function')_kbWakeRelease(); // Phase 92/106: stop EMOM/density timers + release wake lock
+  // Phase 106: a standalone conditioning run has no session to minimise/resume — always
+  // close cleanly and clear persisted state (mark inactive so _saveWmState drops it).
+  if(wm.kbdStandalone)wm.active=false;
   if(wm.active&&!wm.recapShown&&typeof wmFinish==='function'&&_wmHasLoggedWork()){
     if(wm.restInterval)clearInterval(wm.restInterval);
     if(wm.transitionInterval)clearInterval(wm.transitionInterval);
@@ -747,6 +750,12 @@ function resumeGuidedWorkout(){
     case 'kbStart':
     case 'kbRun':
     case 'kbDone':        if(wm.kb&&wm.kb.interval){clearInterval(wm.kb.interval);wm.kb.interval=null;} renderWmKbStart(kbSuggestion((typeof getKbLoad==='function')?getKbLoad():20)); break;
+    // Phase 106: don't resume a live density set/rest mid-flow — return to its start screen.
+    case 'kbdStart':
+    case 'kbdSet':
+    case 'kbdRest':
+    case 'kbdEffort':
+    case 'kbdDone':       _kbdClearTimer(); renderWmKbdStart(kbdSuggestion((typeof getKbLoad==='function')?getKbLoad():20)); break;
     default:              renderWmOutline();
   }
 }
@@ -1448,12 +1457,11 @@ function renderWmSet(){
   if(typeof isCarry==='function'&&isCarry(ex)){renderWmSetCarry();return;}
   const timed=isTimeBased(ex);
   if(timed){renderWmSetTimed();return;}
-  // Phase 92 Part 2: KB Swing switches from normal 3×10 (Phase 1) to the guided
-  // EMOM timer (Phase 2+), driven by the per-load progression engine. Phase 1 falls
-  // through to the normal weighted path below.
-  if(ex.id==='kb_swing'&&typeof kbSuggestion==='function'){
-    const kbSug=kbSuggestion((typeof getKbLoad==='function')?getKbLoad():20);
-    if(kbSug&&kbSug.type==='emom'){ renderWmKbStart(kbSug); return; }
+  // Phase 106: KB Swing runs the guided DENSITY conditioning timer (self-paced sets,
+  // rest between, "beat your sets" progression). Supersedes the Phase 92 EMOM path
+  // (kept dormant). Driven by the per-load engine in kb-density.js.
+  if(ex.id==='kb_swing'&&typeof KB_DENSITY!=='undefined'&&typeof kbdSuggestion==='function'){
+    renderWmKbdStart(kbdSuggestion((typeof getKbLoad==='function')?getKbLoad():20)); return;
   }
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -2223,6 +2231,205 @@ function renderWmKbDone(rounds,outcome){
   `;
 }
 function wmKbDoneContinue(){ if(typeof wmNextExercise==='function')wmNextExercise(); }
+
+// ===================== Phase 106: KB Swing guided DENSITY conditioning =====================
+// Self-paced "beat your sets": do a set of swings, tap Done, rest counts down, repeat,
+// Stop whenever. The per-load engine (kb-density.js) prescribes the next target from the
+// last session. Supersedes the Phase 92 EMOM path as the live KB experience. Reuses the
+// existing wake-lock + audio/vibrate cue helpers (_kbWakeAcquire/_kbCue/etc).
+function _kbdClearTimer(){ if(wm.kbd&&wm.kbd.interval){clearInterval(wm.kbd.interval);wm.kbd.interval=null;} }
+
+// Session-start screen: today's target + reason + PB + inline load change.
+function renderWmKbdStart(sug){
+  wm.mode='kbdStart';
+  sug=sug||(typeof kbdSuggestion==='function'?kbdSuggestion():null)||{load:20,reps:15,restSec:60,targetSets:3,reason:''};
+  wm._kbdSug=sug;
+  const load=(typeof getKbLoad==='function')?getKbLoad():20;
+  const pbs=(typeof getKbDensityPBs==='function')?getKbDensityPBs():{};
+  const pbStr=Object.keys(pbs).sort((a,b)=>+a-+b).map(k=>`${k}kg: ${pbs[k]} ✓`).join(' · ');
+  let autoLockNote='';
+  try{
+    if(!_kbCanWake()&&!localStorage.getItem('kb_autolock_seen')){
+      localStorage.setItem('kb_autolock_seen','1');
+      autoLockNote=`<div style="background:rgba(255,193,7,.1);border:1px solid #ffc107;border-radius:10px;padding:10px 12px;margin:0 0 12px;font-size:12px;color:#ffc107;line-height:1.5;">📱 Your device can't keep the screen awake automatically. Set <b>Auto-Lock to Never</b> during workouts (Settings → Display &amp; Brightness → Auto-Lock).</div>`;
+    }
+  }catch(e){}
+  document.getElementById('wmContent').innerHTML=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Conditioning · Kettlebell Swing</div>
+    <div class="wm-title" style="font-size:20px;margin-top:6px;">Today's target</div>
+    ${autoLockNote}
+    <div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.28);border-radius:14px;padding:16px;margin:14px 0;">
+      <div style="font-family:'Archivo Black',sans-serif;font-size:26px;color:var(--lime);letter-spacing:-1px;">${sug.targetSets} sets × ${sug.reps}</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:6px;">${sug.restSec}s rest between sets · @ ${load}kg</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:8px;line-height:1.5;">${sug.reason||''}</div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;">
+      <div style="font-size:12px;color:var(--text2);">Weight</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button onclick="wmKbdLoadStep(-2)" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:20px;cursor:pointer;">−</button>
+        <div style="min-width:64px;text-align:center;font-family:'Archivo Black',sans-serif;font-size:18px;">${load}kg</div>
+        <button onclick="wmKbdLoadStep(2)" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:20px;cursor:pointer;">+</button>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:14px;">Do your swings, tap <b>Done</b>, rest, repeat. <b>Stop</b> whenever you're spent — beat your set count next time. Hit all ${sug.targetSets} feeling good and it climbs.</div>
+    ${pbStr?`<div style="font-size:11px;color:var(--text3);margin-bottom:14px;">🏆 ${pbStr}</div>`:''}
+    <button class="wm-cta" onclick="wmKbdBegin()">START →</button>
+    <button class="wm-cta ghost" style="margin-top:8px;" onclick="wmKbdSkip()">Skip finisher</button>
+  `;
+}
+function wmKbdLoadStep(delta){
+  const cur=(typeof getKbLoad==='function')?getKbLoad():20;
+  const next=Math.max(2,cur+delta);
+  if(typeof setKbLoad==='function')setKbLoad(next);
+  renderWmKbdStart(kbdSuggestion(next)); // new weight → its own ladder
+}
+function wmKbdBegin(){
+  const sug=wm._kbdSug||{};
+  wm.mode='kbdSet';
+  wm.kbd={ load:(typeof getKbLoad==='function')?getKbLoad():20, reps:sug.reps||15, restSec:sug.restSec||60,
+    targetSets:sug.targetSets||3, setsDone:0, lastShort:false, interval:null, restEndsAt:0, cued:false };
+  if(typeof _kbAudioInit==='function')_kbAudioInit();   // iOS: unlock audio from this tap
+  if(typeof _kbWakeAcquire==='function')_kbWakeAcquire();
+  if(typeof _kbWireVisibility==='function')_kbWireVisibility();
+  renderWmKbdSet();
+}
+function renderWmKbdSet(){
+  wm.mode='kbdSet';
+  const kbd=wm.kbd; const setNum=kbd.setsDone+1;
+  const hitTarget=kbd.setsDone>=kbd.targetSets;
+  document.getElementById('wmContent').innerHTML=`
+    <div style="text-align:center;padding-top:36px;">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">${kbd.setsDone} done · aim ${kbd.targetSets} sets</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:32px;color:var(--lime);letter-spacing:-1px;margin-top:8px;">SET ${setNum}</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:52px;color:var(--orange);letter-spacing:-1px;margin-top:6px;">${kbd.reps} SWINGS</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:4px;">@ ${kbd.load}kg</div>
+      ${hitTarget?`<div style="font-size:12px;color:var(--lime);margin-top:14px;">🎯 Target hit — go again to beat it, or Stop.</div>`:''}
+    </div>
+    <button class="wm-cta" style="margin-top:28px;" onclick="wmKbdSetDone()">✓ DONE SET</button>
+    <button class="wm-cta" style="margin-top:8px;background:rgba(255,85,0,.12);border-color:var(--red);color:var(--red);" onclick="wmKbdStop()">⏹ STOP</button>
+  `;
+}
+function wmKbdSetDone(){
+  const kbd=wm.kbd; if(!kbd)return;
+  kbd.setsDone++; kbd.lastShort=false;
+  wm.mode='kbdRest'; kbd.restEndsAt=Date.now()+kbd.restSec*1000; kbd.cued=false;
+  renderWmKbdRest();
+  _kbdClearTimer();
+  kbd.interval=setInterval(updateWmKbdRest,200);
+  updateWmKbdRest();
+}
+function renderWmKbdRest(){
+  wm.mode='kbdRest';
+  const kbd=wm.kbd;
+  document.getElementById('wmContent').innerHTML=`
+    <div style="text-align:center;padding-top:40px;">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Rest · ${kbd.setsDone} sets done</div>
+      <div style="position:relative;width:200px;height:200px;margin:18px auto;">
+        <svg width="200" height="200" viewBox="0 0 200 200" style="transform:rotate(-90deg);">
+          <circle cx="100" cy="100" r="88" fill="none" stroke="var(--border2)" stroke-width="10"/>
+          <circle id="kbd-ring" cx="100" cy="100" r="88" fill="none" stroke="var(--lime)" stroke-width="10" stroke-linecap="round" stroke-dasharray="552.9" stroke-dashoffset="0"/>
+        </svg>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+          <div id="kbd-sec" style="font-family:'Archivo Black',sans-serif;font-size:60px;line-height:1;color:var(--text);">${kbd.restSec}</div>
+        </div>
+      </div>
+      <div style="font-size:14px;color:var(--text2);">Next: <b>SET ${kbd.setsDone+1}</b> · ${kbd.reps} swings</div>
+    </div>
+    <button class="wm-cta" style="margin-top:24px;" onclick="wmKbdNextSet()">▶ NEXT SET NOW</button>
+    <button class="wm-cta" style="margin-top:8px;background:rgba(255,85,0,.12);border-color:var(--red);color:var(--red);" onclick="wmKbdStop()">⏹ STOP</button>
+  `;
+}
+function updateWmKbdRest(){
+  const kbd=wm.kbd; if(!kbd||wm.mode!=='kbdRest')return;
+  const remain=Math.max(0,(kbd.restEndsAt-Date.now())/1000);
+  const sec=Math.ceil(remain);
+  const sEl=document.getElementById('kbd-sec'); if(sEl)sEl.textContent=sec;
+  const ring=document.getElementById('kbd-ring');
+  if(ring){ const frac=kbd.restSec>0?Math.max(0,Math.min(1,remain/kbd.restSec)):0; ring.setAttribute('stroke-dashoffset',(552.9*(1-frac)).toFixed(1)); }
+  // soft warning tick at 3s to go, strong cue when rest is up (time to swing)
+  if(remain<=3.05&&remain>0&&!kbd.cued&&typeof _kbCue==='function'){ kbd.cued=true; _kbCue(false); }
+  if(remain<=0){ _kbdClearTimer(); if(typeof _kbCue==='function')_kbCue(true); wmKbdNextSet(); }
+}
+function wmKbdNextSet(){ _kbdClearTimer(); renderWmKbdSet(); }
+function wmKbdStop(){
+  _kbdClearTimer();
+  const kbd=wm.kbd||{};
+  if((kbd.setsDone||0)===0){ wmKbdSkip(); return; } // stopped before any set → treat as skip
+  renderWmKbdEffort();
+}
+function renderWmKbdEffort(){
+  wm.mode='kbdEffort';
+  const kbd=wm.kbd;
+  document.getElementById('wmContent').innerHTML=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Conditioning done</div>
+    <div class="wm-title" style="font-size:22px;margin-top:6px;">${kbd.setsDone} sets × ${kbd.reps} @ ${kbd.load}kg</div>
+    <button onclick="wmKbdToggleShort()" style="width:100%;margin:14px 0 6px;padding:11px 12px;border-radius:10px;border:1px solid ${kbd.lastShort?'var(--orange)':'var(--border2)'};background:${kbd.lastShort?'rgba(255,140,0,.12)':'var(--bg2)'};color:${kbd.lastShort?'var(--orange)':'var(--text2)'};font-size:13px;cursor:pointer;text-align:left;">
+      ${kbd.lastShort?'◑':'○'} Last set was short of ${kbd.reps} <span style="color:var(--text3);">(tap if you crashed the final set)</span>
+    </button>
+    <div class="wm-sub" style="margin-top:10px;">How did that feel?</div>
+    <button class="wm-effort-btn" onclick="wmKbdRecordEffort('easy')">
+      <div class="em">😌</div>
+      <div class="lbl">EASY<div class="desc">Could've done more — pushes the target up</div></div>
+    </button>
+    <button class="wm-effort-btn" onclick="wmKbdRecordEffort('solid')">
+      <div class="em">💪</div>
+      <div class="lbl">SOLID<div class="desc">Right at the edge — earns +1 next time</div></div>
+    </button>
+    <button class="wm-effort-btn" onclick="wmKbdRecordEffort('tough')">
+      <div class="em">🥵</div>
+      <div class="lbl">TOUGH<div class="desc">Dug deep — repeat this to own it</div></div>
+    </button>
+  `;
+}
+function wmKbdToggleShort(){ if(wm.kbd)wm.kbd.lastShort=!wm.kbd.lastShort; renderWmKbdEffort(); }
+function wmKbdRecordEffort(effort){
+  const kbd=wm.kbd||{}; const date=todayStr();
+  const outcome=(typeof logKbDensitySet==='function')
+    ? logKbDensitySet(date,{load:kbd.load,reps:kbd.reps,restSec:kbd.restSec,targetSets:kbd.targetSets,setsCompleted:kbd.setsDone,cleanLastSet:!kbd.lastShort,effort,lastSetReps:kbd.lastShort?null:kbd.reps})
+    : 'PARTIAL';
+  if(!wm.kbdStandalone&&typeof _wmMarkExerciseDone==='function')_wmMarkExerciseDone();
+  _kbdClearTimer(); if(typeof _kbWakeRelease==='function')_kbWakeRelease();
+  wm.mode='kbdDone'; renderWmKbdDone(outcome,effort);
+}
+function wmKbdSkip(){
+  if(wm.kbdStandalone){ if(typeof exitGuidedWorkout==='function')exitGuidedWorkout(); return; }
+  const date=todayStr(); const dayLog=getExLogForDate(date);
+  dayLog.kb_swing={done:false,skipped:true,skippedAt:Date.now(),sets:[]};
+  saveExLogForDate(date,dayLog);
+  _kbdClearTimer(); if(typeof _kbWakeRelease==='function')_kbWakeRelease();
+  if(typeof wmNextExercise==='function')wmNextExercise();
+}
+// Phase 106: standalone "optional extra" conditioning — do KB swings on ANY day
+// (e.g. the Wednesday rest day) without a scheduled session. Logs today's kb_swing so
+// the density engine progresses, then closes the overlay (no session recap / next-ex).
+function startKbConditioning(){
+  const wmEl=document.getElementById('workoutMode'); if(!wmEl)return;
+  wm={ active:true, kbdStandalone:true, recapShown:true, mode:'kbdStart', exIdx:0, setIdx:0, session:null, restInterval:null };
+  wmEl.classList.add('open');
+  if(typeof _kbWakeAcquire==='function'){_kbWakeAcquire();_kbWireVisibility();}
+  renderWmKbdStart(kbdSuggestion((typeof getKbLoad==='function')?getKbLoad():20));
+}
+function renderWmKbdDone(outcome,effort){
+  const kbd=wm.kbd||{};
+  const emoji=outcome==='FULL'?'🔥':outcome==='PARTIAL'?'💪':'·';
+  const col=outcome==='FULL'?'var(--lime)':outcome==='PARTIAL'?'#ffc107':'var(--text3)';
+  const next=(typeof kbdSuggestion==='function')?kbdSuggestion(kbd.load):null;
+  document.getElementById('wmContent').innerHTML=`
+    <div style="text-align:center;padding-top:40px;">
+      <div style="font-size:56px;">${emoji}</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:30px;color:${col};margin-top:8px;">${kbd.setsDone} × ${kbd.reps}</div>
+      <div style="font-size:14px;color:var(--text2);margin-top:4px;">${outcome} · ${kbd.restSec}s rest @ ${kbd.load}kg${effort?' · felt '+effort:''}</div>
+      ${next?`<div style="font-size:12px;color:var(--text3);margin-top:16px;line-height:1.5;">Next ${kbd.load}kg target: <b>${next.targetSets} × ${next.reps} @ ${next.restSec}s</b><br>${next.reason}</div>`:''}
+    </div>
+    <button class="wm-cta" style="margin-top:28px;" onclick="wmKbdDoneContinue()">FINISH WORKOUT 🎉</button>
+  `;
+}
+function wmKbdDoneContinue(){
+  if(wm.kbdStandalone){ if(typeof exitGuidedWorkout==='function')exitGuidedWorkout(); return; }
+  if(typeof wmNextExercise==='function')wmNextExercise();
+}
 
 function renderWmTimedEffort(){
   const w=getWorkout(wm.session);

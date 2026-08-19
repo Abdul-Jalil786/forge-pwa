@@ -958,6 +958,24 @@ function logKbEmomSet(date,o){
   saveExLogForDate(date,dayLog);
   return outcome;
 }
+// ---- Phase 106: KB Swing DENSITY (conditioning) — the live "beat your sets" model.
+// Supersedes the EMOM path above (kept dormant). Engine in kb-density.js.
+function kbdSuggestion(load){ if(typeof KB_DENSITY==='undefined')return null; const L=(load!=null)?+load:getKbLoad(); return KB_DENSITY.suggest(getExLog(),L,{readiness:_kbReadinessToday()}); }
+function getKbDensityPBs(){ return (typeof KB_DENSITY!=='undefined')?KB_DENSITY.pbsByLoad(getExLog()):{}; }
+// Log one density session as a single set entry (used by the guided timer). Outcome is
+// derived: FULL = hit target sets with a clean last set; PARTIAL = short of that; SKIPPED = 0.
+function logKbDensitySet(date,o){
+  o=o||{}; const dayLog=getExLogForDate(date);
+  if(!dayLog.kb_swing||typeof dayLog.kb_swing!=='object')dayLog.kb_swing={sets:[]};
+  if(!Array.isArray(dayLog.kb_swing.sets))dayLog.kb_swing.sets=[];
+  const setsCompleted=parseInt(o.setsCompleted)||0, target=parseInt(o.targetSets)||0;
+  const clean=!!o.cleanLastSet;
+  const outcome=setsCompleted===0?'SKIPPED':(setsCompleted>=target&&clean)?'FULL':'PARTIAL';
+  dayLog.kb_swing.sets.push({density:true,load:parseFloat(o.load)||getKbLoad(),reps:parseInt(o.reps)||15,restSec:parseInt(o.restSec)||60,targetSets:target,setsCompleted,lastSetReps:(o.lastSetReps!=null?parseInt(o.lastSetReps):null),cleanLastSet:clean,effort:o.effort||'solid',outcome,done:setsCompleted>0,doneAt:Date.now()});
+  dayLog.kb_swing.done=setsCompleted>0;
+  saveExLogForDate(date,dayLog);
+  return outcome;
+}
 function getOuraVitals(){return pGet('ouraVitals',{});}
 function getManualWalks(){return pGet('walkLog',{});}
 function ouraNeedsReconnect(){return !!STATE.ouraTokenInvalid;}
