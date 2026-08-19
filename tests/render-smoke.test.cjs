@@ -405,8 +405,8 @@ test("Phase 91: lower A/B reordered; schemes + cross-runtime map stay in sync", 
   const { ctx } = bootApp();
   seed(ctx);
   const ids = (tmpl) => vm.runInContext(`JSON.stringify(WORKOUTS['${tmpl}'].exercises.map(e=>e.id))`, ctx);
-  assert.equal(ids("lowerA"), JSON.stringify(["back_squat", "l1", "l4", "l6", "core_pallof", "kb_swing"]), "Lower A: …Pallof, KB Swing (Phase 92)");
-  assert.equal(ids("lowerB"), JSON.stringify(["l5", "l2", "l1", "core_suitcase", "h5", "shrug", "kb_swing"]), "Lower B: …Suitcase, Lateral Raise, Shrug, KB Swing (Phase 97)");
+  assert.equal(ids("lowerA"), JSON.stringify(["back_squat", "l1", "l4", "l6", "core_pallof", "kb_swing", "dead_hang"]), "Lower A: …Pallof, KB Swing (Phase 92)");
+  assert.equal(ids("lowerB"), JSON.stringify(["l5", "l2", "l1", "core_suitcase", "h5", "shrug", "kb_swing", "dead_hang"]), "Lower B: …Suitcase, Lateral Raise, Shrug, KB Swing (Phase 97)");
   // schemes preserved on the moved lifts
   const ex = (tmpl, id) => vm.runInContext(`JSON.stringify(WORKOUTS['${tmpl}'].exercises.find(e=>e.id==='${id}'))`, ctx);
   const rdl = JSON.parse(ex("lowerB", "l2"));
@@ -446,7 +446,7 @@ test("Phase 97: lateral raises (4×3 days), reverse fly on Upper A, shrug on Low
   assert.equal(ex("lowerB", "shrug").sets, 3, "Shrug on Lower B, 3 sets");
   assert.equal(ex("lowerB", "shrug").muscle, "Traps");
   // KB Swing still the finisher (last) on Lower B.
-  assert.equal(q(`(()=>{const e=WORKOUTS.lowerB.exercises;return e[e.length-1].id;})()`), "kb_swing", "KB Swing still last on Lower B");
+  assert.equal(q(`(()=>{const e=WORKOUTS.lowerB.exercises;return e[e.length-1].id;})()`), "dead_hang", "Dead Hang cooldown is last on Lower B (KB Swing before it)");
   // Names resolve through the shared cross-runtime map.
   assert.equal(q(`FORGE_PROGRAMME.exerciseName('rev_fly')`), "Reverse Fly", "rev_fly name in sync");
   assert.equal(q(`FORGE_PROGRAMME.exerciseName('shrug')`), "Dumbbell Shrug", "shrug name in sync");
@@ -514,8 +514,11 @@ test("Phase 92: KB Swing is the final exercise on Lower A + Lower B", () => {
   seed(ctx);
   const q = (c) => vm.runInContext(c, ctx);
   const last = (t) => q(`(()=>{const e=WORKOUTS['${t}'].exercises;return e[e.length-1].id;})()`);
-  assert.equal(last("lowerA"), "kb_swing", "Lower A ends with KB Swing (after Pallof)");
-  assert.equal(last("lowerB"), "kb_swing", "Lower B ends with KB Swing (after Suitcase)");
+  const secondLast = (t) => q(`(()=>{const e=WORKOUTS['${t}'].exercises;return e[e.length-2].id;})()`);
+  assert.equal(secondLast("lowerA"), "kb_swing", "Lower A KB Swing is the finisher, before the Dead Hang cooldown");
+  assert.equal(secondLast("lowerB"), "kb_swing", "Lower B KB Swing is the finisher, before the Dead Hang cooldown");
+  assert.equal(last("lowerA"), "dead_hang", "Lower A ends with the Dead Hang cooldown");
+  assert.equal(last("lowerB"), "dead_hang", "Lower B ends with the Dead Hang cooldown");
   const ex = JSON.parse(q(`JSON.stringify(WORKOUTS.lowerA.exercises.find(e=>e.id==='kb_swing'))`));
   assert.equal(ex.name, "Kettlebell Swing (two-handed, Russian)");
   assert.equal(ex.muscle, "Glutes/Posterior Chain");
