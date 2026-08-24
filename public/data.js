@@ -91,6 +91,8 @@ const WORKOUTS = {
       {id:'rev_fly',name:'Reverse Fly',sets:3,reps:'12–20',rest:60,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=reverse+fly+rear+delt+form'},
       {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',weighted:true,yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
       {id:'reh_3',name:'Banded Shoulder Flexion Raise',sets:2,reps:'12',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=banded+shoulder+flexion+raise'},
+      {id:'ab_crunch_cable',name:'Cable Rope Crunch',sets:3,reps:'10–15',rest:60,muscle:'Abs',size:'small',yt:'https://www.youtube.com/results?search_query=cable+rope+crunch+form'},
+      {id:'ab_knee_raise',name:'Captain’s Chair Knee Raise',sets:3,reps:'10–15',rest:60,muscle:'Abs',size:'small',yt:'https://www.youtube.com/results?search_query=captains+chair+knee+raise+form'},
       {id:'dead_hang',name:'Dead Hang',sets:2,reps:'20–40s',rest:60,muscle:'Grip · Shoulders',metric:'time',capSeconds:90,yt:'https://www.youtube.com/results?search_query=dead+hang+form'},
     ]
   },
@@ -125,6 +127,8 @@ const WORKOUTS = {
       {id:'reh_1',name:'Band External Rotation',sets:2,reps:'12–15 per arm',rest:45,muscle:'Shoulders',size:'small',category:'rehab',weighted:true,yt:'https://www.youtube.com/results?search_query=band+external+rotation+shoulder'},
       {id:'reh_2',name:'Band Pull-Apart',sets:2,reps:'15',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=band+pull+apart+form'},
       {id:'reh_3',name:'Banded Shoulder Flexion Raise',sets:2,reps:'12',rest:45,muscle:'Shoulders',size:'small',category:'rehab',yt:'https://www.youtube.com/results?search_query=banded+shoulder+flexion+raise'},
+      {id:'ab_crunch_cable',name:'Cable Rope Crunch',sets:3,reps:'10–15',rest:60,muscle:'Abs',size:'small',yt:'https://www.youtube.com/results?search_query=cable+rope+crunch+form'},
+      {id:'ab_knee_raise',name:'Captain’s Chair Knee Raise',sets:3,reps:'10–15',rest:60,muscle:'Abs',size:'small',yt:'https://www.youtube.com/results?search_query=captains+chair+knee+raise+form'},
       {id:'dead_hang',name:'Dead Hang',sets:2,reps:'20–40s',rest:60,muscle:'Grip · Shoulders',metric:'time',capSeconds:90,yt:'https://www.youtube.com/results?search_query=dead+hang+form'},
     ]
   },

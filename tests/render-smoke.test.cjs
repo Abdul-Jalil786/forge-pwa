@@ -504,6 +504,35 @@ test("Phase 99: cable fly sits immediately before the press on both upper days",
   assert.equal(q(`FORGE_PROGRAMME.exerciseName('cfly_low')`), "Low-to-High Cable Fly");
 });
 
+// ---- Phase 107: direct ab pair (Cable Rope Crunch + Captain's Chair Knee Raise) ----
+test("Phase 107: ab pair sits at the end of both upper days, before the Dead Hang", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  const q = (c) => vm.runInContext(c, ctx);
+  const ids = (t) => JSON.parse(q(`JSON.stringify(WORKOUTS['${t}'].exercises.map(e=>e.id))`));
+  for (const day of ["upperA", "upperB"]) {
+    const a = ids(day);
+    // both abs present, in order, immediately before the Dead Hang cooldown (which stays last)
+    assert.equal(a[a.length - 1], "dead_hang", `${day} still ends with the Dead Hang cooldown`);
+    assert.equal(a[a.length - 2], "ab_knee_raise", `${day}: knee raise is second-to-last`);
+    assert.equal(a[a.length - 3], "ab_crunch_cable", `${day}: cable crunch is third-to-last`);
+  }
+  // upper-day ONLY — kept off the heavy hinge/squat (lower) days for back safety
+  for (const day of ["lowerA", "lowerB"]) {
+    const a = ids(day);
+    assert.ok(!a.includes("ab_crunch_cable") && !a.includes("ab_knee_raise"), `${day} has no direct abs`);
+  }
+  // dosage classification (size:small, like the lateral raises) + main-flow (not a rehab rest-gap accessory)
+  const cr = JSON.parse(q(`JSON.stringify(WORKOUTS.upperA.exercises.find(e=>e.id==='ab_crunch_cable'))`));
+  assert.equal(cr.size, "small", "cable crunch = dosage (size:small)");
+  assert.equal(cr.muscle, "Abs");
+  assert.equal(cr.category, undefined, "not rehab → stays in the main flow, never a rest-gap filler");
+  assert.equal(q(`WORKOUTS.upperB.exercises.find(e=>e.id==='ab_knee_raise').size`), "small");
+  // names resolve through the shared map (parity)
+  assert.equal(q(`FORGE_PROGRAMME.exerciseName('ab_crunch_cable')`), "Cable Rope Crunch");
+  assert.equal(q(`FORGE_PROGRAMME.exerciseName('ab_knee_raise')`), "Captain’s Chair Knee Raise");
+});
+
 // ---- Phase 90a: day-detail renders carry (Suitcase) sets, not "no sets logged" ----
 test("Phase 90a: Suitcase Carry sets show L/R seconds in the day detail", () => {
   const { ctx } = bootApp();
