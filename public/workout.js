@@ -749,6 +749,7 @@ function resumeGuidedWorkout(){
     // Phase 92: don't resume a live EMOM mid-round — return to its start screen.
     case 'kbStart':
     case 'kbRun':
+    case 'kbEffort':
     case 'kbDone':        if(wm.kb&&wm.kb.interval){clearInterval(wm.kb.interval);wm.kb.interval=null;} renderWmKbStart(kbSuggestion((typeof getKbLoad==='function')?getKbLoad():20)); break;
     // Phase 106: don't resume a live density set/rest mid-flow — return to its start screen.
     case 'kbdStart':
@@ -2059,15 +2060,18 @@ function _kbWireVisibility(){ try{
 }catch(e){} }
 function _kbClearTimer(){ if(wm.kb&&wm.kb.interval){clearInterval(wm.kb.interval);wm.kb.interval=null;} }
 
-// Session-start screen: today's target + reason + PB + inline load change + manual override.
+// Session-start screen: the minutes-to-BEAT + last effort + PB + inline load change.
+// Open-ended (Phase 108a) — the minute count is a target to beat, not a cap.
 function renderWmKbStart(sug){
   wm.mode='kbStart';
+  sug=sug||(typeof kbSuggestion==='function'?kbSuggestion():null)||{minutes:5,reps:15,reason:'',lastEffort:null,lever:'start'};
+  wm._kbSug=sug;
   const load=(typeof getKbLoad==='function')?getKbLoad():20;
   const pbs=(typeof getKbPBs==='function')?getKbPBs():{};
   const pbStr=Object.keys(pbs).sort((a,b)=>+a-+b).map(k=>`${k}kg: ${pbs[k]} ✓`).join(' · ');
-  const mins=(wm.kbOverrideMin!=null)?wm.kbOverrideMin:sug.minutes;
-  const overridden=(wm.kbOverrideMin!=null&&wm.kbOverrideMin!==sug.minutes);
-  wm._kbSug=sug;
+  const beat=sug.minutes;
+  const isStart=sug.lever==='start'||sug.lastEffort==null;
+  const efMap={easy:'😌 easy',solid:'💪 solid',tough:'🥵 tough'};
   // iOS < 16.4 (no Wake Lock): one-time notice to set Auto-Lock to Never, rather
   // than the screen silently sleeping mid-EMOM.
   let autoLockNote='';
@@ -2079,15 +2083,16 @@ function renderWmKbStart(sug){
   }catch(e){}
   document.getElementById('wmContent').innerHTML=`
     <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
-    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Finisher · Kettlebell Swing</div>
-    <div class="wm-title" style="font-size:20px;margin-top:6px;">Today's target</div>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">Conditioning · Kettlebell Swing</div>
+    <div class="wm-title" style="font-size:20px;margin-top:6px;">EMOM</div>
     ${autoLockNote}
     <div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.28);border-radius:14px;padding:16px;margin:14px 0;">
-      <div style="font-family:'Archivo Black',sans-serif;font-size:26px;color:var(--lime);letter-spacing:-1px;">EMOM ${mins} min × ${sug.reps}</div>
-      <div style="font-size:13px;color:var(--text2);margin-top:6px;">@ ${load}kg${overridden?' · <span style="color:#ffc107;">manual override</span>':''}</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:26px;color:var(--lime);letter-spacing:-1px;">${isStart?'Aim':'Beat'} ${beat} min</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:6px;">${sug.reps} swings inside each minute · @ ${load}kg</div>
+      ${!isStart&&sug.lastEffort?`<div style="font-size:12px;color:var(--text3);margin-top:6px;">Last time: ${efMap[sug.lastEffort]||sug.lastEffort}</div>`:''}
       <div style="font-size:12px;color:var(--text3);margin-top:8px;line-height:1.5;">${sug.reason}${sug.capped?' 🛡️':''}</div>
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;">
       <div style="font-size:12px;color:var(--text2);">Weight</div>
       <div style="display:flex;align-items:center;gap:8px;">
         <button onclick="wmKbLoadStep(-2)" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:20px;cursor:pointer;">−</button>
@@ -2095,14 +2100,7 @@ function renderWmKbStart(sug){
         <button onclick="wmKbLoadStep(2)" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:20px;cursor:pointer;">+</button>
       </div>
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px;">
-      <div style="font-size:12px;color:var(--text2);">Minutes <span style="color:var(--text3);">(override)</span></div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <button onclick="wmKbMinStep(-1)" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:20px;cursor:pointer;">−</button>
-        <div style="min-width:64px;text-align:center;font-family:'Archivo Black',sans-serif;font-size:18px;">${mins} min</div>
-        <button onclick="wmKbMinStep(1)" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:20px;cursor:pointer;">+</button>
-      </div>
-    </div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:14px;">${sug.reps} swings at the top of each minute, rest the rest. Keep going minute after minute — <b>Stop</b> when you're spent, then rate it. Beat your minutes next time.</div>
     ${pbStr?`<div style="font-size:11px;color:var(--text3);margin-bottom:14px;">🏆 ${pbStr}</div>`:''}
     <button class="wm-cta" onclick="wmKbBegin()">START EMOM →</button>
     <button class="wm-cta ghost" style="margin-top:8px;" onclick="wmKbSkip()">Skip finisher</button>
@@ -2112,20 +2110,15 @@ function wmKbLoadStep(delta){
   const cur=(typeof getKbLoad==='function')?getKbLoad():20;
   const next=Math.max(4,cur+delta);
   if(typeof setKbLoad==='function')setKbLoad(next);
-  wm.kbOverrideMin=null; // new weight → re-enter on the new load's ladder
-  renderWmKbStart(kbSuggestion(next));
-}
-function wmKbMinStep(delta){
-  const base=(wm.kbOverrideMin!=null)?wm.kbOverrideMin:(wm._kbSug?wm._kbSug.minutes:5);
-  wm.kbOverrideMin=Math.max(1,base+delta);
-  renderWmKbStart(wm._kbSug);
+  renderWmKbStart(kbSuggestion(next)); // new weight → its own ladder
 }
 function wmKbBegin(){
-  const sug=wm._kbSug||{}; const mins=(wm.kbOverrideMin!=null)?wm.kbOverrideMin:sug.minutes;
+  const sug=wm._kbSug||{};
   wm.mode='kbRun';
-  wm.kb={ target:mins, reps:sug.reps||12, load:(typeof getKbLoad==='function')?getKbLoad():20,
-    roundsTarget:mins, startedAt:Date.now(), pausedMs:0, pausedAt:0, paused:false,
-    interval:null, lastMin:-1, lastTick:-1, overridden:(wm.kbOverrideMin!=null&&wm.kbOverrideMin!==sug.minutes) };
+  wm.kb={ beat:sug.minutes||5, roundsTarget:sug.minutes||5, reps:sug.reps||15,
+    load:(typeof getKbLoad==='function')?getKbLoad():20,
+    startedAt:Date.now(), pausedMs:0, pausedAt:0, paused:false,
+    interval:null, lastMin:-1, lastTick:-1 };
   _kbAudioInit();       // iOS: unlock audio from THIS user-gesture tap
   _kbWakeAcquire(); _kbWireVisibility(); // keep screen awake + re-acquire on iOS interruptions
   renderWmKbTimer();
@@ -2142,8 +2135,9 @@ function renderWmKbTimer(){
   const kb=wm.kb;
   document.getElementById('wmContent').innerHTML=`
     <div style="text-align:center;padding-top:24px;">
-      <div id="kb-round" style="font-family:'Archivo Black',sans-serif;font-size:30px;color:var(--lime);letter-spacing:-1px;">ROUND 1/${kb.roundsTarget}</div>
-      <div style="position:relative;width:220px;height:220px;margin:18px auto 8px;">
+      <div id="kb-round" style="font-family:'Archivo Black',sans-serif;font-size:30px;color:var(--lime);letter-spacing:-1px;">MINUTE 1</div>
+      <div id="kb-beat" style="font-size:12px;color:var(--text3);margin-top:2px;">beat ${kb.beat} min</div>
+      <div style="position:relative;width:220px;height:220px;margin:14px auto 8px;">
         <svg viewBox="0 0 220 220" style="width:100%;height:100%;transform:rotate(-90deg);">
           <circle cx="110" cy="110" r="96" fill="none" stroke="var(--border)" stroke-width="12"/>
           <circle id="kb-ring" cx="110" cy="110" r="96" fill="none" stroke="var(--lime)" stroke-width="12" stroke-linecap="round" stroke-dasharray="603.2" stroke-dashoffset="0"/>
@@ -2158,29 +2152,28 @@ function renderWmKbTimer(){
     </div>
     <div style="display:flex;gap:10px;margin-top:22px;">
       <button id="kb-pausebtn" class="wm-cta ghost" style="flex:1;" onclick="wmKbTogglePause()">⏸ PAUSE</button>
-      <button class="wm-cta" style="flex:1;background:rgba(255,85,0,.14);border-color:var(--red);color:var(--red);" onclick="wmKbEnd(false)">END EARLY</button>
+      <button class="wm-cta" style="flex:1;" onclick="wmKbEnd()">⏹ STOP</button>
     </div>
   `;
 }
 function updateWmKbTimer(){
   const kb=wm.kb; if(!kb||wm.mode!=='kbRun')return;
   const el=_kbElapsedSec();
-  const totalSec=kb.roundsTarget*60;
-  if(el>=totalSec){ wmKbEnd(true); return; }
   const minIdx=Math.floor(el/60);
   const secIn=el-minIdx*60;
-  const round=Math.min(kb.roundsTarget,minIdx+1);
-  const rEl=document.getElementById('kb-round'); if(rEl)rEl.textContent=`ROUND ${round}/${kb.roundsTarget}`;
+  const minute=minIdx+1;
+  const rEl=document.getElementById('kb-round'); if(rEl)rEl.textContent=`MINUTE ${minute}`;
+  const bEl=document.getElementById('kb-beat'); if(bEl)bEl.textContent=(minute>kb.beat)?'✓ beat it — keep going':`beat ${kb.beat} min`;
   const sEl=document.getElementById('kb-sec'); if(sEl)sEl.textContent=Math.max(0,Math.ceil(60-secIn));
   const ring=document.getElementById('kb-ring');
   if(ring){ const C=603.2; ring.setAttribute('stroke-dashoffset',String(C*(secIn/60))); }
   if(!kb.paused){
-    // minute-start cue (round 1 at t=0, then each new minute): audio + border flash
+    // minute-start cue (minute 1 at t=0, then each new minute): audio + border flash
     // everywhere, plus vibration on Android. iOS has no vibrate → flash is the tactile-
-    // equivalent visual cue.
-    if(minIdx!==kb.lastMin&&minIdx<kb.roundsTarget){ kb.lastMin=minIdx; _kbCue(true); }
+    // equivalent visual cue. Open-ended: cues keep firing until you Stop.
+    if(minIdx!==kb.lastMin){ kb.lastMin=minIdx; _kbCue(true); }
     // soft 5-second warning at 55s
-    if(secIn>=55&&kb.lastTick!==minIdx&&minIdx<kb.roundsTarget){ kb.lastTick=minIdx; _kbCue(false); }
+    if(secIn>=55&&kb.lastTick!==minIdx){ kb.lastTick=minIdx; _kbCue(false); }
   }
 }
 function wmKbTogglePause(){
@@ -2189,16 +2182,49 @@ function wmKbTogglePause(){
   else { kb.paused=true; kb.pausedAt=Date.now(); }
   const b=document.getElementById('kb-pausebtn'); if(b)b.textContent=kb.paused?'▶ RESUME':'⏸ PAUSE';
 }
-function wmKbEnd(complete){
+function wmKbEnd(){
   const kb=wm.kb; if(!kb)return;
+  _kbClearTimer();
   const el=_kbElapsedSec();
-  // rounds completed = full minutes elapsed (a minute counts once its swings are done);
-  // "complete" (timer ran out) = the full target.
-  const rounds=complete?kb.roundsTarget:Math.min(kb.roundsTarget,Math.floor(el/60));
-  wmKbFinish(rounds);
+  // minutes done = swing-rounds performed (one at the top of each minute reached).
+  const rounds=Math.max(0,Math.ceil(el/60));
+  kb._rounds=rounds;
+  if(rounds<=0){ wmKbSkip(); return; } // stopped before doing anything → skip
+  wm.mode='kbEffort'; renderWmKbEffort(rounds);
+}
+function renderWmKbEffort(rounds){
+  wm.mode='kbEffort';
+  const kb=wm.kb||{};
+  document.getElementById('wmContent').innerHTML=`
+    <button class="wm-close" onclick="exitGuidedWorkout()">✕</button>
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:32px;">EMOM done</div>
+    <div class="wm-title" style="font-size:22px;margin-top:6px;">${rounds} min × ${kb.reps} @ ${kb.load}kg</div>
+    <div class="wm-sub">How did that feel?</div>
+    <button class="wm-effort-btn" onclick="wmKbRecordEffort('easy')">
+      <div class="em">😌</div>
+      <div class="lbl">EASY<div class="desc">Had more in the tank — beat it next time</div></div>
+    </button>
+    <button class="wm-effort-btn" onclick="wmKbRecordEffort('solid')">
+      <div class="em">💪</div>
+      <div class="lbl">SOLID<div class="desc">Right at the edge — earns +1 min</div></div>
+    </button>
+    <button class="wm-effort-btn" onclick="wmKbRecordEffort('tough')">
+      <div class="em">🥵</div>
+      <div class="lbl">TOUGH<div class="desc">Dug deep — repeat this to own it</div></div>
+    </button>
+  `;
+}
+function wmKbRecordEffort(effort){
+  const kb=wm.kb||{}; const date=todayStr(); const rounds=kb._rounds||0;
+  _kbClearTimer(); _kbWakeRelease();
+  const outcome=(typeof logKbEmomSet==='function')
+    ? logKbEmomSet(date,{load:kb.load,rounds:rounds,roundsTarget:kb.roundsTarget,repsPerMin:kb.reps,effort:effort})
+    : 'PARTIAL';
+  if(!wm.kbStandalone&&typeof _wmMarkExerciseDone==='function')_wmMarkExerciseDone();
+  wm.mode='kbDone'; renderWmKbDone(rounds,outcome,effort);
 }
 function wmKbSkip(){
-  wm.kbOverrideMin=null;
+  _kbClearTimer();
   if(wm.kbStandalone){ if(typeof exitGuidedWorkout==='function')exitGuidedWorkout(); return; }
   // Skip the finisher entirely — no set logged, exercise marked skipped (no deload).
   const date=todayStr(); const dayLog=getExLogForDate(date);
@@ -2206,28 +2232,20 @@ function wmKbSkip(){
   saveExLogForDate(date,dayLog);
   if(typeof wmNextExercise==='function')wmNextExercise();
 }
-function wmKbFinish(rounds){
-  _kbClearTimer(); _kbWakeRelease();
-  const kb=wm.kb||{}; const date=todayStr();
-  const outcome=(typeof logKbEmomSet==='function')
-    ? logKbEmomSet(date,{load:kb.load,rounds:rounds,roundsTarget:kb.roundsTarget,repsPerMin:kb.reps,durationMin:kb.roundsTarget,overridden:kb.overridden})
-    : 'PARTIAL';
-  if(!wm.kbStandalone)_wmMarkExerciseDone();
-  wm.kbOverrideMin=null;
-  wm.mode='kbDone'; renderWmKbDone(rounds,outcome);
-}
-function renderWmKbDone(rounds,outcome){
+function renderWmKbDone(rounds,outcome,effort){
   const kb=wm.kb||{};
-  const emoji=outcome==='FULL'?'🔥':outcome==='PARTIAL'?'💪':'·';
-  const col=outcome==='FULL'?'var(--lime)':outcome==='PARTIAL'?'#ffc107':'var(--text3)';
+  const efMap={easy:'😌 easy',solid:'💪 solid',tough:'🥵 tough'};
+  const emoji=outcome==='FULL'?'🔥':'💪';
+  const col=outcome==='FULL'?'var(--lime)':'#ffc107';
   // preview next session's target on this load now that history includes this set
   const next=(typeof kbSuggestion==='function')?kbSuggestion(kb.load):null;
+  const nextLabel=next?(next.lever==='reps'?next.reps+' swings/min':next.lever==='hold'?'repeat '+next.minutes+' min':'beat '+next.minutes+' min'):'';
   document.getElementById('wmContent').innerHTML=`
     <div style="text-align:center;padding-top:40px;">
       <div style="font-size:56px;">${emoji}</div>
-      <div style="font-family:'Archivo Black',sans-serif;font-size:30px;color:${col};margin-top:8px;">EMOM ${rounds}/${kb.roundsTarget}</div>
-      <div style="font-size:14px;color:var(--text2);margin-top:4px;">${outcome} · ${kb.reps} swings/min @ ${kb.load}kg</div>
-      ${next?`<div style="font-size:12px;color:var(--text3);margin-top:16px;line-height:1.5;">Next ${kb.load}kg target: <b>EMOM ${next.minutes} min × ${next.reps}</b><br>${next.reason}</div>`:''}
+      <div style="font-family:'Archivo Black',sans-serif;font-size:30px;color:${col};margin-top:8px;">${rounds} min × ${kb.reps}</div>
+      <div style="font-size:14px;color:var(--text2);margin-top:4px;">@ ${kb.load}kg${effort?' · '+(efMap[effort]||effort):''}</div>
+      ${next?`<div style="font-size:12px;color:var(--text3);margin-top:16px;line-height:1.5;">Next ${kb.load}kg: <b>${nextLabel}</b><br>${next.reason}</div>`:''}
     </div>
     <button class="wm-cta" style="margin-top:28px;" onclick="wmKbDoneContinue()">FINISH WORKOUT 🎉</button>
   `;

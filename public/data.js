@@ -968,10 +968,12 @@ function logKbEmomSet(date,o){
   o=o||{}; const dayLog=getExLogForDate(date);
   if(!dayLog.kb_swing||typeof dayLog.kb_swing!=='object')dayLog.kb_swing={sets:[]};
   if(!Array.isArray(dayLog.kb_swing.sets))dayLog.kb_swing.sets=[];
+  // Phase 108a: open-ended EMOM — rounds = minutes actually completed, roundsTarget = the
+  // "beat" target that was chased, plus the easy/solid/tough effort rating.
   const rounds=parseInt(o.rounds)||0, target=parseInt(o.roundsTarget)||0;
-  const outcome=(rounds>=target&&target>0)?'FULL':rounds>0?'PARTIAL':'SKIPPED';
-  dayLog.kb_swing.sets.push({emom:true,load:parseFloat(o.load)||getKbLoad(),rounds,roundsTarget:target,repsPerMin:parseInt(o.repsPerMin)||12,durationMin:parseInt(o.durationMin)||target,outcome,overridden:!!o.overridden,done:true,doneAt:Date.now()});
-  dayLog.kb_swing.done=true;
+  const outcome=rounds===0?'SKIPPED':(rounds>=target?'FULL':'PARTIAL');
+  dayLog.kb_swing.sets.push({emom:true,load:parseFloat(o.load)||getKbLoad(),rounds,roundsTarget:target,repsPerMin:parseInt(o.repsPerMin)||15,durationMin:rounds,effort:o.effort||'solid',outcome,overridden:!!o.overridden,done:rounds>0,doneAt:Date.now()});
+  dayLog.kb_swing.done=rounds>0;
   saveExLogForDate(date,dayLog);
   return outcome;
 }
