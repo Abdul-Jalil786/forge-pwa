@@ -636,7 +636,7 @@ function exitGuidedWorkout(){
   if(typeof _kbClearTimer==='function')_kbClearTimer(); if(typeof _kbdClearTimer==='function')_kbdClearTimer(); if(typeof _kbWakeRelease==='function')_kbWakeRelease(); // Phase 92/106: stop EMOM/density timers + release wake lock
   // Phase 106: a standalone conditioning run has no session to minimise/resume — always
   // close cleanly and clear persisted state (mark inactive so _saveWmState drops it).
-  if(wm.kbdStandalone)wm.active=false;
+  if(wm.kbdStandalone||wm.kbStandalone)wm.active=false;
   if(wm.active&&!wm.recapShown&&typeof wmFinish==='function'&&_wmHasLoggedWork()){
     if(wm.restInterval)clearInterval(wm.restInterval);
     if(wm.transitionInterval)clearInterval(wm.transitionInterval);
@@ -1457,11 +1457,12 @@ function renderWmSet(){
   if(typeof isCarry==='function'&&isCarry(ex)){renderWmSetCarry();return;}
   const timed=isTimeBased(ex);
   if(timed){renderWmSetTimed();return;}
-  // Phase 106: KB Swing runs the guided DENSITY conditioning timer (self-paced sets,
-  // rest between, "beat your sets" progression). Supersedes the Phase 92 EMOM path
-  // (kept dormant). Driven by the per-load engine in kb-density.js.
-  if(ex.id==='kb_swing'&&typeof KB_DENSITY!=='undefined'&&typeof kbdSuggestion==='function'){
-    renderWmKbdStart(kbdSuggestion((typeof getKbLoad==='function')?getKbLoad():20)); return;
+  // Phase 108: KB Swing runs the guided EMOM timer — do the reps inside each 60s minute,
+  // rest the remainder, climb minutes (5→10) then reps (+5). Driven by kb-emom.js. This
+  // supersedes the Phase 106 density model again (density code kept dormant).
+  if(ex.id==='kb_swing'&&typeof kbSuggestion==='function'){
+    const kbSug=kbSuggestion((typeof getKbLoad==='function')?getKbLoad():20);
+    if(kbSug&&kbSug.type==='emom'){ renderWmKbStart(kbSug); return; }
   }
   const date=todayStr();
   const dayLog=getExLogForDate(date);
@@ -2197,11 +2198,12 @@ function wmKbEnd(complete){
   wmKbFinish(rounds);
 }
 function wmKbSkip(){
+  wm.kbOverrideMin=null;
+  if(wm.kbStandalone){ if(typeof exitGuidedWorkout==='function')exitGuidedWorkout(); return; }
   // Skip the finisher entirely — no set logged, exercise marked skipped (no deload).
   const date=todayStr(); const dayLog=getExLogForDate(date);
   dayLog.kb_swing={done:false,skipped:true,skippedAt:Date.now(),sets:[]};
   saveExLogForDate(date,dayLog);
-  wm.kbOverrideMin=null;
   if(typeof wmNextExercise==='function')wmNextExercise();
 }
 function wmKbFinish(rounds){
@@ -2210,7 +2212,7 @@ function wmKbFinish(rounds){
   const outcome=(typeof logKbEmomSet==='function')
     ? logKbEmomSet(date,{load:kb.load,rounds:rounds,roundsTarget:kb.roundsTarget,repsPerMin:kb.reps,durationMin:kb.roundsTarget,overridden:kb.overridden})
     : 'PARTIAL';
-  _wmMarkExerciseDone();
+  if(!wm.kbStandalone)_wmMarkExerciseDone();
   wm.kbOverrideMin=null;
   wm.mode='kbDone'; renderWmKbDone(rounds,outcome);
 }
@@ -2230,7 +2232,10 @@ function renderWmKbDone(rounds,outcome){
     <button class="wm-cta" style="margin-top:28px;" onclick="wmKbDoneContinue()">FINISH WORKOUT 🎉</button>
   `;
 }
-function wmKbDoneContinue(){ if(typeof wmNextExercise==='function')wmNextExercise(); }
+function wmKbDoneContinue(){
+  if(wm.kbStandalone){ if(typeof exitGuidedWorkout==='function')exitGuidedWorkout(); return; }
+  if(typeof wmNextExercise==='function')wmNextExercise();
+}
 
 // ===================== Phase 106: KB Swing guided DENSITY conditioning =====================
 // Self-paced "beat your sets": do a set of swings, tap Done, rest counts down, repeat,
@@ -2406,10 +2411,11 @@ function wmKbdSkip(){
 // the density engine progresses, then closes the overlay (no session recap / next-ex).
 function startKbConditioning(){
   const wmEl=document.getElementById('workoutMode'); if(!wmEl)return;
-  wm={ active:true, kbdStandalone:true, recapShown:true, mode:'kbdStart', exIdx:0, setIdx:0, session:null, restInterval:null };
+  // Phase 108: the optional "extra" conditioning now runs the EMOM timer standalone.
+  wm={ active:true, kbStandalone:true, recapShown:true, mode:'kbStart', exIdx:0, setIdx:0, session:null, restInterval:null };
   wmEl.classList.add('open');
   if(typeof _kbWakeAcquire==='function'){_kbWakeAcquire();_kbWireVisibility();}
-  renderWmKbdStart(kbdSuggestion((typeof getKbLoad==='function')?getKbLoad():20));
+  renderWmKbStart(kbSuggestion((typeof getKbLoad==='function')?getKbLoad():20));
 }
 function renderWmKbdDone(outcome,effort){
   const kbd=wm.kbd||{};

@@ -570,8 +570,8 @@ test("Phase 92: KB Swing is the final exercise on Lower A + Lower B", () => {
   assert.equal(q(`FORGE_PROGRAMME.exerciseName('kb_swing')`), "Kettlebell Swing (two-handed, Russian)", "name map in sync");
 });
 
-// ---- Phase 92 Part 3 (engine + data plumbing): KB EMOM wired into the app ----
-test("Phase 92: KB EMOM engine is loaded and wired to data helpers", () => {
+// ---- Phase 108 (engine + data plumbing): KB EMOM wired into the app ----
+test("Phase 108: KB EMOM engine is loaded and wired to data helpers", () => {
   const { ctx } = bootApp();
   seed(ctx);
   const q = (c) => vm.runInContext(c, ctx);
@@ -580,42 +580,29 @@ test("Phase 92: KB EMOM engine is loaded and wired to data helpers", () => {
   assert.equal(q(`getKbLoad()`), 20, "default load 20kg");
   q(`setKbLoad(24)`);
   assert.equal(q(`STATE.profile.kbSwingLoad`), 24, "load persists to profile");
-  // no history → Phase 1 normal
+  // cold start = EMOM 5 min × 15 (no Phase-1 gate)
   q(`STATE.exLog={}`);
-  assert.equal(q(`kbSuggestion(20).type`), "normal", "cold start = Phase 1 normal");
-  // 4 FULL 3×10 → unlocks EMOM 5×12
-  q(`STATE.exLog={
-    '2026-09-01':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
-    '2026-09-02':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
-    '2026-09-03':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
-    '2026-09-04':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}}
-  }`);
-  const s = JSON.parse(q(`JSON.stringify(kbSuggestion(20))`));
-  assert.equal(s.type, "emom"); assert.equal(s.minutes, 5); assert.equal(s.reps, 12);
-  // logKbEmomSet writes a FULL emom set + PB reflects it
-  q(`logKbEmomSet('2026-09-05',{load:20,rounds:5,roundsTarget:5,repsPerMin:12,durationMin:5})`);
+  const cold = JSON.parse(q(`JSON.stringify(kbSuggestion(20))`));
+  assert.equal(cold.type, "emom"); assert.equal(cold.minutes, 5); assert.equal(cold.reps, 15);
+  // complete a full 5-min session → next suggestion climbs to 6 min
+  q(`logKbEmomSet('2026-09-05',{load:20,rounds:5,roundsTarget:5,repsPerMin:15,durationMin:5})`);
   assert.equal(q(`STATE.exLog['2026-09-05'].kb_swing.sets[0].outcome`), "FULL", "outcome derived");
-  assert.equal(q(`getKbPBs()['20']`), "5×12", "PB per load");
+  const next = JSON.parse(q(`JSON.stringify(kbSuggestion(20))`));
+  assert.equal(next.minutes, 6, "FULL 5 → 6 min"); assert.equal(next.reps, 15);
+  assert.equal(q(`getKbPBs()['20']`), "5 min × 15", "PB per load");
 });
 
-// ---- Phase 92 Part 2: guided EMOM timer flow ----
-test("Phase 92: KB EMOM start screen + finish logging + day-detail render", () => {
+// ---- Phase 108: guided EMOM timer flow ----
+test("Phase 108: KB EMOM start screen + finish logging + day-detail render", () => {
   const { ctx } = bootApp();
   seed(ctx);
   const q = (c) => vm.runInContext(c, ctx);
-  q(`STATE.profile.programId='upper-lower-5d-fixed';`);
-  // 4 FULL 3×10 at 20kg → EMOM unlocked (5×12)
-  q(`STATE.exLog={
-    '2026-09-01':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
-    '2026-09-02':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
-    '2026-09-03':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}},
-    '2026-09-04':{kb_swing:{done:true,sets:[{kg:20,reps:10,done:true},{kg:20,reps:10,done:true},{kg:20,reps:10,done:true}]}}
-  }`);
+  q(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.exLog={};`);
   q(`wm.active=true; wm.session='lowerB'; wm.exIdx=WORKOUTS.lowerB.exercises.findIndex(e=>e.id==='kb_swing'); wm.setIdx=0;`);
-  // session-start screen
-  q(`renderWmKbStart(kbSuggestion(getKbLoad()))`);
+  // renderWmSet routes kb_swing to the EMOM start screen (cold start = 5 min × 15)
+  q(`renderWmSet()`);
   const start = q(`document.getElementById('wmContent').innerHTML`);
-  assert.ok(/EMOM 5 min × 12/.test(start), "target shown");
+  assert.ok(/EMOM 5 min × 15/.test(start), "target shown");
   assert.ok(/START EMOM/.test(start), "start button");
   assert.ok(/Weight/.test(start) && /20kg/.test(start), "inline load change @ 20kg");
   // run + complete the EMOM → logs a FULL set
@@ -623,66 +610,32 @@ test("Phase 92: KB EMOM start screen + finish logging + day-detail render", () =
   const T = q(`todayStr()`);
   const set = JSON.parse(q(`JSON.stringify(STATE.exLog['${T}'].kb_swing.sets.find(s=>s.emom))`));
   assert.equal(set.outcome, "FULL"); assert.equal(set.rounds, 5); assert.equal(set.roundsTarget, 5);
+  assert.equal(set.repsPerMin, 15, "15 reps/min logged");
   assert.ok(/EMOM 5\/5/.test(q(`document.getElementById('wmContent').innerHTML`)), "completion screen shows rounds");
   // day-detail renders the EMOM set (not "no sets logged")
-  q(`STATE.profile.programmeStartDate='2026-07-20'; STATE.exLog['2026-08-14']={kb_swing:{done:true,sets:[{emom:true,load:20,rounds:6,roundsTarget:8,repsPerMin:12,outcome:'PARTIAL',done:true}]},_session:{sessionType:'lowerB',startedAt:1,completedAt:2}};`);
+  q(`STATE.profile.programmeStartDate='2026-07-20'; STATE.exLog['2026-08-14']={kb_swing:{done:true,sets:[{emom:true,load:20,rounds:6,roundsTarget:8,repsPerMin:15,outcome:'PARTIAL',done:true}]},_session:{sessionType:'lowerB',startedAt:1,completedAt:2}};`);
   q(`renderDayDetail('2026-08-14')`);
   const dd = q(`document.getElementById('ddContent').innerHTML`);
   assert.ok(/EMOM 6\/8/.test(dd), "day-detail shows the EMOM result");
   assert.ok(!/Kettlebell[\s\S]{0,120}no sets logged/.test(dd), "not falsely 'no sets logged'");
 });
 
-// ---- Phase 106: guided KB DENSITY conditioning flow ----
-test("Phase 106: KB density engine wired + guided set→rest→effort flow + day-detail", () => {
+// ---- Phase 108: standalone "extra" KB conditioning runs the EMOM timer ----
+test("Phase 108: standalone Extra KB conditioning runs EMOM + logs a set", () => {
   const { ctx } = bootApp();
   seed(ctx);
   const q = (c) => vm.runInContext(c, ctx);
-  assert.equal(q(`typeof KB_DENSITY`), "object", "kb-density.js loaded as a global");
-  assert.equal(q(`typeof kbdSuggestion`), "function", "data helper wired");
-  // cold start suggestion = 3 sets × 15 @ 60s
-  q(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.exLog={};`);
-  const sug = JSON.parse(q(`JSON.stringify(kbdSuggestion(20))`));
-  assert.equal(sug.targetSets, 3); assert.equal(sug.reps, 15); assert.equal(sug.restSec, 60);
-  // renderWmSet on kb_swing routes to the density start screen (not EMOM, not weighted)
-  q(`wm.active=true; wm.session='lowerB'; wm.exIdx=WORKOUTS.lowerB.exercises.findIndex(e=>e.id==='kb_swing'); wm.setIdx=0;`);
-  q(`renderWmSet()`);
-  const start = q(`document.getElementById('wmContent').innerHTML`);
-  assert.ok(/3 sets × 15/.test(start), "density target shown");
-  assert.ok(/60s rest/.test(start), "rest shown");
-  assert.ok(/START →/.test(start) && !/EMOM/.test(start), "density start, not EMOM");
-  // begin → set screen
-  q(`wmKbdBegin()`);
-  const setScr = q(`document.getElementById('wmContent').innerHTML`);
-  assert.ok(/SET 1/.test(setScr) && /15 SWINGS/.test(setScr), "set 1 screen");
-  // do a set → rest screen; then stop → effort screen; rate solid → logs a density set
-  q(`wmKbdSetDone()`);
-  assert.equal(q(`wm.mode`), "kbdRest", "entered rest after a set");
-  q(`wmKbdStop()`);
-  assert.ok(/How did that feel/.test(q(`document.getElementById('wmContent').innerHTML`)), "effort screen after stop");
-  q(`wmKbdRecordEffort('solid')`);
-  const T = q(`todayStr()`);
-  const set = JSON.parse(q(`JSON.stringify(STATE.exLog['${T}'].kb_swing.sets.find(s=>s.density))`));
-  assert.equal(set.setsCompleted, 1); assert.equal(set.reps, 15); assert.equal(set.effort, "solid");
-  assert.equal(set.outcome, "PARTIAL", "1 of 3 target → PARTIAL");
-  assert.ok(/1 × 15/.test(q(`document.getElementById('wmContent').innerHTML`)), "done screen shows result");
-  // stopping before any set = skip (no set logged, marked skipped)
-  q(`STATE.exLog={}; wm.active=true; wm.session='lowerB'; wm.exIdx=WORKOUTS.lowerB.exercises.findIndex(e=>e.id==='kb_swing'); renderWmSet(); wmKbdBegin(); wmKbdStop();`);
-  assert.equal(q(`STATE.exLog['${T}']&&STATE.exLog['${T}'].kb_swing&&STATE.exLog['${T}'].kb_swing.skipped`), true, "stop with 0 sets → skipped");
-  // day-detail renders the density set (not "no sets logged")
-  q(`STATE.profile.programmeStartDate='2026-07-20'; STATE.exLog['2026-08-14']={kb_swing:{done:true,sets:[{density:true,load:20,reps:15,restSec:60,targetSets:3,setsCompleted:5,cleanLastSet:true,outcome:'FULL',done:true}]},_session:{sessionType:'lowerB',startedAt:1,completedAt:2}};`);
-  q(`renderDayDetail('2026-08-14')`);
-  const dd = q(`document.getElementById('ddContent').innerHTML`);
-  assert.ok(/5×15 @ 60s/.test(dd), "day-detail shows the density result");
-  assert.ok(!/Kettlebell[\s\S]{0,120}no sets logged/.test(dd), "not falsely 'no sets logged'");
-  // standalone "optional extra" entry (Wednesday etc.): opens the density timer, logs
-  // today's kb_swing, closes without a session recap / next-exercise.
   assert.equal(q(`typeof startKbConditioning`), "function", "standalone entry defined");
-  q(`STATE.exLog={}; startKbConditioning();`);
-  assert.equal(q(`wm.kbdStandalone`), true, "standalone flag set");
-  assert.ok(/3 sets × 15/.test(q(`document.getElementById('wmContent').innerHTML`)), "standalone start screen");
-  q(`wmKbdBegin(); wmKbdSetDone(); wmKbdStop(); wmKbdRecordEffort('easy');`);
-  const T2 = q(`todayStr()`);
-  assert.equal(q(`STATE.exLog['${T2}'].kb_swing.sets.filter(s=>s.density).length`), 1, "standalone logged a density set");
+  q(`STATE.profile.programId='upper-lower-5d-fixed'; STATE.exLog={};`);
+  q(`startKbConditioning();`);
+  assert.equal(q(`wm.kbStandalone`), true, "standalone flag set");
+  assert.equal(q(`wm.mode`), "kbStart", "opens the EMOM start screen (not density)");
+  assert.ok(/EMOM 5 min × 15/.test(q(`document.getElementById('wmContent').innerHTML`)), "cold-start EMOM target");
+  // run + finish → logs an EMOM set for today; standalone so it never marks a session exercise
+  q(`wm._kbSug=kbSuggestion(getKbLoad()); wmKbBegin(); wmKbEnd(true);`);
+  const T = q(`todayStr()`);
+  assert.equal(q(`STATE.exLog['${T}'].kb_swing.sets.filter(s=>s.emom).length`), 1, "standalone logged an EMOM set");
+  assert.equal(q(`STATE.exLog['${T}'].kb_swing.sets[0].repsPerMin`), 15, "15 reps/min");
 });
 
 // ---- Phase 92 iOS/PWA: graceful degradation (no vibrate / no wakeLock) ----
