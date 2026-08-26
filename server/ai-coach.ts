@@ -217,6 +217,12 @@ function buildSkinContext(state: any): string {
 
   L.push("SKIN CARE ROUTINE (review weekly):");
   L.push(`  ${retLabel} frequency step: ${phase} of 3 · ${ret?.frequency || "?"} · ${weeksAtPhase.toFixed(1)} weeks at this frequency (ladder: every-other-night → 5x/wk → nightly)`);
+  // Phase 109: surface the ACTUAL start dates (not just the duration) so "when did I
+  // start?" is answerable. startedDate = the retinoid regime start; frequencyStartedAt =
+  // the current step (e.g. the prescription-tretinoin switch reset this).
+  if (ret?.startedDate) {
+    L.push(`  ${retLabel} started: ${ret.startedDate}${ret.frequencyStartedAt && ret.frequencyStartedAt !== ret.startedDate ? ` · current frequency step since ${ret.frequencyStartedAt}` : ""} (these are the recorded start dates — cite them exactly if asked "when did I start")`);
+  }
   for (const p of products) {
     L.push(`  - [id:${p.id}] ${p.name}${p.concentration ? ` ${p.concentration}` : ""} · ${p.type} · ${p.slot} · ${p.frequency}`);
   }
@@ -451,6 +457,17 @@ function buildRecentChanges(state: any): string {
     if (j.createdAt) push(j.createdAt, `Injury flagged: ${j.name || "injury"}${j.severity ? ` (${j.severity})` : ""}`);
     if (j.status === "resolved" && j.resolvedAt) push(j.resolvedAt, `Injury resolved: ${j.name || "injury"}`);
   }
+  // Phase 109: per-lift training tweaks (swaps / notes the user or coach added) are dated.
+  const exNotes = state.exerciseNotes || {};
+  for (const exId of Object.keys(exNotes)) {
+    const n = exNotes[exId]; if (!n || !n.addedAt) continue;
+    const src = n.source === "coach" ? "coach" : "you";
+    const txt = typeof n.note === "string" ? n.note.slice(0, 60) : "";
+    push(n.addedAt, `Training note (${src}) on ${exerciseName(exId) || exId}${txt ? `: "${txt}"` : ""}`);
+  }
+  // Skincare frequency-step change (the tretinoin ladder advance resets this).
+  const sc = state.skinCare || {};
+  if (sc.phaseStartDate) push(sc.phaseStartDate, `Skincare frequency step → phase ${sc.phase || "?"} of 3`);
   if (!items.length) return "";
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // newest first
   const list = items.slice(0, 12).map((it) => {
@@ -459,6 +476,56 @@ function buildRecentChanges(state: any): string {
   });
   return [
     "RECENT CHANGES (interventions the user made, newest first — cross-reference these dates against WEEK-OVER-WEEK / MONTHLY ARC / trends to attribute BEFORE-vs-AFTER impact, e.g. \"since the meal-plan change on <date>, protein / training volume / energy moved X — it's working / not working\"; do NOT describe trends in isolation when a change explains them):",
+    ...list, "",
+  ].join("\n");
+}
+
+// Phase 109: KEY DATES — the foundational start/anchor dates, ALWAYS listed (not capped
+// by the recency of RECENT CHANGES), so "when did I start / how long on X" is answerable
+// from exact recorded dates instead of durations scattered across other blocks.
+function buildKeyDates(state: any): string {
+  const profile = state.profile || {};
+  const today = ukToday();
+  const daysAgo = (d: string): number | null => {
+    if (!d || d.length < 10) return null;
+    return Math.round((new Date(today + "T12:00:00").getTime() - new Date(d.slice(0, 10) + "T12:00:00").getTime()) / 86400000);
+  };
+  const items: Array<{ date: string; label: string }> = [];
+  const add = (date: any, label: string) => {
+    if (typeof date === "string" && date.length >= 10) items.push({ date: date.slice(0, 10), label });
+  };
+  add(profile.planStartDate || profile.startDate, "Cut / plan start");
+  if (profile.programmeStartDate) {
+    const prog = programmeLabel(profile.programId);
+    add(profile.programmeStartDate, `Current training programme (${prog?.name || profile.programId || "?"})`);
+  }
+  if (profile.activePhase && profile.activePhase.startDate) {
+    add(profile.activePhase.startDate, `Current phase (${profile.activePhase.phase || profile.phase || "?"})`);
+  }
+  const sc = state.skinCare || {};
+  const ret = (Array.isArray(sc.products) ? sc.products : []).find((p: any) => p && p.type === "retinol");
+  if (ret && ret.startedDate) add(ret.startedDate, `${ret.name || "Retinoid"} regime start`);
+  if (ret && ret.frequencyStartedAt && ret.frequencyStartedAt !== ret.startedDate) {
+    add(ret.frequencyStartedAt, `Current retinoid frequency step (${ret.frequency || "?"})`);
+  }
+  const bm = Array.isArray(profile.bloodMarkers) ? profile.bloodMarkers : [];
+  const latestPanel = bm.reduce((d: string, m: any) => (m && m.date && m.date > d ? m.date : d), "");
+  if (latestPanel) add(latestPanel, "Latest blood panel");
+  const dexa = Array.isArray(state.dexaScans) ? state.dexaScans.filter((s: any) => s && s.date).map((s: any) => s.date).sort() : [];
+  if (dexa.length) add(dexa[dexa.length - 1], "Latest DEXA scan");
+  const bdx = Array.isArray(state.boditraxLog) ? state.boditraxLog.filter((s: any) => s && s.date).map((s: any) => s.date).sort() : [];
+  if (bdx.length) add(bdx[bdx.length - 1], "Latest Boditrax scan");
+  const dc = profile.deloadConfig;
+  if (dc && dc.enabled && dc.anchorMonday) add(dc.anchorMonday, `Deload cadence anchor (every ${dc.everyWeeks || 8} wks)`);
+
+  if (!items.length) return "";
+  items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // newest first
+  const list = items.map((it) => {
+    const dd = daysAgo(it.date);
+    return `  ${it.date}${dd != null ? ` (${dd <= 0 ? "today" : dd + "d ago"})` : ""}: ${it.label}`;
+  });
+  return [
+    "KEY DATES (foundational start / anchor dates — when the user asks \"when did I start\" or \"how long have I been on\" something, answer from THESE exact dates, never invent one; medication start dates are NOT recorded, so if something isn't listed here say it isn't logged rather than guessing):",
     ...list, "",
   ].join("\n");
 }
@@ -1437,6 +1504,10 @@ export function buildContext(state: any): string {
     if (dLBM != null) lines.push(`  LBM: ${startLBM}kg → ${cur.lbm}kg (${dLBM > 0 ? "+" : ""}${dLBM.toFixed(2)}kg) — preservation status: ${Math.abs(dLBM) < 0.5 ? "EXCELLENT" : dLBM > 0 ? "GAINING" : dLBM > -1 ? "minor loss" : "concerning loss"}`);
     lines.push("");
   }
+
+  // Phase 109: KEY DATES anchor block — foundational start dates, always present.
+  const keyDates = buildKeyDates(state);
+  if (keyDates) lines.push(keyDates);
 
   // Phase 79: RECENT CHANGES timeline — so the coach can attribute the trends below
   // to specific interventions (not just describe them).
