@@ -675,6 +675,16 @@ test("Coach Settings save/remove handlers are all defined", () => {
   }
 });
 
+// ---- Phase 110: one-tap "Export my data" ----
+test("Phase 110: Export my data button on More page + handler defined", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  ctx.renderMore();
+  assert.ok(/Export my data/.test(els["page-more"]._html), "export button rendered on More page");
+  assert.ok(/exportMyData\(\)/.test(els["page-more"]._html), "button wired to exportMyData()");
+  assert.equal(typeof ctx.exportMyData, "function", "exportMyData defined");
+});
+
 test("5-day progression uses the CURRENT template's rep range (per-template exObj)", () => {
   const { ctx } = bootApp();
   seed(ctx);

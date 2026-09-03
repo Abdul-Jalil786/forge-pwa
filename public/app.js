@@ -2347,6 +2347,31 @@ function editProfile(){
   showToast('Profile updated ✓');
 }
 
+// Phase 110: "Export my data" — downloads this account's full state (exactly what
+// GET /api/state returns: every log, minus server-only secrets) as a JSON file so the
+// user can hand it to an analysis/coach without any DB access. READ-ONLY: nothing is
+// written or changed. Falls back to the in-memory STATE if the fetch fails (offline).
+async function exportMyData(){
+  let data=null;
+  try{
+    const jwt=localStorage.getItem('forge_token');
+    if(jwt){
+      const res=await fetch('/api/state',{headers:{Authorization:'Bearer '+jwt}});
+      if(res.ok){ const j=await res.json(); data=(j&&j.state)?j.state:j; }
+    }
+  }catch(e){}
+  if(!data||typeof data!=='object')data=STATE; // offline / fetch failed → in-memory copy
+  try{
+    const stamp=(typeof todayStr==='function')?todayStr():new Date().toISOString().slice(0,10);
+    const blob=new Blob([JSON.stringify(data,null,1)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=`forge-data-${stamp}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>{try{URL.revokeObjectURL(a.href);}catch(e){}},4000);
+    if(typeof showToast==='function')showToast('Exported — check your downloads');
+  }catch(e){ if(typeof showToast==='function')showToast('Export failed — try again'); }
+}
+
 function confirmReset(){
   if(confirm('Delete ALL data for this profile? This cannot be undone.')){
     ['weightLog','foods','stepsLog','exLog','measLog','sleepLog','swimLog','supps','suppDone','water','foodTemplates','supplements','supplementLog',
