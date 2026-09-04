@@ -1294,17 +1294,24 @@ async function updateJayPostShake2ScoopsV1() {
 // whey" from GENERIC whey (~25g/scoop) and overwrote it: 277/40 → 303/49 (22 Aug) → 305/51
 // (30 Aug). This pins the ingredient to the user's ACTUAL product (1 scoop = 26g: 87 kcal /
 // 20g P / 1.5g C / 0.5g F) → 2 scoops + 100g blueberries + 5g creatine (0 kcal) =
-// 231 kcal / 41g P / 17g C / 1.3g F, marks it edited:true so the recompute never touches
-// it again, and corrects every logged food entry of that exact line (today + history —
-// day totals are summed live from entries, so each day recalculates).
+// 231 kcal / 41g P / 17g C / 1.3g F for the berry-inclusive line. Two parts: (1) the
+// FORWARD meal-plan ingredient becomes the user's CURRENT recipe — berries dropped —
+// "2 scoops whey + water + 5g creatine" = 174 kcal / 40g P / 3g C / 1g F, marked
+// edited:true so the recompute never touches it again; (2) every HISTORICAL logged entry
+// of the old berry-inclusive line is corrected to 231/41/17/1.3 (what was actually eaten
+// then), scaled by quantity. Day totals are summed live from entries, so each day recalculates.
 async function fixJayShakeExactMacrosV1() {
   try {
     const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
     if (!user) return;
     const state: any = user.state || {};
     if (state.jayShakeExactMacrosV1) return;
+    // Historical logged line (berries included — matches what was eaten at the time).
     const NAME = "2 scoops whey + water + 100g blueberries + 5g creatine";
     const EXACT = { cals: 231, protein: 41, carbs: 17, fat: 1.3 };
+    // Current recipe going forward: berries dropped. 2 × (87 kcal / 20 P / 1.5 C / 0.5 F) + creatine 0.
+    const NEW_NAME = "2 scoops whey + water + 5g creatine";
+    const NEW = { cals: 174, protein: 40, carbs: 3, fat: 1 };
     const same = (n: any) => String(n || "").trim().toLowerCase() === NAME.toLowerCase();
     let ingFixed = false, entriesFixed = 0;
     // (1) the meal-plan ingredient — exact macros + edited:true (recompute-proof)
@@ -1316,7 +1323,7 @@ async function fixJayShakeExactMacrosV1() {
       if (shake && Array.isArray(shake.ingredients)) {
         const idx = shake.ingredients.findIndex((ing: any) => /whey/i.test((ing && ing.name) || ""));
         if (idx >= 0) {
-          shake.ingredients[idx] = { ...shake.ingredients[idx], name: NAME, ...EXACT, gi: "low", edited: true };
+          shake.ingredients[idx] = { ...shake.ingredients[idx], name: NEW_NAME, ...NEW, gi: "low", edited: true };
           const sum = (k: string) => shake.ingredients.reduce((s: number, ing: any) => s + (Number(ing && ing[k]) || 0), 0);
           shake.cals = Math.round(sum("cals"));
           shake.protein = Math.round(sum("protein"));
@@ -1345,7 +1352,7 @@ async function fixJayShakeExactMacrosV1() {
     }
     state.jayShakeExactMacrosV1 = true;
     await prisma.user.update({ where: { id: user.id }, data: { state } });
-    console.log(`[migration] Jay post-workout shake → exact product macros 231/41/17/1.3 (ingredient ${ingFixed ? "fixed+edited" : "not found"}, ${entriesFixed} logged entries corrected)`);
+    console.log(`[migration] Jay post-workout shake → forward recipe 174/40/3/1 (no berries, edited:true) ${ingFixed ? "set" : "NOT FOUND"}; ${entriesFixed} historical berry-inclusive entries corrected to 231/41/17/1.3`);
   } catch (err) {
     console.error("[migration] fixJayShakeExactMacrosV1 failed:", err);
   }
