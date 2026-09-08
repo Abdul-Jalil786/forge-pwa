@@ -2298,7 +2298,7 @@ export const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 const SESSION_BRIEF_SYSTEM = `You write a pre-workout brief for someone about to start training.
 
 Output (via submit_brief tool):
-1. "strategy" — 2-3 sentences setting today's tone. Reference the most signal-rich 1-2 items from today's recovery, last night's sleep, or yesterday's protein. Tie it to the user's phase + goal.
+1. "strategy" — 2-3 sentences setting today's tone. Reference the most signal-rich 1-2 items from today's recovery, last night's sleep, or pre-workout fuel. Tie it to the user's phase + goal.
 2. "perExercise" — one short cue per exercise. ONE SENTENCE. Form cue, rep target focus, or push/pull-back guidance.
 
 CRITICAL RULES:
@@ -2309,7 +2309,8 @@ CRITICAL RULES:
 - Mention medications (GLP-1, statin) only when relevant to today.
 - If an exercise has an ACTIVE INJURY (see context), its cue MUST be a conservative form/pain cue — "form over weight, stop at any sharp pain" — never a push cue.
 - If today is flagged as a GLP-1 injection day in the context, reflect it in the strategy: moderate intensity, monitor energy/nausea.
-- Factor today's nutrition (calories/protein logged so far, pre-workout fuel) into the strategy when relevant.
+- Today's food total is PARTIAL — the user is mid-day and the post-workout meals are already planned. Judge it ONLY against "Today's targets" and ONLY for pre-workout fuel (e.g. nothing logged, or very low carbs before a leg day). NEVER compare today's running total to yesterday's full-day intake, never say the user is "short" of yesterday, and never invent a protein amount to "catch up" — the remaining planned meals close the gap.
+- Yesterday's intake is reference for recovery context (e.g. very low protein yesterday), not a target for today.
 - Keep total output under 200 words.`;
 
 const SESSION_REFLECTION_SYSTEM = `You write ONE short sentence acknowledging what the user just completed in their training session.
@@ -2319,6 +2320,29 @@ Compare what was completed to recent norms. Call out PRs, missed sets, surprises
 interface SessionBrief {
   strategy: string;
   perExercise: Array<{ exId: string; cue: string }>;
+}
+
+// Phase 112: resolve the day's calorie target + protein floor for the session brief.
+// Order mirrors the frontend's getDynamicTargetForDate: user-set active phase →
+// per-session dynamic targets → legacy calsGym/calsRest. Protein floor: coach
+// targets → active phase → macros.protein. Exported for tests.
+export function briefTargets(profile: any, sessionType: string): { kcalTarget: number | null; proteinFloor: number | null } {
+  const p = profile || {};
+  const st = String(sessionType || "").toLowerCase();
+  const isLower = /lower/.test(st);
+  const isTraining = isLower || /upper|full|home/.test(st);
+  const num = (v: any) => (v == null || v === "" || isNaN(+v) ? null : Math.round(+v));
+  const ap = p.activePhase && typeof p.activePhase === "object" ? p.activePhase : {};
+  const dt = p.dynamicTargets && typeof p.dynamicTargets === "object" ? p.dynamicTargets : {};
+  const dtKey = isLower ? "lower" : isTraining ? "upper" : "rest";
+  const kcalTarget = num(ap.calorieTarget)
+    ?? num(dt[dtKey] && dt[dtKey].calories)
+    ?? num(isTraining ? p.calsGym : p.calsRest);
+  const ct = p.coachTargets && typeof p.coachTargets === "object" ? p.coachTargets : {};
+  const proteinFloor = num(ct.proteinFloorDaily)
+    ?? num(ap.proteinFloor)
+    ?? num(p.macros && p.macros.protein);
+  return { kcalTarget, proteinFloor };
 }
 
 export async function generateSessionBrief(
@@ -2396,15 +2420,26 @@ export async function generateSessionBrief(
     const stages = (lastSleep.remMin != null || lastSleep.deepMin != null) ? ` (REM ${lastSleep.remMin ?? '?'}m, deep ${lastSleep.deepMin ?? '?'}m)` : '';
     lines.push(`  Sleep last night: ${lastSleep.hours}h${stages}`);
   }
-  if (yProtein > 0) lines.push(`  Yesterday's intake: ${yKcal}kcal, ${yProtein}g protein`);
+  if (yProtein > 0) lines.push(`  Yesterday's intake (full day, for reference only): ${yKcal}kcal, ${yProtein}g protein`);
+  // Phase 112: the brief previously saw "today so far" with NO target, so it
+  // judged a half-finished day against yesterday's full-day total and invented
+  // catch-up protein amounts. Now it gets the real daily target for this
+  // session type (activePhase → dynamicTargets → calsGym/calsRest) and the
+  // protein floor (coachTargets → activePhase → macros), and today's line is
+  // explicitly marked PARTIAL.
+  const { kcalTarget, proteinFloor } = briefTargets(profile, sessionType);
+  if (kcalTarget != null || proteinFloor != null) {
+    lines.push(`  Today's targets (full day): ${kcalTarget != null ? `${kcalTarget}kcal` : "?kcal"} · protein floor ${proteinFloor != null ? `${proteinFloor}g` : "?"}`);
+  }
   // Phase 40: today's nutrition so far + water + injuries
   const todayFoods = (state.foods || {})[today] || [];
   if (todayFoods.length) {
     const tCals = todayFoods.reduce((s: number, f: any) => s + (+f.cals || 0), 0);
     const tProt = todayFoods.reduce((s: number, f: any) => s + (+f.protein || 0), 0);
-    lines.push(`  Today so far: ${tCals}kcal, ${tProt}g protein (${todayFoods.length} items logged)`);
+    const remaining = proteinFloor != null ? ` · ${Math.max(0, proteinFloor - tProt)}g still to come from the remaining planned meals` : "";
+    lines.push(`  Today so far (PARTIAL — the day is not finished, post-workout meals are still planned): ${tCals}kcal, ${tProt}g protein (${todayFoods.length} items logged)${remaining}`);
   } else {
-    lines.push("  Today so far: nothing logged yet — pre-workout fuel may be missing");
+    lines.push("  Today so far (PARTIAL): nothing logged yet — pre-workout fuel may be missing");
   }
   const todayWater = (state.waterLog || {})[today];
   if (todayWater) lines.push(`  Water today: ${todayWater.total || 0}ml`);
