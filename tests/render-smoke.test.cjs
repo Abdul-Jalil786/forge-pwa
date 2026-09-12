@@ -1898,3 +1898,84 @@ test("Boditrax: hour+minute dropdowns drive the submitted time (native-picker-pr
   ctx._bdxSetTime("");
   assert.equal(ctx.document.getElementById("bdx-time").value, "", "empty time stays empty");
 });
+
+// ---- Phase 114: Boditrax as the weigh-in + pinned targets editor ----
+test("Phase 114: a Boditrax scan mirrors into weightLog/bfLog (source boditrax), manual wins, delete unsyncs", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext("STATE.profile.weighMethod='boditrax'; STATE.weightLog=[{date:'2026-09-01',weight:76,source:'manual'}]; STATE.bfLog=[];", ctx);
+  const r1 = ctx.addBoditraxEntry({ date: "2026-09-11", time: "", weight: 75.2, muscle: 40, fat: 11.3, visceral: 5 });
+  assert.equal(r1.ok, true);
+  let wl = ctx.getWeightLog();
+  const w = wl.find(e => e.date === "2026-09-11");
+  assert.ok(w && w.weight === 75.2 && w.source === "boditrax", "scan weight mirrored with source boditrax");
+  const b = ctx.getBfLog().find(e => e.date === "2026-09-11");
+  assert.ok(b && b.source === "boditrax" && Math.abs(b.bf - 15.0) < 0.05, "bf% = fat/weight (11.3/75.2 = 15.0%) with source boditrax");
+  assert.equal(ctx.getCurrentWeight(), 75.2, "current weight now reads the scan");
+  // a same-date MANUAL weigh-in is never overwritten
+  const r2 = ctx.addBoditraxEntry({ date: "2026-09-01", time: "", weight: 70, muscle: 40, fat: 10, visceral: 5 });
+  assert.equal(r2.ok, true);
+  assert.equal(ctx.getWeightLog().find(e => e.date === "2026-09-01").weight, 76, "manual entry kept");
+  // delete removes only the boditrax-sourced mirror
+  ctx.deleteBoditraxEntry(r1.entry.id);
+  assert.ok(!ctx.getWeightLog().some(e => e.date === "2026-09-11"), "deleted scan unsynced from weightLog");
+  assert.ok(!ctx.getBfLog().some(e => e.date === "2026-09-11"), "and from bfLog");
+  // Today weight row carries the Boditrax nudge + a Log-scan tap for these users
+  const els = ctx.document._els || {};
+  ctx.renderToday();
+  const html = (ctx.document.getElementById("page-today") || {})._html || "";
+  assert.ok(/Boditrax weigh-in/.test(html) && /openBoditraxEdit\(null\)/.test(html), "Today shows the Boditrax weigh-in hint with + Log scan");
+  const B = /source==='boditrax'/.test(String(ctx.renderTrack));
+  assert.ok(B, "weight list has a B source badge");
+});
+
+test("Phase 114: Edit Targets pins four macros through applyDynamicTargets; clear restores computed", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext("STATE.profile.personal={age:21,heightCm:173,sex:'male',activityLevel:'moderate',phase:'lean-bulk'}; STATE.profile.targetOverrides=undefined; STATE.weightLog=[{date:'2026-09-11',weight:75.2,source:'boditrax'}];", ctx);
+  ctx.applyDynamicTargets();
+  const before = ctx.getActive().dynamicTargets.rest.calories;
+  assert.notEqual(before, 3100);
+  ctx.editProfile();
+  assert.ok(els["mt-note"], "targets modal note rendered");
+  els["mt-cals"].value = "3100"; els["mt-cals-rest"].value = ""; els["mt-protein"].value = "150"; els["mt-carbs"].value = "470"; els["mt-fat"].value = "75";
+  ctx.saveTargetsOverride();
+  const p = ctx.getActive();
+  assert.equal(JSON.stringify(p.targetOverrides.macros), JSON.stringify({ calories: 3100, protein: 150, carbs: 470, fat: 75 }));
+  assert.equal(p.dynamicTargets.rest.calories, 3100); assert.equal(p.dynamicTargets.lower.calories, 3100);
+  assert.equal(p.proteinTarget, 150); assert.equal(p.carbsTarget, 470); assert.equal(p.fatTarget, 75);
+  assert.equal(p.macros.carbs, 470);
+  // a later weigh-in recalculation keeps the pinned numbers
+  vm.runInContext("STATE.weightLog.push({date:'2026-09-18',weight:75.9,source:'boditrax'})", ctx);
+  ctx.applyDynamicTargets();
+  assert.equal(ctx.getActive().dynamicTargets.upper.calories, 3100, "pin survives a weigh-in");
+  ctx.renderMore();
+  assert.ok(/Pinned targets · 3100 kcal/.test(els["page-more"]._html), "More page shows the pin");
+  // macro sanity gate: numbers that don't add up are refused
+  els["mt-cals"].value = "3100"; els["mt-protein"].value = "50"; els["mt-carbs"].value = "100"; els["mt-fat"].value = "20";
+  ctx.saveTargetsOverride();
+  assert.equal(ctx.getActive().targetOverrides.macros.protein, 150, "nonsense macros rejected, pin unchanged");
+  ctx.clearTargetsOverride();
+  assert.equal(ctx.getActive().targetOverrides.macros, undefined);
+  const after = ctx.getActive().dynamicTargets.rest;
+  assert.notEqual(after.calories, 3100, "computed targets restored (for the newer 75.9kg weigh-in)");
+  assert.equal(after.overridden, undefined);
+  assert.ok(Math.abs(after.calories - before) < 40, "within a weigh-in's drift of the original computed figure");
+});
+
+test("Phase 114: wizard weigh-in choice → profile.weighMethod + Boditrax/sleep reminders (boditrax only)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // step-3 state as the wizard would hold it, then the confirm row + step-5 write
+  vm.runInContext("obData={name:'Sam',age:21,sex:'male',heightCm:173,weight:75.2,bf:null,activityLevel:'moderate',phase:'lean-bulk',experience:'some',daysPerWeek:4,equipment:'gym',weighMethod:'boditrax',programId:'upper-lower-4d'}; STATE.reminders=[];", ctx);
+  ctx.renderObConfirm();
+  const conf = (ctx.document.getElementById("ob-confirm-area") || {})._html || "";
+  assert.ok(/Boditrax scan · Fridays/.test(conf), "confirm screen shows the weigh-in method");
+  return ctx.obStep(5).then(() => {
+    const p = ctx.getActive();
+    assert.equal(p.weighMethod, "boditrax");
+    const rems = JSON.parse(vm.runInContext("JSON.stringify(STATE.reminders)", ctx));
+    assert.ok(rems.some(r => r.id === "rem_bdx_friday" && r.daysOfWeek.length === 1 && r.daysOfWeek[0] === 5 && r.time === "09:00"), "Friday Boditrax reminder seeded");
+    assert.ok(rems.some(r => r.id === "rem_sleep_log" && r.daysOfWeek.length === 7), "daily sleep-log reminder seeded");
+  });
+});

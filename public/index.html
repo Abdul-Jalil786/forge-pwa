@@ -454,6 +454,11 @@ svg.tchart .cross line{stroke:var(--text2);stroke-width:1;stroke-dasharray:3 3;}
       <button data-val="home" onclick="obSetTrain('equipment','home')" style="flex:1;padding:10px 4px;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--text2);font-size:12px;cursor:pointer;">Home / minimal kit</button>
     </div>
     <div id="ob-prog-preview" style="font-size:12px;color:var(--text2);min-height:18px;margin-bottom:4px;"></div>
+    <div class="ob-desc">How will you weigh in?</div>
+    <div id="ob-grp-weighMethod" style="display:flex;gap:6px;margin-bottom:12px;">
+      <button data-val="scale" onclick="obSetTrain('weighMethod','scale')" style="flex:1;padding:10px 4px;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--text2);font-size:12px;cursor:pointer;">Scale at home</button>
+      <button data-val="boditrax" onclick="obSetTrain('weighMethod','boditrax')" style="flex:1;padding:10px 4px;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--text2);font-size:12px;cursor:pointer;">Boditrax / gym scan weekly</button>
+    </div>
     <button class="ob-btn" onclick="obStep(3)">Continue →</button>
   </div>
 
@@ -562,6 +567,18 @@ svg.tchart .cross line{stroke:var(--text2);stroke-width:1;stroke-dasharray:3 3;}
     <input class="inp" id="mw-val" placeholder="Weight in kg" type="number" step="0.1" style="margin-bottom:8px">
     <input class="inp" id="mw-bf" placeholder="Body Fat % (optional)" type="number" step="0.1" style="margin-bottom:12px">
     <button class="btn btn-lime btn-full" onclick="saveWeight()">SAVE</button>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-targets">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Edit Targets</div><button class="modal-close" onclick="closeModal('modal-targets')">✕</button></div>
+    <div id="mt-note" style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:10px;"></div>
+    <div class="inp-row"><input class="inp" id="mt-cals" placeholder="Calories / day" type="number" step="10"><input class="inp" id="mt-cals-rest" placeholder="Rest day (optional)" type="number" step="10"></div>
+    <div class="inp-row"><input class="inp" id="mt-protein" placeholder="Protein g" type="number" step="1"><input class="inp" id="mt-carbs" placeholder="Carbs g" type="number" step="1"><input class="inp" id="mt-fat" placeholder="Fat g" type="number" step="1"></div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.5;margin:6px 0 12px;">Pinned numbers hold through every weigh-in. Leave rest-day blank for the same target every day.</div>
+    <button class="btn btn-lime btn-full" onclick="saveTargetsOverride()">PIN THESE TARGETS</button>
+    <button class="btn btn-ghost btn-full" id="mt-clear" style="margin-top:8px;display:none;" onclick="clearTargetsOverride()">Clear — go back to computed targets</button>
   </div>
 </div>
 

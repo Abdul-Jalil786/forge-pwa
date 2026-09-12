@@ -137,3 +137,25 @@ test("water: Jay's overrides win", () => {
   assert.equal(computeWaterTarget({ weight: 113.8, isGymDay: false, overrides: JAY_OVERRIDES }), 3000);
   assert.equal(computeWaterTarget({ weight: 113.8, isGymDay: true, overrides: JAY_OVERRIDES }), 3500);
 });
+
+// ---- Phase 114: full-macro override (profile.targetOverrides.macros) ----
+test("Phase 114: a pinned macros override is returned verbatim for every session type", () => {
+  const base = { weight: 75.2, age: 21, heightCm: 173, sex: "male", phase: "lean-bulk", activityLevel: "moderate" };
+  const pinned = { macros: { calories: 3100, protein: 150, carbs: 470, fat: 75 } };
+  for (const st of ["rest", "upper", "lower"]) {
+    const r = computeTargets({ ...base, sessionType: st, overrides: pinned });
+    assert.equal(r.calories, 3100, st + " calories pinned");
+    assert.equal(r.protein, 150); assert.equal(r.carbs, 470); assert.equal(r.fat, 75);
+    assert.equal(r.overridden, true);
+    assert.ok(r.tdee > 2000 && r.bmr > 1000, "bmr/tdee still computed for display");
+  }
+  // optional rest-day calories
+  const rest = computeTargets({ ...base, sessionType: "rest", overrides: { macros: { calories: 3100, caloriesRest: 2900, protein: 150, carbs: 470, fat: 75 } } });
+  assert.equal(rest.calories, 2900, "caloriesRest used on rest days");
+  assert.equal(computeTargets({ ...base, sessionType: "upper", overrides: { macros: { calories: 3100, caloriesRest: 2900, protein: 150, carbs: 470, fat: 75 } } }).calories, 3100);
+  // no/invalid override → computed as before (lean-bulk ≈ +10% over TDEE, not 3100)
+  const computed = computeTargets({ ...base, sessionType: "rest", overrides: { macros: { calories: 0 } } });
+  assert.equal(computed.overridden, undefined);
+  assert.notEqual(computed.calories, 3100);
+  assert.equal(computed.protein, 135, "lean-bulk default protein untouched");
+});

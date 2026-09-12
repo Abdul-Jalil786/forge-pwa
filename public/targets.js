@@ -44,6 +44,25 @@ function computeTargets(params) {
   const af = o.activityFactor || ACTIVITY_FACTORS[params.activityLevel] || 1.55;
   const tdee = bmr * af;
 
+  // Phase 114: full-macro override. A user-pinned daily plan (set via More →
+  // Edit Targets) that the engine returns VERBATIM, so it survives the weigh-in
+  // recalculation. bmr/tdee are still computed for display. caloriesRest is
+  // optional (same number every day when absent).
+  if (o.macros && +o.macros.calories > 0) {
+    const m = o.macros;
+    const cals = (sessionType === 'rest' && +m.caloriesRest > 0) ? +m.caloriesRest : +m.calories;
+    return {
+      calories: Math.round(cals),
+      protein: Math.round(+m.protein || 0),
+      carbs: Math.round(+m.carbs || 0),
+      fat: Math.round(+m.fat || 0),
+      bmr: Math.round(bmr),
+      tdee: Math.round(tdee),
+      sessionType,
+      overridden: true,
+    };
+  }
+
   // Minors never get a deficit, whatever the phase says.
   let deficit = (o.deficitFixed != null) ? o.deficitFixed : tdee * pd.deficitPct;
   if (age < 18 && deficit > 0) deficit = 0;

@@ -104,6 +104,18 @@ function renderPhaseSection(){
     </div>`;
 }
 
+// Phase 114: for a user whose weigh-in is a weekly Boditrax scan (no home scale),
+// the Today weight row carries the scan nudge — amber on a Friday with no scan
+// this week, plus a one-tap "+ Log scan" that opens the Boditrax modal.
+function _bdxWeighInHint(){
+  if(typeof usesBoditraxWeighIn!=='function'||!usesBoditraxWeighIn())return'';
+  const last=typeof getLatestBoditrax==='function'?getLatestBoditrax():null;
+  const days=(last&&last.date&&typeof _daysBetweenStr==='function')?_daysBetweenStr(last.date,todayStr()):null;
+  const fri=new Date(todayStr()+'T12:00:00').getDay()===5;
+  const due=days==null||days>=7;
+  const when=days==null?'no scan yet':days===0?'scanned today':days+'d since last scan';
+  return `<div style="font-size:11px;color:${(due&&fri)?'var(--orange)':'var(--text3)'};margin-top:2px;">Boditrax weigh-in · ${when}${(due&&fri)?' · due today':' · Fridays'} <span onclick="event.stopPropagation();openBoditraxEdit(null)" style="color:var(--lime);cursor:pointer;font-weight:600;">+ Log scan</span></div>`;
+}
 function renderToday(){
   const p=getActive(); if(!p)return;
   const session=getTodaySession();
@@ -240,6 +252,7 @@ function renderToday(){
             <div style="font-family:'Archivo Black',sans-serif;font-size:20px;color:var(--lime);">${cw}<span style="font-size:11px;color:var(--text2);">kg</span></div>
             ${weightTrend?`<div style="font-size:11px;color:${weightTrend.dir==='down'?'var(--green)':weightTrend.dir==='up'?'var(--red)':'var(--text2)'};">${weightTrend.arrow} ${weightTrend.delta}kg/wk</div>`:''}
           </div>
+          ${_bdxWeighInHint()}
         </div>
         <div style="flex-shrink:0;">${weightSpark}</div>
       </div>
@@ -1675,7 +1688,8 @@ function renderTrack(){
           const cls=diff===null?'':diff<0?'dn':'up';
           const txt=diff===null?'—':diff<0?`▼ ${Math.abs(diff).toFixed(1)}kg`:`▲ ${diff.toFixed(1)}kg`;
           const srcBadge=e.source==='manual'?'<span style="font-size:9px;color:var(--text3);background:var(--card);border:1px solid var(--border);border-radius:3px;padding:0 3px;margin-left:4px;vertical-align:middle;">M</span>'
-            :e.source==='withings'?'<span style="font-size:9px;color:var(--text3);background:var(--card);border:1px solid var(--border);border-radius:3px;padding:0 3px;margin-left:4px;vertical-align:middle;">W</span>':'';
+            :e.source==='withings'?'<span style="font-size:9px;color:var(--text3);background:var(--card);border:1px solid var(--border);border-radius:3px;padding:0 3px;margin-left:4px;vertical-align:middle;">W</span>'
+            :e.source==='boditrax'?'<span style="font-size:9px;color:var(--text3);background:var(--card);border:1px solid var(--border);border-radius:3px;padding:0 3px;margin-left:4px;vertical-align:middle;">B</span>':'';
           return `<div class="list-row">
             <div class="row-left"><div class="row-label">${fmtDate(e.date)}${srcBadge}</div><div class="row-val">${e.weight}kg</div></div>
             <div class="row-diff ${cls}">${txt}</div>
@@ -3847,7 +3861,8 @@ function renderMore(){
       <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${p.name}</div>
       <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">Start: ${p.startWeight}kg · Target: ${p.targetWeight}kg @ ${p.targetBF||15}% BF</div>
       <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">Protein: ${p.proteinTarget}g · Fat: ${p.fatTarget||'auto'}g · Carbs: ${p.carbsTarget||'auto'}g</div>
-      ${p.updatedBy==='cowork'?`<div style="font-size:10px;color:var(--lime);margin-bottom:12px;">Auto-managed by Cowork · last update ${p.updatedAt?new Date(p.updatedAt).toLocaleDateString('en-GB'):'—'}</div>`:`<div style="font-size:10px;color:var(--text3);margin-bottom:12px;">Manually set</div>`}
+      ${(p.targetOverrides&&p.targetOverrides.macros)?`<div style="font-size:10px;color:var(--lime);margin-bottom:12px;">📌 Pinned targets · ${p.targetOverrides.macros.calories} kcal · ${p.targetOverrides.macros.protein}P / ${p.targetOverrides.macros.carbs}C / ${p.targetOverrides.macros.fat}F — hold through weigh-ins</div>`:p.updatedBy==='cowork'?`<div style="font-size:10px;color:var(--lime);margin-bottom:12px;">Auto-managed by Cowork · last update ${p.updatedAt?new Date(p.updatedAt).toLocaleDateString('en-GB'):'—'}</div>`:`<div style="font-size:10px;color:var(--text3);margin-bottom:12px;">Computed from your profile · recalculates on each weigh-in</div>`}
+      ${p.weighMethod==='boditrax'?`<div style="font-size:10px;color:var(--text3);margin-bottom:8px;">Weigh-in: Boditrax scan · Fridays</div>`:''}
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px;" onclick="editProfile()">Edit Targets (override)</button>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px;" onclick="exportMyData()">⬇ Export my data (JSON)</button>
       <button class="btn btn-red btn-sm" style="width:100%;margin-bottom:8px;background:rgba(255,59,59,.2);" onclick="confirmReset()">Reset All Data</button>

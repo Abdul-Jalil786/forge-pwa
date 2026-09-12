@@ -756,7 +756,9 @@ function buildNutritionContext(state: any): string {
       if (hits === 3) allHit++;
     }
     if (dayN) {
-      lines.push("PROTEIN DISTRIBUTION (last 7d — 40g/meal triggers muscle protein synthesis, important at 52yo):");
+      // Phase 114: age-aware wording (was hardcoded to the owner's age).
+      const _pdAge = ageFromDob(state.profile?.personal?.dateOfBirth) ?? state.profile?.personal?.age ?? null;
+      lines.push(`PROTEIN DISTRIBUTION (last 7d — 40g/meal triggers muscle protein synthesis${_pdAge != null && _pdAge >= 40 ? `, especially important at ${_pdAge}yo` : ""}):`);
       lines.push(`  Days all 3 meals hit 40g: ${allHit}/${dayN}`);
       for (const v of Object.values(mealStats)) {
         const avgWhenLogged = v.loggedDays ? Math.round(v.sum / v.loggedDays) : 0;
@@ -1008,6 +1010,19 @@ function buildSessionHrContext(state: any): string {
     else if (delta <= -3) trend = `\nAvg session HR is DOWN ~${Math.abs(delta)} bpm — improving cardiovascular efficiency at the same work.`;
   }
   return `SESSION HEART RATE (Oura HR over each logged workout's window, last ${recent.length}):\n${rows.join("\n")}${trend}`;
+}
+
+// Phase 114: VO₂max norm bands by sex + age decade (approximate, Cooper/ACSM-style
+// ml/kg/min). Was a hardcoded "male 50-59" line that mis-scored every other user.
+export function vo2Norms(sex: any, age: any): string {
+  const female = String(sex || "").toLowerCase() === "female";
+  const a = typeof age === "number" ? age : null;
+  const band = a == null ? "40-49" : a < 30 ? "20-29" : a < 40 ? "30-39" : a < 50 ? "40-49" : a < 60 ? "50-59" : "60+";
+  const M: Record<string, number[]> = { "20-29": [33, 37, 42, 47, 52], "30-39": [31, 35, 40, 45, 50], "40-49": [29, 33, 38, 43, 48], "50-59": [26, 31, 36, 41, 45], "60+": [23, 27, 32, 36, 40] };
+  const F: Record<string, number[]> = { "20-29": [28, 32, 37, 42, 47], "30-39": [26, 30, 35, 40, 45], "40-49": [24, 28, 33, 38, 42], "50-59": [22, 26, 31, 35, 39], "60+": [20, 24, 28, 32, 36] };
+  const t = (female ? F : M)[band];
+  const who = `${female ? "female" : "male"} ${band}${a == null ? ", age not set" : ""}`;
+  return `Norms (${who}, approx.): <${t[0]} Poor · ${t[0]}-${t[1] - 1} Fair · ${t[1]}-${t[2] - 1} Average · ${t[2]}-${t[3] - 1} Good · ${t[3]}-${t[4] - 1} Excellent · ${t[4]}+ Superior`;
 }
 
 export function buildContext(state: any): string {
@@ -1383,8 +1398,13 @@ export function buildContext(state: any): string {
       if (!best || r.systolic < best.systolic) best = r;
       if (!worst || r.systolic > worst.systolic) worst = r;
     }
-    lines.push("BLOOD PRESSURE (LVH context — target <130/80):");
-    if (a7) lines.push(`  7-day avg: ${a7.s}/${a7.d} (n=${a7.n})${a7.s >= 130 || a7.d >= 80 ? " — ABOVE target" : " — within target"}`);
+    // Phase 114: the tighter <130/80 target applies only when a cardiac condition
+    // (e.g. LVH) is recorded in profile.healthConditions; otherwise standard <140/90.
+    const _conds: any[] = Array.isArray(state.profile?.healthConditions) ? state.profile.healthConditions : [];
+    const _cardiac = _conds.some((c: any) => /lvh|hypertroph|cardiac|heart|hypertension/i.test(String((c && (c.label || c.key || c.name)) || c || "")));
+    const _bpS = _cardiac ? 130 : 140, _bpD = _cardiac ? 80 : 90;
+    lines.push(`BLOOD PRESSURE (${_cardiac ? "cardiac condition recorded — target <130/80" : "target <140/90"}):`);
+    if (a7) lines.push(`  7-day avg: ${a7.s}/${a7.d} (n=${a7.n})${a7.s >= _bpS || a7.d >= _bpD ? " — ABOVE target" : " — within target"}`);
     if (a14) lines.push(`  14-day avg: ${a14.s}/${a14.d} (n=${a14.n})`);
     if (latest) lines.push(`  Latest: ${latest.systolic}/${latest.diastolic}${latest.pulse ? ` · pulse ${latest.pulse}` : ""} on ${latest.date} ${latest.time || ""}${latest.notes ? ` — "${latest.notes}"` : ""}`);
     if (best && worst && best.id !== worst.id) {
@@ -1403,7 +1423,7 @@ export function buildContext(state: any): string {
     const delta = last14.length >= 2 ? (vo2log[last14[last14.length - 1]].vo2 - vo2log[last14[0]].vo2) : null;
     lines.push("CARDIO FITNESS (Oura VO₂ max):");
     lines.push(`  Current: ${cur} ml/kg/min · 14-day Δ: ${delta != null ? (delta >= 0 ? "+" : "") + delta.toFixed(1) : "—"}`);
-    lines.push("  Norms (male 50-59): <26 Poor · 26-30 Fair · 31-35 Average · 36-40 Good · 41-44 Excellent · 45+ Superior");
+    lines.push(`  ${vo2Norms(state.profile?.personal?.sex, ageFromDob(state.profile?.personal?.dateOfBirth) ?? state.profile?.personal?.age ?? null)}`);
     lines.push("");
   }
 

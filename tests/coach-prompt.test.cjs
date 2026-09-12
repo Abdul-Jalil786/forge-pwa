@@ -48,3 +48,12 @@ for (const s of KEEP) {
     assert.ok(coach.includes(s), `expected retained prompt element missing: ${s}`);
   });
 }
+
+// ---- Phase 114: owner-specific labels removed from the shared coach context ----
+test("Phase 114: no hardcoded 52yo / LVH / male 50-59 labels in the coach context", () => {
+  assert.ok(!/important at 52yo/.test(coach), "protein-distribution label no longer says 52yo");
+  assert.ok(!/BLOOD PRESSURE \(LVH context/.test(coach), "BP header no longer asserts LVH for everyone");
+  assert.ok(!/Norms \(male 50-59\):/.test(coach), "VO2 norms no longer hardcoded to male 50-59");
+  assert.ok(/healthConditions/.test(coach.slice(coach.indexOf("BLOOD PRESSURE") - 800, coach.indexOf("BLOOD PRESSURE"))), "BP target gated on recorded health conditions");
+  assert.ok(/export function vo2Norms\(sex: any, age: any\)/.test(coach), "VO2 norms resolved by sex + age");
+});

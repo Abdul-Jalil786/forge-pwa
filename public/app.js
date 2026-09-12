@@ -88,6 +88,7 @@ function renderObConfirm(){
   area.innerHTML=`<div style="text-align:left;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:6px 14px;">
     ${row('Goal',OB_GOAL_OPTIONS[obData.phase].title)}
     ${row('Program',PROGRAM_LABELS[obData.programId]||'—')}
+    ${row('Weigh-ins',obData.weighMethod==='boditrax'?'Boditrax scan · Fridays':'Home scale')}
     ${row('Maintenance (TDEE)',rest.tdee+' kcal')}
     ${row('Rest-day target',rest.calories+' kcal')}
     ${row('Training-day target',train.calories+' kcal')}
@@ -123,6 +124,7 @@ async function obStep(step){
     obData.targetWeight=isNaN(tw)?null:tw;
   } else if(step===3){
     if(!obData.experience||!obData.daysPerWeek||!obData.equipment){showToast('Answer all three');return;}
+    if(!obData.weighMethod)obData.weighMethod='scale';
   } else if(step===4){
     obData.excluded=(document.getElementById('ob-excl').value||'').split(',').map(s=>s.trim()).filter(Boolean).slice(0,30);
     renderObConfirm();
@@ -137,6 +139,9 @@ async function obStep(step){
       targetWeight:obData.targetWeight||undefined,
       personal:{age:obData.age,heightCm:obData.heightCm,sex:obData.sex,activityLevel:obData.activityLevel,phase:obData.phase},
       programId:obData.programId,
+      // Phase 114: how this user weighs in — 'scale' (home scale, daily) or
+      // 'boditrax' (gym scan, weekly; the scan mirrors into weight/bf logs).
+      weighMethod:obData.weighMethod||'scale',
       eatingWindow:{enabled:!!obData.eatingWindowEnabled,start:12,end:20},
       foodPrefs:{excluded:obData.excluded||[],notes:'',refreshCadence:'manual'},
       onboarded:true,
@@ -146,6 +151,15 @@ async function obStep(step){
     STATE.planStartDate=t;
     STATE.trainingStartDate=t;
     STATE.supplements=STATE.supplements||[]; // never inherit another user's list
+    if(obData.weighMethod==='boditrax'){
+      // Phase 114: no home scale + no wearable at signup → two push reminders in the
+      // cron's reminder shape (time / daysOfWeek / title / body). Push only fires
+      // once the user enables notifications; the Today card carries the nudge too.
+      STATE.reminders=[...(Array.isArray(STATE.reminders)?STATE.reminders:[]),
+        {id:'rem_bdx_friday',time:'09:00',daysOfWeek:[5],title:'Boditrax scan day',body:'Log this week\'s Boditrax scan in Forge (Body → Boditrax) — it\'s your weigh-in.',enabled:true},
+        {id:'rem_sleep_log',time:'10:00',daysOfWeek:[0,1,2,3,4,5,6],title:'Log last night\'s sleep',body:'Tap + Log on the Sleep card so your coach can see your hours.',enabled:true},
+      ];
+    }
     await saveStateNow();
     if(typeof applyDynamicTargets==='function')applyDynamicTargets();
     document.getElementById('onboarding').style.display='none';
@@ -2334,17 +2348,50 @@ async function deleteAccount(){
 }
 
 // ---- SETTINGS ----
+// Phase 114: "Edit Targets" is now a real four-macro editor that PINS the numbers
+// (profile.targetOverrides.macros) — the old prompt() flow only took calories +
+// protein and was overwritten by applyDynamicTargets on the next weigh-in.
 function editProfile(){
   const p=getActive(); if(!p)return;
-  const cg=prompt(`Gym day calories (current: ${p.calsGym}):`);
-  if(cg&&!isNaN(cg))p.calsGym=parseInt(cg);
-  const cr=prompt(`Rest day calories (current: ${p.calsRest}):`);
-  if(cr&&!isNaN(cr))p.calsRest=parseInt(cr);
-  const pr=prompt(`Protein target g (current: ${p.proteinTarget}):`);
-  if(pr&&!isNaN(pr))p.proteinTarget=parseInt(pr);
+  const m=(p.targetOverrides&&p.targetOverrides.macros)||{};
+  const dt=p.dynamicTargets||{};
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=(v==null||v==='')?'':v;};
+  set('mt-cals',m.calories!=null?m.calories:((dt.upper&&dt.upper.calories)||p.calsGym||''));
+  set('mt-cals-rest',m.caloriesRest!=null?m.caloriesRest:'');
+  set('mt-protein',m.protein!=null?m.protein:(p.proteinTarget||''));
+  set('mt-carbs',m.carbs!=null?m.carbs:(p.carbsTarget||''));
+  set('mt-fat',m.fat!=null?m.fat:(p.fatTarget||''));
+  const note=document.getElementById('mt-note');
+  if(note)note.textContent=m.calories?'Pinned — these numbers hold through every weigh-in until you clear them.':'Currently computed from your profile. Saving pins your own numbers instead.';
+  const clr=document.getElementById('mt-clear'); if(clr)clr.style.display=m.calories?'block':'none';
+  openModal('modal-targets');
+}
+function saveTargetsOverride(){
+  const p=getActive(); if(!p)return;
+  const n=id=>{const el=document.getElementById(id);const v=parseFloat(el?el.value:'');return isNaN(v)?null:v;};
+  const calories=n('mt-cals'),caloriesRest=n('mt-cals-rest'),protein=n('mt-protein'),carbs=n('mt-carbs'),fat=n('mt-fat');
+  if(!(calories>=1000&&calories<=8000)){showToast('Calories look wrong (1000–8000)');return;}
+  if(caloriesRest!=null&&!(caloriesRest>=1000&&caloriesRest<=8000)){showToast('Rest-day calories look wrong (1000–8000)');return;}
+  if(protein==null||carbs==null||fat==null||protein<0||carbs<0||fat<0){showToast('Fill in protein, carbs and fat');return;}
+  const macroKcal=protein*4+carbs*4+fat*9;
+  if(Math.abs(macroKcal-calories)>calories*0.15){showToast(`Macros add up to ${Math.round(macroKcal)} kcal — more than 15% off ${calories}. Check the numbers.`);return;}
+  const macros={calories:Math.round(calories),protein:Math.round(protein),carbs:Math.round(carbs),fat:Math.round(fat)};
+  if(caloriesRest!=null)macros.caloriesRest=Math.round(caloriesRest);
+  p.targetOverrides={...(p.targetOverrides||{}),macros};
   saveProfiles();
+  if(typeof applyDynamicTargets==='function')applyDynamicTargets();
+  closeModal('modal-targets');
   renderAll();
-  showToast('Profile updated ✓');
+  showToast('Targets pinned ✓');
+}
+function clearTargetsOverride(){
+  const p=getActive(); if(!p||!p.targetOverrides||!p.targetOverrides.macros)return;
+  delete p.targetOverrides.macros;
+  saveProfiles();
+  if(typeof applyDynamicTargets==='function')applyDynamicTargets();
+  closeModal('modal-targets');
+  renderAll();
+  showToast('Back to computed targets');
 }
 
 // Phase 110: "Export my data" — downloads this account's full state (exactly what

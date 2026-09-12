@@ -869,7 +869,7 @@ function saveWeightEntry(kg){
   else log.push({date:todayStr(),weight:kg,source:'manual'});
   STATE.weightLog=log;
   updateLocalCache();
-  saveFieldToServer('/api/state/weight',{date:todayStr(),weight:kg});
+  saveFieldToServer('/api/state/weight',{date:todayStr(),weight:kg,source:'manual'});
   // Phase 39: recalculate calorie + macro targets for the new weight
   if(typeof applyDynamicTargets==='function')applyDynamicTargets();
 }
@@ -2824,6 +2824,7 @@ function addBoditraxEntry(raw){
   STATE.boditraxLog=arr;
   updateLocalCache();
   saveFieldToServer('/api/state/boditrax-log',{boditraxLog:arr});
+  _syncBoditraxToLogs(entry);
   return{...v,entry};
 }
 function updateBoditraxEntry(id,raw){
@@ -2832,17 +2833,62 @@ function updateBoditraxEntry(id,raw){
   const arr=getBoditraxLog();
   const i=arr.findIndex(s=>s&&s.id===id);
   if(i<0)return{ok:false,errors:{id:'not found'},clean:v.clean};
+  const prev=arr[i];
   arr[i]={...arr[i],...v.clean,id,loggedAt:new Date().toISOString()};
   STATE.boditraxLog=arr;
   updateLocalCache();
   saveFieldToServer('/api/state/boditrax-log',{boditraxLog:arr});
+  if(prev&&prev.date&&prev.date!==arr[i].date)_unsyncBoditraxFromLogs(prev);
+  _syncBoditraxToLogs(arr[i]);
   return{...v,entry:arr[i]};
 }
 function deleteBoditraxEntry(id){
+  const gone=getBoditraxLog().find(s=>s&&s.id===id);
   const arr=getBoditraxLog().filter(s=>s&&s.id!==id);
   STATE.boditraxLog=arr;
   updateLocalCache();
   saveFieldToServer('/api/state/boditrax-log',{boditraxLog:arr});
+  if(gone)_unsyncBoditraxFromLogs(gone);
+}
+// Phase 114: a Boditrax scan IS the weigh-in for a user with no home scale. Mirror
+// the scan's weight + body-fat% (fat kg / weight) into weightLog / bfLog with
+// source:'boditrax' so calorie targets, the LBM watch, the Today/Track cards, the
+// projections and the coach context all see it. A same-date MANUAL entry wins
+// (same rule the Withings sync follows); anything else on that date is replaced.
+function usesBoditraxWeighIn(){return !!(STATE.profile&&STATE.profile.weighMethod==='boditrax');}
+function _syncBoditraxToLogs(entry){
+  if(!entry||!entry.date||!(entry.weight>0))return;
+  const byDate=(a,b)=>(a.date||'').localeCompare(b.date||'');
+  const wl=getWeightLog();
+  const wi=wl.findIndex(e=>e&&e.date===entry.date);
+  if(wi<0||wl[wi].source!=='manual'){
+    const w={date:entry.date,weight:entry.weight,source:'boditrax'};
+    if(wi<0)wl.push(w);else wl[wi]=w;
+    wl.sort(byDate);
+    STATE.weightLog=wl;
+    saveFieldToServer('/api/state/weight',{date:entry.date,weight:entry.weight,source:'boditrax'});
+  }
+  if(entry.fat>0){
+    const bf=Math.round(entry.fat/entry.weight*1000)/10;
+    const bl=getBfLog();
+    const bi=bl.findIndex(e=>e&&e.date===entry.date);
+    if(bi<0||bl[bi].source!=='manual'){
+      const b={date:entry.date,bf,source:'boditrax'};
+      if(bi<0)bl.push(b);else bl[bi]=b;
+      bl.sort(byDate);
+      pSet('bfLog',bl);
+    }
+  }
+  updateLocalCache();
+  if(typeof applyDynamicTargets==='function')applyDynamicTargets();
+}
+function _unsyncBoditraxFromLogs(entry){
+  if(!entry||!entry.date)return;
+  const wl=getWeightLog().filter(e=>!(e&&e.date===entry.date&&e.source==='boditrax'));
+  STATE.weightLog=wl;
+  const bl=getBfLog().filter(e=>!(e&&e.date===entry.date&&e.source==='boditrax'));
+  pSet('bfLog',bl);
+  updateLocalCache();
 }
 // Blended lean series ({date,lean,source}) via the shared engine, start-scoped.
 function getBlendedLeanSeries(){
