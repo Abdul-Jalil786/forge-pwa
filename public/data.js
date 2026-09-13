@@ -147,6 +147,152 @@ const WORKOUTS = {
       {id:'dead_hang',name:'Dead Hang',sets:2,reps:'20–40s',rest:60,muscle:'Grip · Shoulders',metric:'time',capSeconds:90,yt:'https://www.youtube.com/results?search_query=dead+hang+form'},
     ]
   },
+  // Phase 115: 21+ hypertrophy programmes (hyper-5d-bulk / hyper-5d-cut). Five
+  // fixed weekdays — Mon push · Tue pull · Wed legs · Thu upper · Fri lower — so
+  // every muscle is hit twice with 48h between. Built for a young lean-gain
+  // user: barbell compounds drive, 12–16 hard sets per muscle per week, no
+  // rehab bands / neck work / back-tolerance constraints. The CUT variants use
+  // the SAME exercise ids (history + progression carry across phases): compounds
+  // keep their sets, isolation drops a set, calves 4→3, KB swing EMOM finisher on
+  // the two leg days. Session keys are distinct so the templates can differ.
+  push: {
+    name:'PUSH', type:'push',
+    muscles:'Chest · Shoulders · Triceps',
+    duration:'55–65',
+    exercises:[
+      {id:'bb_bench',name:'Barbell Bench Press',sets:4,reps:'5–8',rest:150,muscle:'Chest',size:'large',yt:'https://www.youtube.com/results?search_query=barbell+bench+press+form'},
+      {id:'ohp_bb',name:'Overhead Barbell Press',sets:4,reps:'5–8',rest:150,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=overhead+barbell+press+form'},
+      {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–12',rest:90,muscle:'Upper Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
+      {id:'cfly_mid',name:'Cable Fly',sets:2,reps:'12–15',rest:60,muscle:'Chest',size:'small',yt:'https://www.youtube.com/results?search_query=cable+fly+chest+form'},
+      {id:'h5',name:'Lateral Raise',sets:3,reps:'12–20',rest:45,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
+      {id:'u7',name:'Tricep Rope Pushdown',sets:3,reps:'10–15',rest:45,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+rope+pushdown+form'},
+      {id:'oh_tri',name:'Overhead Tricep Extension',sets:3,reps:'10–15',rest:45,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=overhead+tricep+extension+form'},
+    ]
+  },
+  pull: {
+    name:'PULL', type:'pull',
+    muscles:'Back · Rear Delts · Biceps',
+    duration:'55–65',
+    exercises:[
+      {id:'trap_dl',name:'Trap-Bar Deadlift',sets:3,reps:'4–6',rest:180,muscle:'Hamstrings · Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=trap+bar+deadlift+form'},
+      {id:'pull_up',name:'Weighted Pull-Up',sets:4,reps:'6–10',rest:120,muscle:'Lats',size:'medium',weighted:true,yt:'https://www.youtube.com/results?search_query=weighted+pull+up+form'},
+      {id:'bb_row',name:'Barbell Row',sets:4,reps:'6–10',rest:120,muscle:'Back',size:'large',yt:'https://www.youtube.com/results?search_query=barbell+row+form'},
+      {id:'u8',name:'Face Pull',sets:3,reps:'15–20',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+form'},
+      {id:'bb_curl',name:'Barbell Curl',sets:3,reps:'8–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=barbell+curl+form'},
+      {id:'incl_curl',name:'Incline Dumbbell Curl',sets:3,reps:'10–15',rest:45,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+curl+form'},
+    ]
+  },
+  legs: {
+    name:'LEGS', type:'legs',
+    muscles:'Quads · Hamstrings · Calves · Core',
+    duration:'55–65',
+    exercises:[
+      {id:'back_squat',name:'Back Squat',sets:4,reps:'5–8',rest:180,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=back+squat+form'},
+      {id:'l2',name:'Romanian Deadlift',sets:3,reps:'8–10',rest:120,muscle:'Hamstrings',size:'large',yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
+      {id:'l1',name:'Leg Press',sets:3,reps:'10–12',rest:90,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
+      {id:'l4',name:'Leg Curl',sets:3,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+form'},
+      {id:'l6',name:'Calf Raise',sets:4,reps:'10–15',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=standing+calf+raise+form'},
+      {id:'ab_knee_raise',name:'Captain’s Chair Knee Raise',sets:3,reps:'10–15',rest:45,muscle:'Abs',size:'small',yt:'https://www.youtube.com/results?search_query=captains+chair+knee+raise+form'},
+    ]
+  },
+  upperH: {
+    name:'UPPER', type:'upperH',
+    muscles:'Chest · Back · Shoulders · Arms',
+    duration:'55–65',
+    exercises:[
+      {id:'u1',name:'Flat Dumbbell Press',sets:3,reps:'8–12',rest:90,muscle:'Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=flat+dumbbell+press+form'},
+      {id:'cs_row',name:'Chest-Supported Row',sets:3,reps:'10–12',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=chest+supported+dumbbell+row+form'},
+      {id:'u4',name:'Shoulder Press',sets:3,reps:'8–12',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'u5',name:'Lat Pulldown',sets:3,reps:'10–12',rest:90,muscle:'Lats',size:'medium',yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
+      {id:'cfly_low',name:'Low-to-High Cable Fly',sets:2,reps:'12–15',rest:60,muscle:'Upper Chest',size:'small',yt:'https://www.youtube.com/results?search_query=low+to+high+cable+fly+form'},
+      {id:'h5',name:'Lateral Raise',sets:3,reps:'12–20',rest:45,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
+      {id:'u6',name:'Bicep Curl',sets:3,reps:'10–15',rest:45,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
+      {id:'u7',name:'Tricep Rope Pushdown',sets:3,reps:'10–15',rest:45,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+rope+pushdown+form'},
+    ]
+  },
+  lowerH: {
+    name:'LOWER', type:'lowerH',
+    muscles:'Quads · Glutes · Hamstrings · Calves',
+    duration:'55–65',
+    exercises:[
+      {id:'hack_squat',name:'Hack Squat',sets:3,reps:'8–12',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=hack+squat+form'},
+      {id:'l5',name:'Hip Thrust',sets:3,reps:'8–12',rest:90,muscle:'Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
+      {id:'bss',name:'Bulgarian Split Squat',sets:3,reps:'8–10 per leg',rest:90,muscle:'Quads · Glutes',size:'medium',yt:'https://www.youtube.com/results?search_query=bulgarian+split+squat+form'},
+      {id:'l3',name:'Leg Extension',sets:3,reps:'12–15',rest:60,muscle:'Quads',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+extension+form'},
+      {id:'seated_calf',name:'Seated Calf Raise',sets:4,reps:'12–20',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=seated+calf+raise+form'},
+      {id:'ab_crunch_cable',name:'Cable Rope Crunch',sets:3,reps:'10–15',rest:45,muscle:'Abs',size:'small',yt:'https://www.youtube.com/results?search_query=cable+rope+crunch+form'},
+    ]
+  },
+  pushC: {
+    name:'PUSH (CUT)', type:'pushC',
+    muscles:'Chest · Shoulders · Triceps',
+    duration:'45–55',
+    exercises:[
+      {id:'bb_bench',name:'Barbell Bench Press',sets:4,reps:'5–8',rest:150,muscle:'Chest',size:'large',yt:'https://www.youtube.com/results?search_query=barbell+bench+press+form'},
+      {id:'ohp_bb',name:'Overhead Barbell Press',sets:3,reps:'5–8',rest:150,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=overhead+barbell+press+form'},
+      {id:'u2',name:'Incline Dumbbell Press',sets:3,reps:'8–12',rest:90,muscle:'Upper Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+press+form'},
+      {id:'cfly_mid',name:'Cable Fly',sets:2,reps:'12–15',rest:60,muscle:'Chest',size:'small',yt:'https://www.youtube.com/results?search_query=cable+fly+chest+form'},
+      {id:'h5',name:'Lateral Raise',sets:2,reps:'12–20',rest:45,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
+      {id:'u7',name:'Tricep Rope Pushdown',sets:2,reps:'10–15',rest:45,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+rope+pushdown+form'},
+      {id:'oh_tri',name:'Overhead Tricep Extension',sets:2,reps:'10–15',rest:45,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=overhead+tricep+extension+form'},
+    ]
+  },
+  pullC: {
+    name:'PULL (CUT)', type:'pullC',
+    muscles:'Back · Rear Delts · Biceps',
+    duration:'45–55',
+    exercises:[
+      {id:'trap_dl',name:'Trap-Bar Deadlift',sets:3,reps:'4–6',rest:180,muscle:'Hamstrings · Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=trap+bar+deadlift+form'},
+      {id:'pull_up',name:'Weighted Pull-Up',sets:4,reps:'6–10',rest:120,muscle:'Lats',size:'medium',weighted:true,yt:'https://www.youtube.com/results?search_query=weighted+pull+up+form'},
+      {id:'bb_row',name:'Barbell Row',sets:3,reps:'6–10',rest:120,muscle:'Back',size:'large',yt:'https://www.youtube.com/results?search_query=barbell+row+form'},
+      {id:'u8',name:'Face Pull',sets:2,reps:'15–20',rest:45,muscle:'Rear Delts',size:'small',yt:'https://www.youtube.com/results?search_query=face+pull+form'},
+      {id:'bb_curl',name:'Barbell Curl',sets:2,reps:'8–12',rest:60,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=barbell+curl+form'},
+      {id:'incl_curl',name:'Incline Dumbbell Curl',sets:2,reps:'10–15',rest:45,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=incline+dumbbell+curl+form'},
+    ]
+  },
+  legsC: {
+    name:'LEGS (CUT)', type:'legsC',
+    muscles:'Quads · Hamstrings · Calves · Core',
+    duration:'45–55',
+    exercises:[
+      {id:'back_squat',name:'Back Squat',sets:4,reps:'5–8',rest:180,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=back+squat+form'},
+      {id:'l2',name:'Romanian Deadlift',sets:3,reps:'8–10',rest:120,muscle:'Hamstrings',size:'large',yt:'https://www.youtube.com/results?search_query=romanian+deadlift+form'},
+      {id:'l1',name:'Leg Press',sets:2,reps:'10–12',rest:90,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=leg+press+form+technique'},
+      {id:'l4',name:'Leg Curl',sets:2,reps:'10–12',rest:60,muscle:'Hamstrings',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+curl+form'},
+      {id:'l6',name:'Calf Raise',sets:3,reps:'10–15',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=standing+calf+raise+form'},
+      {id:'ab_knee_raise',name:'Captain’s Chair Knee Raise',sets:3,reps:'10–15',rest:45,muscle:'Abs',size:'small',yt:'https://www.youtube.com/results?search_query=captains+chair+knee+raise+form'},
+      {id:'kb_swing',name:'Kettlebell Swing (two-handed, Russian)',sets:3,reps:'10',rest:60,muscle:'Glutes/Posterior Chain',size:'medium',finisher:true,yt:'https://www.youtube.com/results?search_query=russian+kettlebell+swing+two+handed+form'},
+    ]
+  },
+  upperHC: {
+    name:'UPPER (CUT)', type:'upperHC',
+    muscles:'Chest · Back · Shoulders · Arms',
+    duration:'45–55',
+    exercises:[
+      {id:'u1',name:'Flat Dumbbell Press',sets:3,reps:'8–12',rest:90,muscle:'Chest',size:'medium',yt:'https://www.youtube.com/results?search_query=flat+dumbbell+press+form'},
+      {id:'cs_row',name:'Chest-Supported Row',sets:3,reps:'10–12',rest:90,muscle:'Back',size:'medium',yt:'https://www.youtube.com/results?search_query=chest+supported+dumbbell+row+form'},
+      {id:'u4',name:'Shoulder Press',sets:3,reps:'8–12',rest:90,muscle:'Shoulders',size:'medium',yt:'https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form'},
+      {id:'u5',name:'Lat Pulldown',sets:3,reps:'10–12',rest:90,muscle:'Lats',size:'medium',yt:'https://www.youtube.com/results?search_query=lat+pulldown+form'},
+      {id:'cfly_low',name:'Low-to-High Cable Fly',sets:2,reps:'12–15',rest:60,muscle:'Upper Chest',size:'small',yt:'https://www.youtube.com/results?search_query=low+to+high+cable+fly+form'},
+      {id:'h5',name:'Lateral Raise',sets:2,reps:'12–20',rest:45,muscle:'Shoulders',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+lateral+raise+form'},
+      {id:'u6',name:'Bicep Curl',sets:2,reps:'10–15',rest:45,muscle:'Biceps',size:'small',yt:'https://www.youtube.com/results?search_query=dumbbell+bicep+curl+form'},
+      {id:'u7',name:'Tricep Rope Pushdown',sets:2,reps:'10–15',rest:45,muscle:'Triceps',size:'small',yt:'https://www.youtube.com/results?search_query=tricep+rope+pushdown+form'},
+    ]
+  },
+  lowerHC: {
+    name:'LOWER (CUT)', type:'lowerHC',
+    muscles:'Quads · Glutes · Hamstrings · Calves',
+    duration:'45–55',
+    exercises:[
+      {id:'hack_squat',name:'Hack Squat',sets:3,reps:'8–12',rest:120,muscle:'Quads',size:'large',yt:'https://www.youtube.com/results?search_query=hack+squat+form'},
+      {id:'l5',name:'Hip Thrust',sets:3,reps:'8–12',rest:90,muscle:'Glutes',size:'large',yt:'https://www.youtube.com/results?search_query=hip+thrust+barbell+form'},
+      {id:'bss',name:'Bulgarian Split Squat',sets:3,reps:'8–10 per leg',rest:90,muscle:'Quads · Glutes',size:'medium',yt:'https://www.youtube.com/results?search_query=bulgarian+split+squat+form'},
+      {id:'l3',name:'Leg Extension',sets:2,reps:'12–15',rest:60,muscle:'Quads',size:'medium',yt:'https://www.youtube.com/results?search_query=leg+extension+form'},
+      {id:'seated_calf',name:'Seated Calf Raise',sets:3,reps:'12–20',rest:45,muscle:'Calves',size:'medium',yt:'https://www.youtube.com/results?search_query=seated+calf+raise+form'},
+      {id:'ab_crunch_cable',name:'Cable Rope Crunch',sets:3,reps:'10–15',rest:45,muscle:'Abs',size:'small',yt:'https://www.youtube.com/results?search_query=cable+rope+crunch+form'},
+      {id:'kb_swing',name:'Kettlebell Swing (two-handed, Russian)',sets:3,reps:'10',rest:60,muscle:'Glutes/Posterior Chain',size:'medium',finisher:true,yt:'https://www.youtube.com/results?search_query=russian+kettlebell+swing+two+handed+form'},
+    ]
+  },
   zone2: {
     name:'ZONE 2 CARDIO', type:'zone2',
     muscles:'Aerobic base · Recovery',
@@ -218,7 +364,55 @@ const PROGRAMS = {
       return FORGE_PROGRAMME.sessionTypeForDate('home-3d', dateStr, STATE.trainingStartDate);
     },
   },
+  // Phase 115: 21+ hypertrophy programmes — fixed weekdays, anchored to
+  // profile.programmeStartDate like the 5-day split (dates before it unscheduled).
+  'hyper-5d-bulk': {
+    id:'hyper-5d-bulk', name:'Hypertrophy 5-Day · Bulk (21+)',
+    desc:'Mon Push · Tue Pull · Wed Legs · Thu Upper · Fri Lower · Sat/Sun rest — barbell compounds, 12–16 sets per muscle',
+    getSessionType(dateStr){
+      return FORGE_PROGRAMME.sessionTypeForDate('hyper-5d-bulk', dateStr, (STATE.profile&&STATE.profile.programmeStartDate)||STATE.trainingStartDate);
+    },
+  },
+  'hyper-5d-cut': {
+    id:'hyper-5d-cut', name:'Hypertrophy 5-Day · Cut (21+)',
+    desc:'Same five days and lifts as the bulk — compounds keep their sets, isolation trimmed, KB swing finishers on leg days',
+    getSessionType(dateStr){
+      return FORGE_PROGRAMME.sessionTypeForDate('hyper-5d-cut', dateStr, (STATE.profile&&STATE.profile.programmeStartDate)||STATE.trainingStartDate);
+    },
+  },
 };
+// Phase 115: programme switch defaults. Fixed-weekday programmes anchor to a
+// programmeStartDate (today — this week's remaining days schedule immediately);
+// the 21+ programmes also turn on a deload cadence (bulk every 6 weeks, cut every
+// 5 — first deload one full cycle out, since the anchor week itself is a deload)
+// and fill any blank Mon–Fri session time with 16:00 so the Today card shows one.
+function programmeDefaults(programId, startDate){
+  const t=startDate||todayStr();
+  const out={programId, programmeStartDate:null, deloadConfig:null, sessionTimes:null};
+  if(programId==='hyper-5d-bulk'||programId==='hyper-5d-cut'||programId==='upper-lower-5d-fixed'){
+    out.programmeStartDate=t;
+    const st={...getSessionTimes()};
+    for(const d of [1,2,3,4,5]) if(!st[String(d)]) st[String(d)]='16:00';
+    out.sessionTimes=st;
+  }
+  if(programId==='hyper-5d-bulk'||programId==='hyper-5d-cut'){
+    const every=programId==='hyper-5d-bulk'?6:5;
+    const mon=new Date(_mondayOf(t)+'T12:00:00'); mon.setDate(mon.getDate()+every*7);
+    out.deloadConfig={enabled:true,everyWeeks:every,anchorMonday:mon.toISOString().slice(0,10)};
+  }
+  return out;
+}
+function setProgramme(programId){
+  if(!PROGRAMS[programId]||!STATE.profile)return false;
+  const d=programmeDefaults(programId);
+  STATE.profile.programId=programId;
+  if(d.programmeStartDate)STATE.profile.programmeStartDate=d.programmeStartDate;
+  updateLocalCache();
+  saveFieldToServer('/api/state/profile/program',{programId,programmeStartDate:STATE.profile.programmeStartDate||null});
+  if(d.deloadConfig)saveDeloadConfig(d.deloadConfig);
+  if(d.sessionTimes)saveSessionTimes(d.sessionTimes);
+  return true;
+}
 function getProgramId(){return (STATE.profile&&STATE.profile.programId)||'upper-lower-4d';}
 function getProgram(){return PROGRAMS[getProgramId()]||PROGRAMS['upper-lower-4d'];}
 // Phase 60: per-user rehab visibility. Rehab-category exercises (the owner's
@@ -869,7 +1063,7 @@ function saveWeightEntry(kg){
   else log.push({date:todayStr(),weight:kg,source:'manual'});
   STATE.weightLog=log;
   updateLocalCache();
-  saveFieldToServer('/api/state/weight',{date:todayStr(),weight:kg});
+  saveFieldToServer('/api/state/weight',{date:todayStr(),weight:kg,source:'manual'});
   // Phase 39: recalculate calorie + macro targets for the new weight
   if(typeof applyDynamicTargets==='function')applyDynamicTargets();
 }
@@ -2824,6 +3018,7 @@ function addBoditraxEntry(raw){
   STATE.boditraxLog=arr;
   updateLocalCache();
   saveFieldToServer('/api/state/boditrax-log',{boditraxLog:arr});
+  _syncBoditraxToLogs(entry);
   return{...v,entry};
 }
 function updateBoditraxEntry(id,raw){
@@ -2832,17 +3027,62 @@ function updateBoditraxEntry(id,raw){
   const arr=getBoditraxLog();
   const i=arr.findIndex(s=>s&&s.id===id);
   if(i<0)return{ok:false,errors:{id:'not found'},clean:v.clean};
+  const prev=arr[i];
   arr[i]={...arr[i],...v.clean,id,loggedAt:new Date().toISOString()};
   STATE.boditraxLog=arr;
   updateLocalCache();
   saveFieldToServer('/api/state/boditrax-log',{boditraxLog:arr});
+  if(prev&&prev.date&&prev.date!==arr[i].date)_unsyncBoditraxFromLogs(prev);
+  _syncBoditraxToLogs(arr[i]);
   return{...v,entry:arr[i]};
 }
 function deleteBoditraxEntry(id){
+  const gone=getBoditraxLog().find(s=>s&&s.id===id);
   const arr=getBoditraxLog().filter(s=>s&&s.id!==id);
   STATE.boditraxLog=arr;
   updateLocalCache();
   saveFieldToServer('/api/state/boditrax-log',{boditraxLog:arr});
+  if(gone)_unsyncBoditraxFromLogs(gone);
+}
+// Phase 114: a Boditrax scan IS the weigh-in for a user with no home scale. Mirror
+// the scan's weight + body-fat% (fat kg / weight) into weightLog / bfLog with
+// source:'boditrax' so calorie targets, the LBM watch, the Today/Track cards, the
+// projections and the coach context all see it. A same-date MANUAL entry wins
+// (same rule the Withings sync follows); anything else on that date is replaced.
+function usesBoditraxWeighIn(){return !!(STATE.profile&&STATE.profile.weighMethod==='boditrax');}
+function _syncBoditraxToLogs(entry){
+  if(!entry||!entry.date||!(entry.weight>0))return;
+  const byDate=(a,b)=>(a.date||'').localeCompare(b.date||'');
+  const wl=getWeightLog();
+  const wi=wl.findIndex(e=>e&&e.date===entry.date);
+  if(wi<0||wl[wi].source!=='manual'){
+    const w={date:entry.date,weight:entry.weight,source:'boditrax'};
+    if(wi<0)wl.push(w);else wl[wi]=w;
+    wl.sort(byDate);
+    STATE.weightLog=wl;
+    saveFieldToServer('/api/state/weight',{date:entry.date,weight:entry.weight,source:'boditrax'});
+  }
+  if(entry.fat>0){
+    const bf=Math.round(entry.fat/entry.weight*1000)/10;
+    const bl=getBfLog();
+    const bi=bl.findIndex(e=>e&&e.date===entry.date);
+    if(bi<0||bl[bi].source!=='manual'){
+      const b={date:entry.date,bf,source:'boditrax'};
+      if(bi<0)bl.push(b);else bl[bi]=b;
+      bl.sort(byDate);
+      pSet('bfLog',bl);
+    }
+  }
+  updateLocalCache();
+  if(typeof applyDynamicTargets==='function')applyDynamicTargets();
+}
+function _unsyncBoditraxFromLogs(entry){
+  if(!entry||!entry.date)return;
+  const wl=getWeightLog().filter(e=>!(e&&e.date===entry.date&&e.source==='boditrax'));
+  STATE.weightLog=wl;
+  const bl=getBfLog().filter(e=>!(e&&e.date===entry.date&&e.source==='boditrax'));
+  pSet('bfLog',bl);
+  updateLocalCache();
 }
 // Blended lean series ({date,lean,source}) via the shared engine, start-scoped.
 function getBlendedLeanSeries(){

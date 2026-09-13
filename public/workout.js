@@ -920,6 +920,19 @@ function _autoregNextSet(ex, lastSet, setIdx){
 // Phase 47: static one-line form cues per lift. Written once (form doesn't
 // change week to week) — NOT AI-generated. Keyed by exercise id; silent if none.
 const FORM_CUES = {
+  // Phase 115: 21+ programme lifts
+  bb_bench:'Feet planted, slight arch, bar to lower chest, elbows ~45°.',
+  ohp_bb:'Squeeze glutes, bar path straight up, head through at the top.',
+  pull_up:'Dead hang start, drive elbows to hips, chest to the bar.',
+  bb_row:'Hinge to ~45°, pull to the lower ribs, no torso heave.',
+  cs_row:'Chest glued to the pad, elbows back, pause at the top.',
+  trap_dl:'Push the floor away, hips and shoulders rise together, lock out tall.',
+  bss:'Long stride, front knee tracks the toes, drive through the front heel.',
+  incl_curl:'Arms hang back, curl without the shoulder moving, slow lower.',
+  oh_tri:'Elbows tucked by the ears, full stretch at the bottom, lock out.',
+  seated_calf:'Full stretch at the bottom, 1s pause on top of the toes.',
+  bb_curl:'Elbows pinned to the sides, no back swing, control the descent.',
+  hack_squat:'Heels down, sink below parallel, drive through the whole foot.',
   u1:'Drive through your mid-chest, elbows ~45°, don\'t flare.',
   u2:'Control the stretch, press up and slightly in.',
   u3:'Chest up, pull to the belly, squeeze the shoulder blades.',
@@ -2693,6 +2706,11 @@ const SUPERSET_PAIRS = {
   lower:  [['l3','l4']],
   lowerA: [['l1','l4']],
   full:   [['u1','u3'], ['u4','u5'], ['u6','u7']],
+  // Phase 115: 21+ programmes — arm/shoulder isolation pairs only; the heavy
+  // compound days (legs / lower / trap-bar) get no pair.
+  push:   [['h5','u7']],   pushC:   [['h5','u7']],
+  pull:   [['u8','bb_curl']], pullC: [['u8','bb_curl']],
+  upperH: [['u1','cs_row'], ['u4','u5'], ['u6','u7']], upperHC: [['u1','cs_row'], ['u4','u5'], ['u6','u7']],
 };
 // The antagonist partner for `curId` in the current session, if it's present and
 // still pending (not done/skipped) and is a normal weighted lift. Else null.

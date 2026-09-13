@@ -143,8 +143,11 @@ router.put("/water/:date", requireAuth, async (req: Request, res: Response) => {
 
 router.put("/weight", requireAuth, async (req: Request, res: Response) => {
   try {
-    const { date, weight } = req.body;
+    const { date, weight, source } = req.body;
     if (!date || typeof weight !== "number") { res.status(400).json({ error: "Invalid weight data" }); return; }
+    // Phase 114: keep the entry's source (manual / boditrax / withings / dexa) so the
+    // manual-wins guard and the source badges work server-side too. Null = omitted.
+    const src = typeof source === "string" && /^(manual|boditrax|withings|dexa)$/.test(source) ? source : null;
     await prisma.$executeRaw`
       UPDATE "User"
       SET state = jsonb_set(
@@ -154,7 +157,7 @@ router.put("/weight", requireAuth, async (req: Request, res: Response) => {
           COALESCE(
             (SELECT jsonb_agg(e) FROM jsonb_array_elements(COALESCE(state->'weightLog', '[]'::jsonb)) e WHERE e->>'date' != ${date}),
             '[]'::jsonb
-          ) || jsonb_build_array(jsonb_build_object('date', ${date}::text, 'weight', ${weight}::numeric))
+          ) || jsonb_build_array(jsonb_strip_nulls(jsonb_build_object('date', ${date}::text, 'weight', ${weight}::numeric, 'source', ${src}::text)))
         )
       ),
       "updatedAt" = NOW()
@@ -792,6 +795,38 @@ router.put("/profile/session-times", requireAuth, async (req: Request, res: Resp
 
 // Phase 70: user-configured deload cadence (program-agnostic). Subfield of profile.
 // { enabled, everyWeeks (1-52), anchorMonday (YYYY-MM-DD, a Monday) }.
+// Phase 115: programme switch — programId + programmeStartDate written together
+// (jsonb_set, atomic) so a fixed-weekday programme never lands without its anchor.
+router.put("/profile/program", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { programId, programmeStartDate } = req.body || {};
+    if (typeof programId !== "string" || !/^[a-z0-9-]{3,40}$/.test(programId)) { res.status(400).json({ error: "programId must be a programme id" }); return; }
+    let start: string | null = null;
+    if (programmeStartDate != null) {
+      if (typeof programmeStartDate !== "string" || !DATE_RE.test(programmeStartDate)) { res.status(400).json({ error: "programmeStartDate must be YYYY-MM-DD" }); return; }
+      start = programmeStartDate;
+    }
+    const idJson = JSON.stringify(programId);
+    const startJson = JSON.stringify(start);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(
+          jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+          '{profile,programId}', ${idJson}::jsonb, true
+        ),
+        '{profile,programmeStartDate}', ${startJson}::jsonb, true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put program error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.put("/profile/deload-config", requireAuth, async (req: Request, res: Response) => {
   try {
     const { deloadConfig } = req.body || {};

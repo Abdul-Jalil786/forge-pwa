@@ -168,7 +168,7 @@ export async function runDailyScanner(): Promise<{ scanned: number; fired: numbe
       if (!chosen) continue; // silent — the common case: NO LLM, NO cost
       firedCount++;
       if (!state.coachingKey) continue; // no BYOK key → can't run the judge
-      const { allowed } = await chargeAiBudget(user.id); // route proactive spend through the budget
+      const { allowed } = await chargeAiBudget(user.id, "proactive"); // route proactive spend through the budget + per-user limits
       if (!allowed) continue;
       let apiKey: string; try { apiKey = decrypt(state.coachingKey); } catch { continue; }
       const message = await scannerMessage(apiKey, state, chosen);

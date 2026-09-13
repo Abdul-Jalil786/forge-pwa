@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import prisma from "./db";
 import { requireAuth, OWNER_EMAIL } from "./auth";
+import { resolveAiLimits, sanitizeAiLimits, ukToday, ukMonth, NON_OWNER_AI_DEFAULTS } from "./ai-budget";
 
 const router = Router();
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
@@ -216,6 +217,61 @@ router.post("/reset-password", requireAuth, async (req: Request, res: Response) 
     res.json({ success: true });
   } catch (err) {
     console.error("Admin password reset error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
+// Phase 116: per-user AI usage + limits (owner only). GET lists every account
+// with its resolved limits, any owner-set custom values, and this month's
+// per-feature call counts; PUT writes profile.aiLimits (null = back to defaults).
+router.get("/ai-limits", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!(await isOwnerRequest(req))) { res.status(403).json({ error: "Owner only" }); return; }
+    const users = await prisma.user.findMany({ select: { id: true, email: true, state: true } });
+    const day = ukToday(), month = ukMonth();
+    const out = users.map((u) => {
+      const st: any = u.state || {};
+      const custom = sanitizeAiLimits(st.profile?.aiLimits);
+      return {
+        id: u.id, email: u.email, isOwner: u.email.toLowerCase() === OWNER_EMAIL,
+        hasKey: !!st.coachingKey,
+        limits: resolveAiLimits(st, u.email),
+        custom,
+        today: Number(st.aiCallLog?.[day] || 0),
+        month: st.aiMonthLog?.[month] || { total: 0 },
+      };
+    }).sort((a, b) => (a.isOwner === b.isOwner ? a.email.localeCompare(b.email) : a.isOwner ? -1 : 1));
+    res.json({ month, defaults: NON_OWNER_AI_DEFAULTS, users: out });
+  } catch (err) {
+    console.error("Get ai-limits error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/ai-limits/:userId", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!(await isOwnerRequest(req))) { res.status(403).json({ error: "Owner only" }); return; }
+    const targetId = String(req.params.userId || "");
+    const target = await prisma.user.findUnique({ where: { id: targetId }, select: { id: true, email: true } });
+    if (!target) { res.status(404).json({ error: "User not found" }); return; }
+    const raw = (req.body || {}).aiLimits;
+    const clean = raw === null ? null : sanitizeAiLimits(raw);
+    if (raw !== null && !clean) { res.status(400).json({ error: "aiLimits must be an object of caps/toggles, or null to reset" }); return; }
+    const valueJson = JSON.stringify(clean ? { ...clean, updatedAt: new Date().toISOString() } : null);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+        '{profile,aiLimits}', ${valueJson}::jsonb, true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${target.id}
+    `;
+    const after = await prisma.user.findUnique({ where: { id: target.id }, select: { state: true } });
+    res.json({ success: true, limits: resolveAiLimits(after?.state || {}, target.email), custom: clean });
+  } catch (err) {
+    console.error("Put ai-limits error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -5,7 +5,7 @@ import { requireAuth, requireOwnerCheck } from "./auth";
 import { encrypt, decrypt } from "./crypto-util";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, generateMealPlan, saveMealPlan, hoursSinceLastPlanRegen, recomputeMealPlanMacros, computeMaxLBM, generateSessionBrief, generateSessionReflection, buildContext } from "./ai-coach";
 import { answerQuestion, estimateFood, estimateMealOut, extractHealthRecord, chatAnswer, deepAnalysis, eatingAdvice, ChatTurn } from "./ask";
-import { chargeAiBudget, AI_DAILY_LIMIT, ukToday } from "./ai-budget";
+import { chargeAiBudget, ukToday, AiFeature } from "./ai-budget";
 import { analyzeNutrition, periodComparison } from "./nutrition";
 
 const router = Router();
@@ -15,11 +15,21 @@ const router = Router();
 // resets at UK midnight) and is incremented via jsonb_set in a single UPDATE,
 // so concurrent requests can't lose increments to a read-modify-write race.
 // Increment-then-check: once over the limit every further attempt 429s.
-function aiBudget() {
+// Phase 116: each route names its feature so per-user limits (profile.aiLimits,
+// owner-set from Admin) can switch whole features off and cap daily/monthly calls.
+function aiBudget(feature?: AiFeature) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    const { allowed } = await chargeAiBudget(req.userId!);
-    if (!allowed) {
-      res.status(429).json({ error: `Daily AI limit reached (${AI_DAILY_LIMIT}/day) — resets at midnight UK time. Your Sunday report still runs automatically.` });
+    const r = await chargeAiBudget(req.userId!, feature);
+    if (!r.allowed) {
+      if (r.reason === "disabled") {
+        res.status(403).json({ error: "This AI feature is switched off for your account. Ask the account owner to enable it under Admin → AI usage & limits.", aiDisabled: true });
+        return;
+      }
+      if (r.reason === "monthly") {
+        res.status(429).json({ error: `Monthly AI limit reached (${r.limits.monthlyCap}/month) — resets on the 1st. Your Sunday report still runs automatically.` });
+        return;
+      }
+      res.status(429).json({ error: `Daily AI limit reached (${r.limits.dailyCap}/day) — resets at midnight UK time. Your Sunday report still runs automatically.` });
       return;
     }
     next();
@@ -113,7 +123,7 @@ router.delete("/key", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.post("/test", requireAuth, aiBudget(), async (req: Request, res: Response) => {
+router.post("/test", requireAuth, aiBudget("keyTest"), async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};
@@ -138,7 +148,7 @@ router.post("/test", requireAuth, aiBudget(), async (req: Request, res: Response
   }
 });
 
-router.post("/generate-now", requireAuth, aiBudget(), async (req: Request, res: Response) => {
+router.post("/generate-now", requireAuth, aiBudget("weeklyReport"), async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};
@@ -159,7 +169,7 @@ router.post("/generate-now", requireAuth, aiBudget(), async (req: Request, res: 
   }
 });
 
-router.post("/recompute-macros", requireAuth, aiBudget(), async (req: Request, res: Response) => {
+router.post("/recompute-macros", requireAuth, aiBudget("recomputeMacros"), async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};
@@ -178,7 +188,7 @@ router.post("/recompute-macros", requireAuth, aiBudget(), async (req: Request, r
   }
 });
 
-router.post("/session-brief", requireAuth, aiBudget(), async (req: Request, res: Response) => {
+router.post("/session-brief", requireAuth, aiBudget("sessionBrief"), async (req: Request, res: Response) => {
   try {
     const { sessionType, prescriptions } = req.body || {};
     if (!sessionType || !Array.isArray(prescriptions)) {
@@ -196,7 +206,7 @@ router.post("/session-brief", requireAuth, aiBudget(), async (req: Request, res:
   }
 });
 
-router.post("/session-reflection", requireAuth, aiBudget(), async (req: Request, res: Response) => {
+router.post("/session-reflection", requireAuth, aiBudget("sessionReflection"), async (req: Request, res: Response) => {
   try {
     const { sessionType, completedSession } = req.body || {};
     if (!sessionType || !completedSession) {
@@ -214,7 +224,7 @@ router.post("/session-reflection", requireAuth, aiBudget(), async (req: Request,
   }
 });
 
-router.post("/max-lbm", requireAuth, aiBudget(), async (req: Request, res: Response) => {
+router.post("/max-lbm", requireAuth, aiBudget("maxLbm"), async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};
@@ -235,7 +245,7 @@ router.post("/max-lbm", requireAuth, aiBudget(), async (req: Request, res: Respo
   }
 });
 
-router.post("/regenerate-plan", requireAuth, aiBudget(), async (req: Request, res: Response) => {
+router.post("/regenerate-plan", requireAuth, aiBudget("regeneratePlan"), async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { state: true } });
     const st: any = user?.state || {};
@@ -255,7 +265,7 @@ router.post("/regenerate-plan", requireAuth, aiBudget(), async (req: Request, re
 });
 
 // Phase 45: Ask Forge — owner-only structured Q&A about own data
-router.post("/ask", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+router.post("/ask", requireAuth, requireOwnerCheck, aiBudget("owner"), async (req: Request, res: Response) => {
   try {
     const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
     if (!question) { res.status(400).json({ error: "Question required" }); return; }
@@ -271,7 +281,7 @@ router.post("/ask", requireAuth, requireOwnerCheck, aiBudget(), async (req: Requ
 // Phase 65: Conversational coach — owner-only, advisory, multi-turn chat over the
 // same assembled context as Ask Forge. Client sends the full thread each turn;
 // server prepends the context as the system prompt. aiBudget applies (Haiku).
-router.post("/chat", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+router.post("/chat", requireAuth, requireOwnerCheck, aiBudget("owner"), async (req: Request, res: Response) => {
   try {
     const raw = Array.isArray(req.body?.messages) ? req.body.messages : null;
     if (!raw || raw.length === 0) { res.status(400).json({ error: "messages required" }); return; }
@@ -299,7 +309,7 @@ router.post("/chat", requireAuth, requireOwnerCheck, aiBudget(), async (req: Req
 
 // Phase 80 (Medium): on-demand Deep Analysis — one Opus pass → 3 biggest levers +
 // one 2-week experiment. Owner-only, aiBudget-gated (it's an Opus call on the user's key).
-router.post("/deep-analysis", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+router.post("/deep-analysis", requireAuth, requireOwnerCheck, aiBudget("owner"), async (req: Request, res: Response) => {
   try {
     const text = await deepAnalysis(req.userId as string);
     res.json({ success: true, text });
@@ -311,7 +321,7 @@ router.post("/deep-analysis", requireAuth, requireOwnerCheck, aiBudget(), async 
 
 // Phase 87 (Layer 2): on-demand "What should I eat?" — food-level nutrition review.
 // Owner-only, aiBudget-gated (Opus call on the user's own key).
-router.post("/eating-advice", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+router.post("/eating-advice", requireAuth, requireOwnerCheck, aiBudget("owner"), async (req: Request, res: Response) => {
   try {
     const text = await eatingAdvice(req.userId as string);
     res.json({ success: true, text });
@@ -323,7 +333,7 @@ router.post("/eating-advice", requireAuth, requireOwnerCheck, aiBudget(), async 
 
 // Phase 49: estimate macros for an ad-hoc food the user types (auto-fill the
 // Add Food form). Any user with their own key — no owner gate. aiBudget applies.
-router.post("/estimate-food", requireAuth, aiBudget(), async (req: Request, res: Response) => {
+router.post("/estimate-food", requireAuth, aiBudget("estimateFood"), async (req: Request, res: Response) => {
   try {
     const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
     if (!description) { res.status(400).json({ error: "Food description required" }); return; }
@@ -342,7 +352,7 @@ router.post("/estimate-food", requireAuth, aiBudget(), async (req: Request, res:
 // Phase 94: "Eating Out" — estimate a restaurant/takeaway meal from free text.
 // Owner-only (the desi/UK-portion tuning is personal). aiBudget applies. On any
 // failure the client falls back to manual macro entry, so the log is never blocked.
-router.post("/estimate-meal-out", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+router.post("/estimate-meal-out", requireAuth, requireOwnerCheck, aiBudget("owner"), async (req: Request, res: Response) => {
   try {
     const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
     if (!description) { res.status(400).json({ error: "Describe what you ate" }); return; }
@@ -360,7 +370,7 @@ router.post("/estimate-meal-out", requireAuth, requireOwnerCheck, aiBudget(), as
 
 // Phase 55: Health Records — one-time AI extraction of a pasted lab/DEXA record.
 // Returns structured items w/ verbatim snippets + confidence + surfaced conflicts.
-router.post("/extract-record", requireAuth, requireOwnerCheck, aiBudget(), async (req: Request, res: Response) => {
+router.post("/extract-record", requireAuth, requireOwnerCheck, aiBudget("owner"), async (req: Request, res: Response) => {
   try {
     const text = typeof req.body?.text === "string" ? req.body.text : "";
     const type = req.body?.type === "dexa" ? "dexa" : "bloods";

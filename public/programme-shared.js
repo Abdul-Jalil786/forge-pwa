@@ -56,6 +56,19 @@ var EXERCISE_NAMES = {
   l5: 'Hip Thrust',
   l6: 'Calf Raise',
   back_squat: 'Back Squat',
+  // Phase 115: 21+ hypertrophy programme lifts
+  bb_bench: 'Barbell Bench Press',
+  ohp_bb: 'Overhead Barbell Press',
+  pull_up: 'Weighted Pull-Up',
+  bb_row: 'Barbell Row',
+  cs_row: 'Chest-Supported Row',
+  trap_dl: 'Trap-Bar Deadlift',
+  bss: 'Bulgarian Split Squat',
+  incl_curl: 'Incline Dumbbell Curl',
+  oh_tri: 'Overhead Tricep Extension',
+  seated_calf: 'Seated Calf Raise',
+  bb_curl: 'Barbell Curl',
+  hack_squat: 'Hack Squat',
   dead_hang: 'Dead Hang',
   core_suitcase: 'Suitcase Carry',
   kb_swing: 'Kettlebell Swing (two-handed, Russian)',
@@ -92,6 +105,8 @@ var EXERCISE_REPS = {
   u1: [6, 8], u2: [8, 10], u3: [6, 8], u4: [6, 8], u5: [8, 10], u6: [10, 12], u7: [12, 15], u8: [12, 15],
   rev_fly: [12, 20], shrug: [12, 20], cfly_mid: [12, 20], cfly_low: [12, 20],
   ab_crunch_cable: [10, 15], ab_knee_raise: [10, 15],
+  bb_bench: [5, 8], ohp_bb: [5, 8], pull_up: [6, 10], bb_row: [6, 10], cs_row: [10, 12], trap_dl: [4, 6],
+  bss: [8, 10], incl_curl: [10, 15], oh_tri: [10, 15], seated_calf: [12, 20], bb_curl: [8, 12], hack_squat: [8, 12],
   neck_ext: [12, 15], neck_front: [12, 15],
   l1: [6, 8], l2: [6, 8], l3: [10, 12], l4: [10, 12], l5: [8, 10], l6: [15, 20], back_squat: [8, 12],
   h1: [10, 12], h2: [8, 15], h3: [8, 10], h4: [10, 12], h5: [12, 15],
@@ -105,6 +120,8 @@ var PROGRAMME_LABELS = {
   'upper-lower-5d-fixed': { name: 'Upper / Lower 5-Day (fixed)', pattern: 'Mon Upper A · Tue Lower A · Wed rest · Thu Upper B · Fri Lower B · Sat Zone 2 walk · Sun rest (fixed weekdays)' },
   'full-body-3d': { name: 'Full Body 3-Day', pattern: 'Mon / Wed / Fri full-body' },
   'home-3d': { name: 'Home Full Body 3-Day', pattern: 'Mon / Wed / Fri full-body (dumbbells + bodyweight)' },
+  'hyper-5d-bulk': { name: 'Hypertrophy 5-Day · Bulk (21+)', pattern: 'Mon Push · Tue Pull · Wed Legs · Thu Upper · Fri Lower · Sat/Sun rest (fixed weekdays; barbell-compound hypertrophy, 12–16 sets per muscle per week)' },
+  'hyper-5d-cut': { name: 'Hypertrophy 5-Day · Cut (21+)', pattern: 'Mon Push · Tue Pull · Wed Legs · Thu Upper · Fri Lower · Sat/Sun rest (fixed weekdays; same lifts as the bulk with isolation trimmed + KB swing finishers)' },
 };
 function programmeLabel(programId) {
   return PROGRAMME_LABELS[programId] || PROGRAMME_LABELS['upper-lower-4d'];
@@ -124,6 +141,17 @@ var SESSION_EXERCISE_IDS = {
   lowerA: ['back_squat', 'l1', 'l4', 'l6', 'core_pallof', 'kb_swing', 'dead_hang'],
   upperB: ['cfly_low', 'u2', 'h3', 'u4', 'u8', 'h5', 'u6', 'u7', 'core_dead_bug', 'reh_1', 'reh_2', 'reh_3', 'ab_crunch_cable', 'ab_knee_raise', 'dead_hang'],
   lowerB: ['l5', 'l2', 'l1', 'core_suitcase', 'h5', 'shrug', 'kb_swing', 'dead_hang'],
+  // Phase 115: 21+ hypertrophy programmes (bulk keys, then cut variants)
+  push: ['bb_bench', 'ohp_bb', 'u2', 'cfly_mid', 'h5', 'u7', 'oh_tri'],
+  pull: ['trap_dl', 'pull_up', 'bb_row', 'u8', 'bb_curl', 'incl_curl'],
+  legs: ['back_squat', 'l2', 'l1', 'l4', 'l6', 'ab_knee_raise'],
+  upperH: ['u1', 'cs_row', 'u4', 'u5', 'cfly_low', 'h5', 'u6', 'u7'],
+  lowerH: ['hack_squat', 'l5', 'bss', 'l3', 'seated_calf', 'ab_crunch_cable'],
+  pushC: ['bb_bench', 'ohp_bb', 'u2', 'cfly_mid', 'h5', 'u7', 'oh_tri'],
+  pullC: ['trap_dl', 'pull_up', 'bb_row', 'u8', 'bb_curl', 'incl_curl'],
+  legsC: ['back_squat', 'l2', 'l1', 'l4', 'l6', 'ab_knee_raise', 'kb_swing'],
+  upperHC: ['u1', 'cs_row', 'u4', 'u5', 'cfly_low', 'h5', 'u6', 'u7'],
+  lowerHC: ['hack_squat', 'l5', 'bss', 'l3', 'seated_calf', 'ab_crunch_cable', 'kb_swing'],
   zone2: ['cardio_z2'],
 };
 
@@ -163,6 +191,16 @@ function _fixed5daySession(dateStr, startDate) {
   }
 }
 
+// Phase 115: 21+ hypertrophy split — Mon push, Tue pull, Wed legs, Thu upper,
+// Fri lower, Sat/Sun rest. Same programmeStartDate gate as the 5-day split.
+// `suffix` is '' (bulk) or 'C' (cut) — the cut templates share exercise ids.
+function _hyper5daySession(dateStr, startDate, suffix) {
+  if (startDate && dateStr < startDate) return null;
+  var dow = new Date(dateStr + 'T12:00:00').getDay();
+  var map = { 1: 'push', 2: 'pull', 3: 'legs', 4: 'upperH', 5: 'lowerH' };
+  return map[dow] ? map[dow] + (suffix || '') : null;
+}
+
 // programId + date (+ training anchor) -> WORKOUTS session key, or null (rest).
 // Mirrors PROGRAMS[*].getSessionType in data.js exactly. Unknown ids fall back
 // to the default upper-lower-4d, matching getProgram()'s fallback.
@@ -170,6 +208,10 @@ function sessionTypeForDate(programId, dateStr, startDate) {
   switch (programId) {
     case 'upper-lower-5d-fixed':
       return _fixed5daySession(dateStr, startDate);
+    case 'hyper-5d-bulk':
+      return _hyper5daySession(dateStr, startDate, '');
+    case 'hyper-5d-cut':
+      return _hyper5daySession(dateStr, startDate, 'C');
     case 'full-body-3d':
       return _weekdaySession(dateStr, 'full');
     case 'home-3d':

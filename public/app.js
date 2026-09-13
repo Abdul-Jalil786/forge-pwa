@@ -60,10 +60,23 @@ function obSetTrain(key,val){
     b.style.background=on?'rgba(200,255,0,.08)':'transparent';
   });
   if(obData.experience&&obData.daysPerWeek&&obData.equipment){
-    obData.programId=pickProgramId(obData.experience,obData.daysPerWeek,obData.equipment);
-    const prev=document.getElementById('ob-prog-preview');
-    if(prev)prev.innerHTML=`Your program: <strong style="color:var(--lime);">${PROGRAM_LABELS[obData.programId]}</strong>`;
+    // Phase 115: the auto-pick stays the default, but a hand-picked programme
+    // (obChooseProgram) is kept when the other answers change.
+    const opts=(typeof programOptionsFor==='function')?programOptionsFor(obData.equipment):Object.keys(PROGRAM_LABELS);
+    if(!obData.programChosen||!opts.includes(obData.programId))obData.programId=pickProgramId(obData.experience,obData.daysPerWeek,obData.equipment);
+    _renderObProgramPicker(opts);
   }
+}
+function _renderObProgramPicker(opts){
+  const prev=document.getElementById('ob-prog-preview');
+  if(!prev)return;
+  const options=opts.map(id=>`<option value="${id}"${id===obData.programId?' selected':''}>${PROGRAM_LABELS[id]||id}</option>`).join('');
+  prev.innerHTML=`<div style="margin-bottom:4px;">Your program:</div><select id="ob-prog-select" onchange="obChooseProgram(this.value)" style="width:100%;padding:9px 10px;background:var(--bg2);border:1px solid var(--lime);border-radius:10px;color:var(--lime);font-size:12px;font-weight:700;">${options}</select>`;
+}
+function obChooseProgram(id){
+  if(!id||!PROGRAM_LABELS[id])return;
+  obData.programId=id;
+  obData.programChosen=true;
 }
 
 function obToggleWindow(){
@@ -88,6 +101,7 @@ function renderObConfirm(){
   area.innerHTML=`<div style="text-align:left;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:6px 14px;">
     ${row('Goal',OB_GOAL_OPTIONS[obData.phase].title)}
     ${row('Program',PROGRAM_LABELS[obData.programId]||'—')}
+    ${row('Weigh-ins',obData.weighMethod==='boditrax'?'Boditrax scan · Fridays':'Home scale')}
     ${row('Maintenance (TDEE)',rest.tdee+' kcal')}
     ${row('Rest-day target',rest.calories+' kcal')}
     ${row('Training-day target',train.calories+' kcal')}
@@ -123,6 +137,7 @@ async function obStep(step){
     obData.targetWeight=isNaN(tw)?null:tw;
   } else if(step===3){
     if(!obData.experience||!obData.daysPerWeek||!obData.equipment){showToast('Answer all three');return;}
+    if(!obData.weighMethod)obData.weighMethod='scale';
   } else if(step===4){
     obData.excluded=(document.getElementById('ob-excl').value||'').split(',').map(s=>s.trim()).filter(Boolean).slice(0,30);
     renderObConfirm();
@@ -137,6 +152,12 @@ async function obStep(step){
       targetWeight:obData.targetWeight||undefined,
       personal:{age:obData.age,heightCm:obData.heightCm,sex:obData.sex,activityLevel:obData.activityLevel,phase:obData.phase},
       programId:obData.programId,
+      // Phase 115: fixed-weekday programmes anchor to today; the 21+ programmes
+      // also get their deload cadence + Mon–Fri session times.
+      ...((()=>{const d=(typeof programmeDefaults==='function')?programmeDefaults(obData.programId,t):null;const o={};if(d&&d.programmeStartDate)o.programmeStartDate=d.programmeStartDate;if(d&&d.deloadConfig)o.deloadConfig={...d.deloadConfig,updatedAt:new Date().toISOString()};if(d&&d.sessionTimes)o.sessionTimes=d.sessionTimes;return o;})()),
+      // Phase 114: how this user weighs in — 'scale' (home scale, daily) or
+      // 'boditrax' (gym scan, weekly; the scan mirrors into weight/bf logs).
+      weighMethod:obData.weighMethod||'scale',
       eatingWindow:{enabled:!!obData.eatingWindowEnabled,start:12,end:20},
       foodPrefs:{excluded:obData.excluded||[],notes:'',refreshCadence:'manual'},
       onboarded:true,
@@ -146,6 +167,15 @@ async function obStep(step){
     STATE.planStartDate=t;
     STATE.trainingStartDate=t;
     STATE.supplements=STATE.supplements||[]; // never inherit another user's list
+    if(obData.weighMethod==='boditrax'){
+      // Phase 114: no home scale + no wearable at signup → two push reminders in the
+      // cron's reminder shape (time / daysOfWeek / title / body). Push only fires
+      // once the user enables notifications; the Today card carries the nudge too.
+      STATE.reminders=[...(Array.isArray(STATE.reminders)?STATE.reminders:[]),
+        {id:'rem_bdx_friday',time:'09:00',daysOfWeek:[5],title:'Boditrax scan day',body:'Log this week\'s Boditrax scan in Forge (Body → Boditrax) — it\'s your weigh-in.',enabled:true},
+        {id:'rem_sleep_log',time:'10:00',daysOfWeek:[0,1,2,3,4,5,6],title:'Log last night\'s sleep',body:'Tap + Log on the Sleep card so your coach can see your hours.',enabled:true},
+      ];
+    }
     await saveStateNow();
     if(typeof applyDynamicTargets==='function')applyDynamicTargets();
     document.getElementById('onboarding').style.display='none';
@@ -1397,6 +1427,30 @@ async function deleteMedication() {
 
 // ---- TRAINING SCHEDULE (Phase 38) ----
 const _DOW_LABELS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+// Phase 115: More → Training Schedule programme picker.
+function loadProgramUI(){
+  const box=document.getElementById('program-ui');
+  if(!box||typeof PROGRAMS==='undefined')return;
+  const cur=(typeof getProgramId==='function')?getProgramId():'upper-lower-4d';
+  const p=(typeof getActive==='function'&&getActive())||{};
+  const options=Object.keys(PROGRAMS).map(id=>`<option value="${id}"${id===cur?' selected':''}>${PROGRAMS[id].name}</option>`).join('');
+  const desc=PROGRAMS[cur]?PROGRAMS[cur].desc:'';
+  box.innerHTML=`<select id="program-select" onchange="_programPreview(this.value)" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;">${options}</select>
+    <div id="program-desc" style="font-size:11px;color:var(--text3);line-height:1.5;margin-top:8px;">${desc}${p.programmeStartDate?` · since ${p.programmeStartDate}`:''}</div>`;
+}
+function _programPreview(id){
+  const d=document.getElementById('program-desc');
+  if(d&&PROGRAMS[id])d.textContent=PROGRAMS[id].desc;
+}
+function saveProgramFromUI(){
+  const sel=document.getElementById('program-select');
+  const id=sel?sel.value:null;
+  if(!id||!PROGRAMS[id]){showToast('Pick a programme');return;}
+  if(id===getProgramId()){showToast('Already on '+PROGRAMS[id].name);return;}
+  if(typeof setProgramme!=='function'||!setProgramme(id)){showToast('Could not switch programme');return;}
+  showToast('Switched to '+PROGRAMS[id].name+' ✓');
+  renderAll();
+}
 function loadSessionTimesUI(){
   const grid=document.getElementById('session-times-grid');
   if(!grid)return;
@@ -2334,17 +2388,50 @@ async function deleteAccount(){
 }
 
 // ---- SETTINGS ----
+// Phase 114: "Edit Targets" is now a real four-macro editor that PINS the numbers
+// (profile.targetOverrides.macros) — the old prompt() flow only took calories +
+// protein and was overwritten by applyDynamicTargets on the next weigh-in.
 function editProfile(){
   const p=getActive(); if(!p)return;
-  const cg=prompt(`Gym day calories (current: ${p.calsGym}):`);
-  if(cg&&!isNaN(cg))p.calsGym=parseInt(cg);
-  const cr=prompt(`Rest day calories (current: ${p.calsRest}):`);
-  if(cr&&!isNaN(cr))p.calsRest=parseInt(cr);
-  const pr=prompt(`Protein target g (current: ${p.proteinTarget}):`);
-  if(pr&&!isNaN(pr))p.proteinTarget=parseInt(pr);
+  const m=(p.targetOverrides&&p.targetOverrides.macros)||{};
+  const dt=p.dynamicTargets||{};
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=(v==null||v==='')?'':v;};
+  set('mt-cals',m.calories!=null?m.calories:((dt.upper&&dt.upper.calories)||p.calsGym||''));
+  set('mt-cals-rest',m.caloriesRest!=null?m.caloriesRest:'');
+  set('mt-protein',m.protein!=null?m.protein:(p.proteinTarget||''));
+  set('mt-carbs',m.carbs!=null?m.carbs:(p.carbsTarget||''));
+  set('mt-fat',m.fat!=null?m.fat:(p.fatTarget||''));
+  const note=document.getElementById('mt-note');
+  if(note)note.textContent=m.calories?'Pinned — these numbers hold through every weigh-in until you clear them.':'Currently computed from your profile. Saving pins your own numbers instead.';
+  const clr=document.getElementById('mt-clear'); if(clr)clr.style.display=m.calories?'block':'none';
+  openModal('modal-targets');
+}
+function saveTargetsOverride(){
+  const p=getActive(); if(!p)return;
+  const n=id=>{const el=document.getElementById(id);const v=parseFloat(el?el.value:'');return isNaN(v)?null:v;};
+  const calories=n('mt-cals'),caloriesRest=n('mt-cals-rest'),protein=n('mt-protein'),carbs=n('mt-carbs'),fat=n('mt-fat');
+  if(!(calories>=1000&&calories<=8000)){showToast('Calories look wrong (1000–8000)');return;}
+  if(caloriesRest!=null&&!(caloriesRest>=1000&&caloriesRest<=8000)){showToast('Rest-day calories look wrong (1000–8000)');return;}
+  if(protein==null||carbs==null||fat==null||protein<0||carbs<0||fat<0){showToast('Fill in protein, carbs and fat');return;}
+  const macroKcal=protein*4+carbs*4+fat*9;
+  if(Math.abs(macroKcal-calories)>calories*0.15){showToast(`Macros add up to ${Math.round(macroKcal)} kcal — more than 15% off ${calories}. Check the numbers.`);return;}
+  const macros={calories:Math.round(calories),protein:Math.round(protein),carbs:Math.round(carbs),fat:Math.round(fat)};
+  if(caloriesRest!=null)macros.caloriesRest=Math.round(caloriesRest);
+  p.targetOverrides={...(p.targetOverrides||{}),macros};
   saveProfiles();
+  if(typeof applyDynamicTargets==='function')applyDynamicTargets();
+  closeModal('modal-targets');
   renderAll();
-  showToast('Profile updated ✓');
+  showToast('Targets pinned ✓');
+}
+function clearTargetsOverride(){
+  const p=getActive(); if(!p||!p.targetOverrides||!p.targetOverrides.macros)return;
+  delete p.targetOverrides.macros;
+  saveProfiles();
+  if(typeof applyDynamicTargets==='function')applyDynamicTargets();
+  closeModal('modal-targets');
+  renderAll();
+  showToast('Back to computed targets');
 }
 
 // Phase 110: "Export my data" — downloads this account's full state (exactly what
@@ -3038,6 +3125,76 @@ async function adminResetPassword(){
   }catch{showToast('Reset failed — network error');}
 }
 
+// Phase 116: Admin → AI usage & limits. One editor row per account (owner row is
+// read-only usage). Saves profile.aiLimits via PUT /api/admin/ai-limits/:userId.
+const AI_LIMIT_FEATURES=[
+  ['weeklyReport','Sunday report (Opus)'],['sessionBrief','Session brief (Haiku)'],['sessionReflection','Session reflection (Haiku)'],
+  ['recomputeMacros','Weekly macro recompute (Opus)'],['estimateFood','Food estimator (Haiku)'],['proactive','Proactive nudges'],
+  ['regeneratePlan','Regenerate meal plan (Opus)'],['maxLbm','Max-LBM projection (Opus)'],['monthlyDeepDive','Monthly deep dive (Opus)'],
+];
+let _aiLimitsData=null;
+async function loadAiLimitsUI(){
+  const el=document.getElementById('ai-limits-list');
+  if(!el)return;
+  el.innerHTML='<span style="color:var(--text3);">Loading…</span>';
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/admin/ai-limits',{headers:{Authorization:'Bearer '+jwt}});
+    if(res.status===403){el.innerHTML='<span style="color:var(--red);">Owner only</span>';return;}
+    if(!res.ok){const e=await res.json().catch(()=>({}));el.innerHTML='<span style="color:var(--red);">Error: '+_esc(e.error||res.status)+'</span>';return;}
+    const d=await res.json();
+    _aiLimitsData=d;
+    if(!d.users||!d.users.length){el.innerHTML='<span style="color:var(--text3);">No accounts yet</span>';return;}
+    el.innerHTML=d.users.map(u=>_aiLimitsRowHTML(u,d.month)).join('');
+  }catch(e){el.innerHTML='<span style="color:var(--red);">Could not load AI usage</span>';}
+}
+function _aiLimitsRowHTML(u,month){
+  const L=u.limits||{};
+  const m=u.month||{total:0};
+  const used=AI_LIMIT_FEATURES.filter(([k])=>m[k]).map(([k,label])=>`${label.split(' (')[0]} ${m[k]}`).join(' · ');
+  const capTxt=`${u.today}/${L.dailyCap} today · ${m.total||0}${L.monthlyCap!=null?'/'+L.monthlyCap:''} this month`;
+  const head=`<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
+      <div style="font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;">${_esc(u.email)}${u.isOwner?' <span style="font-size:9px;color:var(--lime);">OWNER</span>':''}${u.hasKey?'':' <span style="font-size:9px;color:var(--text3);">no key</span>'}</div>
+      <div style="font-size:11px;color:${u.today>=L.dailyCap?'var(--orange)':'var(--text3)'};white-space:nowrap;">${capTxt}</div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:2px;">${used||'no AI calls this month'}${u.custom?' · <span style="color:var(--lime);">custom limits</span>':''}</div>`;
+  if(u.isOwner)return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">${head}</div>`;
+  const uid=_esc(u.id);
+  const toggles=AI_LIMIT_FEATURES.map(([k,label])=>`<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);"><input type="checkbox" id="ail-${uid}-${k}" ${L[k]?'checked':''}> ${label}</label>`).join('');
+  return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">${head}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;">
+      <input class="inp" id="ail-${uid}-dailyCap" type="number" min="0" max="200" placeholder="Calls / day" value="${L.dailyCap!=null?L.dailyCap:''}" style="margin:0;">
+      <input class="inp" id="ail-${uid}-monthlyCap" type="number" min="0" max="5000" placeholder="Calls / month (blank = none)" value="${L.monthlyCap!=null?L.monthlyCap:''}" style="margin:0;">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-top:8px;">${toggles}</div>
+    <div style="display:flex;gap:6px;margin-top:8px;">
+      <button class="btn btn-lime btn-sm" style="flex:1;font-size:11px;" onclick="saveAiLimits('${uid}')">Save limits</button>
+      <button class="btn btn-ghost btn-sm" style="font-size:11px;" onclick="resetAiLimits('${uid}')">Defaults</button>
+    </div>
+  </div>`;
+}
+function _readAiLimitsForm(uid){
+  const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const out={};
+  const d=parseInt(v(`ail-${uid}-dailyCap`),10); if(Number.isFinite(d))out.dailyCap=d;
+  const mRaw=v(`ail-${uid}-monthlyCap`); const mo=parseInt(mRaw,10); out.monthlyCap=(mRaw===''||!Number.isFinite(mo))?null:mo;
+  AI_LIMIT_FEATURES.forEach(([k])=>{const e=document.getElementById(`ail-${uid}-${k}`);if(e)out[k]=!!e.checked;});
+  return out;
+}
+async function _putAiLimits(uid,aiLimits){
+  const jwt=localStorage.getItem('forge_token');
+  const res=await fetch('/api/admin/ai-limits/'+encodeURIComponent(uid),{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},body:JSON.stringify({aiLimits})});
+  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||('HTTP '+res.status));}
+  return res.json();
+}
+async function saveAiLimits(uid){
+  try{await _putAiLimits(uid,_readAiLimitsForm(uid));showToast('AI limits saved ✓');loadAiLimitsUI();}
+  catch(e){showToast('Could not save: '+(e&&e.message||e));}
+}
+async function resetAiLimits(uid){
+  try{await _putAiLimits(uid,null);showToast('Back to default limits');loadAiLimitsUI();}
+  catch(e){showToast('Could not reset: '+(e&&e.message||e));}
+}
 async function loadAdminStats(){
   const el=document.getElementById('admin-stats-body');
   if(!el)return;

@@ -1898,3 +1898,193 @@ test("Boditrax: hour+minute dropdowns drive the submitted time (native-picker-pr
   ctx._bdxSetTime("");
   assert.equal(ctx.document.getElementById("bdx-time").value, "", "empty time stays empty");
 });
+
+// ---- Phase 114: Boditrax as the weigh-in + pinned targets editor ----
+test("Phase 114: a Boditrax scan mirrors into weightLog/bfLog (source boditrax), manual wins, delete unsyncs", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext("STATE.profile.weighMethod='boditrax'; STATE.weightLog=[{date:'2026-09-01',weight:76,source:'manual'}]; STATE.bfLog=[];", ctx);
+  const r1 = ctx.addBoditraxEntry({ date: "2026-09-11", time: "", weight: 75.2, muscle: 40, fat: 11.3, visceral: 5 });
+  assert.equal(r1.ok, true);
+  let wl = ctx.getWeightLog();
+  const w = wl.find(e => e.date === "2026-09-11");
+  assert.ok(w && w.weight === 75.2 && w.source === "boditrax", "scan weight mirrored with source boditrax");
+  const b = ctx.getBfLog().find(e => e.date === "2026-09-11");
+  assert.ok(b && b.source === "boditrax" && Math.abs(b.bf - 15.0) < 0.05, "bf% = fat/weight (11.3/75.2 = 15.0%) with source boditrax");
+  assert.equal(ctx.getCurrentWeight(), 75.2, "current weight now reads the scan");
+  // a same-date MANUAL weigh-in is never overwritten
+  const r2 = ctx.addBoditraxEntry({ date: "2026-09-01", time: "", weight: 70, muscle: 40, fat: 10, visceral: 5 });
+  assert.equal(r2.ok, true);
+  assert.equal(ctx.getWeightLog().find(e => e.date === "2026-09-01").weight, 76, "manual entry kept");
+  // delete removes only the boditrax-sourced mirror
+  ctx.deleteBoditraxEntry(r1.entry.id);
+  assert.ok(!ctx.getWeightLog().some(e => e.date === "2026-09-11"), "deleted scan unsynced from weightLog");
+  assert.ok(!ctx.getBfLog().some(e => e.date === "2026-09-11"), "and from bfLog");
+  // Today weight row carries the Boditrax nudge + a Log-scan tap for these users
+  const els = ctx.document._els || {};
+  ctx.renderToday();
+  const html = (ctx.document.getElementById("page-today") || {})._html || "";
+  assert.ok(/Boditrax weigh-in/.test(html) && /openBoditraxEdit\(null\)/.test(html), "Today shows the Boditrax weigh-in hint with + Log scan");
+  const B = /source==='boditrax'/.test(String(ctx.renderTrack));
+  assert.ok(B, "weight list has a B source badge");
+});
+
+test("Phase 114: Edit Targets pins four macros through applyDynamicTargets; clear restores computed", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext("STATE.profile.personal={age:21,heightCm:173,sex:'male',activityLevel:'moderate',phase:'lean-bulk'}; STATE.profile.targetOverrides=undefined; STATE.weightLog=[{date:'2026-09-11',weight:75.2,source:'boditrax'}];", ctx);
+  ctx.applyDynamicTargets();
+  const before = ctx.getActive().dynamicTargets.rest.calories;
+  assert.notEqual(before, 3100);
+  ctx.editProfile();
+  assert.ok(els["mt-note"], "targets modal note rendered");
+  els["mt-cals"].value = "3100"; els["mt-cals-rest"].value = ""; els["mt-protein"].value = "150"; els["mt-carbs"].value = "470"; els["mt-fat"].value = "75";
+  ctx.saveTargetsOverride();
+  const p = ctx.getActive();
+  assert.equal(JSON.stringify(p.targetOverrides.macros), JSON.stringify({ calories: 3100, protein: 150, carbs: 470, fat: 75 }));
+  assert.equal(p.dynamicTargets.rest.calories, 3100); assert.equal(p.dynamicTargets.lower.calories, 3100);
+  assert.equal(p.proteinTarget, 150); assert.equal(p.carbsTarget, 470); assert.equal(p.fatTarget, 75);
+  assert.equal(p.macros.carbs, 470);
+  // a later weigh-in recalculation keeps the pinned numbers
+  vm.runInContext("STATE.weightLog.push({date:'2026-09-18',weight:75.9,source:'boditrax'})", ctx);
+  ctx.applyDynamicTargets();
+  assert.equal(ctx.getActive().dynamicTargets.upper.calories, 3100, "pin survives a weigh-in");
+  ctx.renderMore();
+  assert.ok(/Pinned targets · 3100 kcal/.test(els["page-more"]._html), "More page shows the pin");
+  // macro sanity gate: numbers that don't add up are refused
+  els["mt-cals"].value = "3100"; els["mt-protein"].value = "50"; els["mt-carbs"].value = "100"; els["mt-fat"].value = "20";
+  ctx.saveTargetsOverride();
+  assert.equal(ctx.getActive().targetOverrides.macros.protein, 150, "nonsense macros rejected, pin unchanged");
+  ctx.clearTargetsOverride();
+  assert.equal(ctx.getActive().targetOverrides.macros, undefined);
+  const after = ctx.getActive().dynamicTargets.rest;
+  assert.notEqual(after.calories, 3100, "computed targets restored (for the newer 75.9kg weigh-in)");
+  assert.equal(after.overridden, undefined);
+  assert.ok(Math.abs(after.calories - before) < 40, "within a weigh-in's drift of the original computed figure");
+});
+
+test("Phase 114: wizard weigh-in choice → profile.weighMethod + Boditrax/sleep reminders (boditrax only)", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  // step-3 state as the wizard would hold it, then the confirm row + step-5 write
+  vm.runInContext("obData={name:'Sam',age:21,sex:'male',heightCm:173,weight:75.2,bf:null,activityLevel:'moderate',phase:'lean-bulk',experience:'some',daysPerWeek:4,equipment:'gym',weighMethod:'boditrax',programId:'upper-lower-4d'}; STATE.reminders=[];", ctx);
+  ctx.renderObConfirm();
+  const conf = (ctx.document.getElementById("ob-confirm-area") || {})._html || "";
+  assert.ok(/Boditrax scan · Fridays/.test(conf), "confirm screen shows the weigh-in method");
+  return ctx.obStep(5).then(() => {
+    const p = ctx.getActive();
+    assert.equal(p.weighMethod, "boditrax");
+    const rems = JSON.parse(vm.runInContext("JSON.stringify(STATE.reminders)", ctx));
+    assert.ok(rems.some(r => r.id === "rem_bdx_friday" && r.daysOfWeek.length === 1 && r.daysOfWeek[0] === 5 && r.time === "09:00"), "Friday Boditrax reminder seeded");
+    assert.ok(rems.some(r => r.id === "rem_sleep_log" && r.daysOfWeek.length === 7), "daily sleep-log reminder seeded");
+  });
+});
+
+// ---- Phase 115: 21+ hypertrophy programmes — pickers, defaults, guided render ----
+test("Phase 115: More programme picker switches to hyper-5d-bulk with start date, deload cadence and Mon–Fri times", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext("STATE.profile.programId='upper-lower-4d'; STATE.profile.deloadConfig=undefined; STATE.profile.sessionTimes=undefined; STATE.profile.programmeStartDate=undefined;", ctx);
+  ctx.renderMore();
+  assert.ok(/id="program-select"/.test(els["program-ui"]._html), "programme select rendered");
+  assert.ok(/Hypertrophy 5-Day · Bulk \(21\+\)/.test(els["program-ui"]._html) && /Hypertrophy 5-Day · Cut \(21\+\)/.test(els["program-ui"]._html), "both 21+ programmes offered");
+  ctx.document.getElementById("program-select").value = "hyper-5d-bulk";
+  ctx.saveProgramFromUI();
+  const p = ctx.getActive();
+  assert.equal(p.programId, "hyper-5d-bulk");
+  assert.equal(p.programmeStartDate, ctx.todayStr(), "fixed-weekday programme anchors to today");
+  const dl = JSON.parse(vm.runInContext("JSON.stringify(STATE.profile.deloadConfig)", ctx));
+  assert.equal(dl.enabled, true); assert.equal(dl.everyWeeks, 6);
+  assert.ok(dl.anchorMonday > ctx.todayStr(), "first deload is a full cycle out, not this week");
+  const st = JSON.parse(vm.runInContext("JSON.stringify(STATE.profile.sessionTimes)", ctx));
+  for (const d of ["1", "2", "3", "4", "5"]) assert.equal(st[d], "16:00", "Mon–Fri session time filled (day " + d + ")");
+  // the schedule now resolves through PROGRAMS → shared weekday map
+  const mon = "2026-09-14";
+  vm.runInContext("STATE.profile.programmeStartDate='2026-09-14'", ctx);
+  assert.equal(ctx.getSessionTypeForDate(mon), "push");
+  assert.equal(ctx.getSessionTypeForDate("2026-09-18"), "lowerH");
+  assert.equal(ctx.getSessionTypeForDate("2026-09-20"), null);
+  // switching to the cut keeps the ids and sets a 5-week cadence
+  ctx.document.getElementById("program-select").value = "hyper-5d-cut";
+  ctx.saveProgramFromUI();
+  assert.equal(ctx.getActive().programId, "hyper-5d-cut");
+  assert.equal(JSON.parse(vm.runInContext("JSON.stringify(STATE.profile.deloadConfig)", ctx)).everyWeeks, 5);
+  assert.equal(ctx.getSessionTypeForDate("2026-09-16"), "legsC");
+  assert.ok(ctx.getWorkout("legsC").exercises.some(e => e.id === "kb_swing"), "cut leg day carries the KB swing finisher");
+});
+
+test("Phase 115: wizard programme picker — hand pick survives other answers; step 5 writes programme defaults", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext("obData={name:'Sam',age:21,sex:'male',heightCm:173,weight:75.2,bf:null,activityLevel:'moderate',phase:'lean-bulk',weighMethod:'boditrax'}; STATE.reminders=[];", ctx);
+  for (const g of ["experience", "daysPerWeek", "equipment", "weighMethod"]) ctx.document.getElementById("ob-grp-" + g).children = [];
+  ctx.obSetTrain("experience", "some"); ctx.obSetTrain("daysPerWeek", 4); ctx.obSetTrain("equipment", "gym");
+  const picker = (ctx.document.getElementById("ob-prog-preview") || {})._html || "";
+  assert.ok(/ob-prog-select/.test(picker) && /hyper-5d-bulk/.test(picker), "wizard offers the 21+ programmes to gym users");
+  assert.equal(vm.runInContext("obData.programId", ctx), "upper-lower-4d", "auto-pick is still the default");
+  ctx.obChooseProgram("hyper-5d-bulk");
+  ctx.obSetTrain("experience", "regular");
+  assert.equal(vm.runInContext("obData.programId", ctx), "hyper-5d-bulk", "hand pick kept when another answer changes");
+  ctx.obSetTrain("equipment", "home");
+  assert.equal(vm.runInContext("obData.programId", ctx), "home-3d", "home equipment narrows to the home template");
+  ctx.obSetTrain("equipment", "gym"); ctx.obChooseProgram("hyper-5d-bulk");
+  return ctx.obStep(5).then(() => {
+    const p = ctx.getActive();
+    assert.equal(p.programId, "hyper-5d-bulk");
+    assert.equal(p.programmeStartDate, ctx.todayStr());
+    assert.equal(p.deloadConfig.everyWeeks, 6);
+    assert.equal(p.sessionTimes["2"], "16:00", "Tuesday gets a session time (default was off)");
+  });
+});
+
+test("Phase 115: a push session renders in the guided runner with calibration for the new barbell lifts", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext("STATE.profile.programId='hyper-5d-bulk'; STATE.profile.programmeStartDate='2026-09-14'; STATE.exLog={};", ctx);
+  const w = ctx.getWorkout("push");
+  assert.equal(w.exercises[0].id, "bb_bench");
+  assert.equal(vm.runInContext("FORGE_PROGRAMME.exerciseName('bb_bench')", ctx), "Barbell Bench Press");
+  ctx.startGuidedWorkout("push");
+  const html = ctx.document.getElementById("wmContent")._html;
+  assert.ok(/Barbell Bench Press|PUSH|How do you feel/.test(html), "guided runner opened on the push session");
+  assert.ok(/Trap-Bar Deadlift/.test(JSON.stringify(ctx.getWorkout("pull").exercises.map(e => e.name))));
+  // strength standards know the new barbell lifts
+  assert.ok(/bb_bench/.test(vm.runInContext("Object.keys(STRENGTH_STD).join()", ctx)), "strength standards know the new barbell lifts");
+});
+
+// ---- Phase 116: Admin → AI usage & limits ----
+test("Phase 116: AI limits card lists accounts with usage, edits a non-owner's limits, PUTs them", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  const calls = [];
+  const payload = { month: "2026-09", defaults: {}, users: [
+    { id: "u_owner", email: "jay@afjltd.co.uk", isOwner: true, hasKey: true, limits: { dailyCap: 40, monthlyCap: null, weeklyReport: true }, custom: null, today: 3, month: { total: 12, weeklyReport: 2, sessionBrief: 8 } },
+    { id: "u_sam", email: "sam@example.com", isOwner: false, hasKey: true, limits: { dailyCap: 4, monthlyCap: 60, weeklyReport: true, sessionBrief: true, sessionReflection: true, recomputeMacros: true, regeneratePlan: false, maxLbm: false, monthlyDeepDive: false, estimateFood: true, proactive: true }, custom: null, today: 0, month: { total: 1, weeklyReport: 1 } },
+  ] };
+  ctx.fetch = (url, opts) => { calls.push({ url, opts }); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(opts && opts.method === "PUT" ? { success: true } : payload) }); };
+  ctx.renderMore();
+  assert.ok(/AI usage/.test(els["page-more"]._html) && /id="ai-limits-list"/.test(els["page-more"]._html), "card rendered in Admin");
+  return ctx.loadAiLimitsUI().then(() => {
+    const html = els["ai-limits-list"]._html;
+    assert.ok(/sam@example.com/.test(html) && /OWNER/.test(html), "both accounts listed");
+    assert.ok(/3\/40 today/.test(html) && /0\/4 today · 1\/60 this month/.test(html), "usage vs caps shown");
+    assert.ok(/ail-u_sam-dailyCap/.test(html) && !/ail-u_owner-dailyCap/.test(html), "editor for the non-owner only");
+    assert.ok(/Sunday report \(Opus\)/.test(html) && /Session brief \(Haiku\)/.test(html), "feature toggles labelled");
+    // "report only" edit: uncheck the two Haiku bookends + recompute, cap 2/day
+    ctx.document.getElementById("ail-u_sam-dailyCap").value = "2";
+    ctx.document.getElementById("ail-u_sam-monthlyCap").value = "";
+    for (const k of ["weeklyReport", "estimateFood", "proactive"]) ctx.document.getElementById("ail-u_sam-" + k).checked = true;
+    for (const k of ["sessionBrief", "sessionReflection", "recomputeMacros", "regeneratePlan", "maxLbm", "monthlyDeepDive"]) ctx.document.getElementById("ail-u_sam-" + k).checked = false;
+    return ctx.saveAiLimits("u_sam");
+  }).then(() => {
+    const put = calls.find(c => c.opts && c.opts.method === "PUT");
+    assert.ok(put && /\/api\/admin\/ai-limits\/u_sam$/.test(put.url), "PUT to the user's limits route");
+    const body = JSON.parse(put.opts.body).aiLimits;
+    assert.equal(body.dailyCap, 2); assert.equal(body.monthlyCap, null);
+    assert.equal(body.weeklyReport, true); assert.equal(body.sessionBrief, false); assert.equal(body.recomputeMacros, false);
+    return ctx.resetAiLimits("u_sam");
+  }).then(() => {
+    const reset = calls.filter(c => c.opts && c.opts.method === "PUT").pop();
+    assert.equal(JSON.parse(reset.opts.body).aiLimits, null, "Defaults sends null");
+  });
+});

@@ -1358,6 +1358,71 @@ async function fixJayShakeExactMacrosV1() {
   }
 }
 
+// Phase 113: 2,500 kcal daily plan (jay@afjltd.co.uk). After the Sep DEXA
+// (−3.2kg lean over 13 weeks on a ~1,000 kcal/day deficit) the owner chose a
+// flat 2,500 kcal every day, same cooked meals on training and rest days
+// (batch-cooks 5 days). Only three portion bumps, all carbs: oats 45→70g,
+// pre-workout basmati 100→150g, dinner basmati 50→100g. Banana is now daily
+// (it already exists as the ql-banana meal). Chai/honey/dates stay optional
+// quick-logs (owner: "ignore chai"). Bumped ingredients get edited:true so the
+// Sunday macro recompute never re-estimates them. Core 7 items ≈ 2,477 kcal /
+// 211P / 233C / 78F. Targets re-pointed everywhere the app reads them:
+// activePhase (Food-page header), coachTargets floor, dynamicTargets,
+// calsGym/calsRest, macros. Protein floor 180 → 200 (user: "never below 200").
+async function seedJayPlan2500V1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.jayPlan2500V1) return;
+    const mp: any = state.mealPlan;
+    if (!mp || !Array.isArray(mp.meals)) { console.log("[migration] seedJayPlan2500V1: no meal plan — skipped"); return; }
+    const BUMPS: Array<{ mealId: string; from: string; to: any }> = [
+      { mealId: "breakfast", from: "45g rolled oats", to: { name: "70g rolled oats", cals: 266, protein: 9, carbs: 47, fat: 5, gi: "moderate" } },
+      { mealId: "pre-workout", from: "100g cooked basmati rice", to: { name: "150g cooked basmati rice", cals: 195, protein: 4, carbs: 42, fat: 0, gi: "moderate" } },
+      { mealId: "dinner", from: "50g cooked basmati rice", to: { name: "100g cooked basmati rice", cals: 130, protein: 3, carbs: 28, fat: 0, gi: "moderate" } },
+    ];
+    const norm = (n: any) => String(n || "").trim().toLowerCase();
+    let applied = 0;
+    for (const b of BUMPS) {
+      const meal: any = mp.meals.find((m: any) => m && m.id === b.mealId);
+      if (!meal || !Array.isArray(meal.ingredients)) { console.warn(`[migration] seedJayPlan2500V1: meal ${b.mealId} not found`); continue; }
+      const idx = meal.ingredients.findIndex((ing: any) => norm(ing && ing.name) === norm(b.from));
+      if (idx < 0) { console.warn(`[migration] seedJayPlan2500V1: "${b.from}" not in ${b.mealId}`); continue; }
+      meal.ingredients[idx] = { ...meal.ingredients[idx], ...b.to, edited: true };
+      const sum = (k: string) => meal.ingredients.reduce((t: number, ing: any) => t + (Number(ing && ing[k]) || 0), 0);
+      meal.cals = Math.round(sum("cals")); meal.protein = Math.round(sum("protein"));
+      meal.carbs = Math.round(sum("carbs")); meal.fat = Math.round(sum("fat") * 10) / 10;
+      applied++;
+    }
+    mp.name = "Cut (2,500 daily) — ~2,500 kcal · 210P/235C/78F target";
+    const pf: any = state.profile || (state.profile = {});
+    const T = { calories: 2500, protein: 210, carbs: 235, fat: 78 };
+    const dtOld: any = pf.dynamicTargets && typeof pf.dynamicTargets === "object" ? pf.dynamicTargets : {};
+    pf.dynamicTargets = {
+      ...dtOld,
+      rest: { ...(dtOld.rest || {}), ...T, sessionType: "rest" },
+      upper: { ...(dtOld.upper || {}), ...T, sessionType: "upper" },
+      lower: { ...(dtOld.lower || {}), ...T, sessionType: "lower" },
+    };
+    pf.calsRest = 2500; pf.calsGym = 2500;
+    pf.macros = { protein: 210, carbs: 235, fat: 78 };
+    pf.proteinFloor = 200;
+    if (pf.activePhase && typeof pf.activePhase === "object") {
+      pf.activePhase.calorieTarget = 2500;
+      pf.activePhase.proteinFloor = 200;
+      pf.activePhase.updatedAt = new Date().toISOString();
+    }
+    if (pf.coachTargets && typeof pf.coachTargets === "object") pf.coachTargets.proteinFloorDaily = 200;
+    state.lastMealPlanRegenAt = new Date().toISOString();
+    state.jayPlan2500V1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] Jay 2,500 kcal daily plan — ${applied}/3 portion bumps applied; targets → 2500 / 210P / 235C / 78F, protein floor 200`);
+  } catch (err) {
+    console.error("[migration] seedJayPlan2500V1 failed:", err);
+  }
+}
+
 // Phase 86: fix the user's "2 scoops whey" quick template — protein was entered as
 // 480g (a 10× typo); a 2-scoop shake is ~48g. Corrects the saved template AND any
 // historical food log that used the wrong value (day totals are summed live from
@@ -2741,6 +2806,7 @@ const server = app.listen(PORT, async () => {
   await fixJayWheyScoop20gV1(); // Phase 86a: 1 scoop = 20g (2-scoop template 48→40)
   await updateJayPostShake2ScoopsV1(); // Phase 96: post-workout shake → 2 scoops (40g protein)
   await fixJayShakeExactMacrosV1(); // Phase 111: exact product macros (231/41/17/1.3) + edited:true, recompute-proof
+  await seedJayPlan2500V1(); // Phase 113: flat 2,500 kcal daily plan (oats/basmati bumps, edited:true) + targets
   await fixJayLegPressSledV1();
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();

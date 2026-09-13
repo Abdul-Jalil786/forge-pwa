@@ -44,6 +44,25 @@ function computeTargets(params) {
   const af = o.activityFactor || ACTIVITY_FACTORS[params.activityLevel] || 1.55;
   const tdee = bmr * af;
 
+  // Phase 114: full-macro override. A user-pinned daily plan (set via More →
+  // Edit Targets) that the engine returns VERBATIM, so it survives the weigh-in
+  // recalculation. bmr/tdee are still computed for display. caloriesRest is
+  // optional (same number every day when absent).
+  if (o.macros && +o.macros.calories > 0) {
+    const m = o.macros;
+    const cals = (sessionType === 'rest' && +m.caloriesRest > 0) ? +m.caloriesRest : +m.calories;
+    return {
+      calories: Math.round(cals),
+      protein: Math.round(+m.protein || 0),
+      carbs: Math.round(+m.carbs || 0),
+      fat: Math.round(+m.fat || 0),
+      bmr: Math.round(bmr),
+      tdee: Math.round(tdee),
+      sessionType,
+      overridden: true,
+    };
+  }
+
   // Minors never get a deficit, whatever the phase says.
   let deficit = (o.deficitFixed != null) ? o.deficitFixed : tdee * pd.deficitPct;
   if (age < 18 && deficit > 0) deficit = 0;
@@ -268,7 +287,16 @@ const PROGRAM_LABELS = {
   'upper-lower-4d': 'Upper / Lower split · 4 days a week',
   'full-body-3d': 'Full Body · 3 days a week',
   'home-3d': 'Home Full Body · 3 days a week · minimal equipment',
+  'upper-lower-5d-fixed': 'Upper / Lower split · 5 days a week (fixed weekdays)',
+  'hyper-5d-bulk': 'Hypertrophy 5-Day · Bulk (21+) · Push / Pull / Legs / Upper / Lower',
+  'hyper-5d-cut': 'Hypertrophy 5-Day · Cut (21+) · same lifts, trimmed volume + conditioning',
 };
+// Phase 115: which programmes a wizard user may pick by hand (gym users get the
+// full list; home users only the home template). The auto-pick stays the default.
+function programOptionsFor(equipment) {
+  if (equipment === 'home') return ['home-3d'];
+  return ['full-body-3d', 'upper-lower-4d', 'upper-lower-5d-fixed', 'hyper-5d-bulk', 'hyper-5d-cut'];
+}
 
 // experience: 'new'|'some'|'regular' · daysPerWeek: 2..5 · equipment: 'gym'|'home'
 // Beginners get full-body regardless of available days — they progress faster on it.
@@ -282,6 +310,6 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     computeBMR, computeTargets, computeWaterTarget, PHASE_DEFAULTS, ACTIVITY_FACTORS,
     BF_BANDS, BMI_BANDS, LBMI_BANDS, bandFor, recommendGoal, PHASE_LABELS,
-    PROGRAM_LABELS, pickProgramId,
+    PROGRAM_LABELS, pickProgramId, programOptionsFor,
   };
 }
