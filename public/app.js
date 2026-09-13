@@ -60,10 +60,23 @@ function obSetTrain(key,val){
     b.style.background=on?'rgba(200,255,0,.08)':'transparent';
   });
   if(obData.experience&&obData.daysPerWeek&&obData.equipment){
-    obData.programId=pickProgramId(obData.experience,obData.daysPerWeek,obData.equipment);
-    const prev=document.getElementById('ob-prog-preview');
-    if(prev)prev.innerHTML=`Your program: <strong style="color:var(--lime);">${PROGRAM_LABELS[obData.programId]}</strong>`;
+    // Phase 115: the auto-pick stays the default, but a hand-picked programme
+    // (obChooseProgram) is kept when the other answers change.
+    const opts=(typeof programOptionsFor==='function')?programOptionsFor(obData.equipment):Object.keys(PROGRAM_LABELS);
+    if(!obData.programChosen||!opts.includes(obData.programId))obData.programId=pickProgramId(obData.experience,obData.daysPerWeek,obData.equipment);
+    _renderObProgramPicker(opts);
   }
+}
+function _renderObProgramPicker(opts){
+  const prev=document.getElementById('ob-prog-preview');
+  if(!prev)return;
+  const options=opts.map(id=>`<option value="${id}"${id===obData.programId?' selected':''}>${PROGRAM_LABELS[id]||id}</option>`).join('');
+  prev.innerHTML=`<div style="margin-bottom:4px;">Your program:</div><select id="ob-prog-select" onchange="obChooseProgram(this.value)" style="width:100%;padding:9px 10px;background:var(--bg2);border:1px solid var(--lime);border-radius:10px;color:var(--lime);font-size:12px;font-weight:700;">${options}</select>`;
+}
+function obChooseProgram(id){
+  if(!id||!PROGRAM_LABELS[id])return;
+  obData.programId=id;
+  obData.programChosen=true;
 }
 
 function obToggleWindow(){
@@ -139,6 +152,9 @@ async function obStep(step){
       targetWeight:obData.targetWeight||undefined,
       personal:{age:obData.age,heightCm:obData.heightCm,sex:obData.sex,activityLevel:obData.activityLevel,phase:obData.phase},
       programId:obData.programId,
+      // Phase 115: fixed-weekday programmes anchor to today; the 21+ programmes
+      // also get their deload cadence + Mon–Fri session times.
+      ...((()=>{const d=(typeof programmeDefaults==='function')?programmeDefaults(obData.programId,t):null;const o={};if(d&&d.programmeStartDate)o.programmeStartDate=d.programmeStartDate;if(d&&d.deloadConfig)o.deloadConfig={...d.deloadConfig,updatedAt:new Date().toISOString()};if(d&&d.sessionTimes)o.sessionTimes=d.sessionTimes;return o;})()),
       // Phase 114: how this user weighs in — 'scale' (home scale, daily) or
       // 'boditrax' (gym scan, weekly; the scan mirrors into weight/bf logs).
       weighMethod:obData.weighMethod||'scale',
@@ -1411,6 +1427,30 @@ async function deleteMedication() {
 
 // ---- TRAINING SCHEDULE (Phase 38) ----
 const _DOW_LABELS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+// Phase 115: More → Training Schedule programme picker.
+function loadProgramUI(){
+  const box=document.getElementById('program-ui');
+  if(!box||typeof PROGRAMS==='undefined')return;
+  const cur=(typeof getProgramId==='function')?getProgramId():'upper-lower-4d';
+  const p=(typeof getActive==='function'&&getActive())||{};
+  const options=Object.keys(PROGRAMS).map(id=>`<option value="${id}"${id===cur?' selected':''}>${PROGRAMS[id].name}</option>`).join('');
+  const desc=PROGRAMS[cur]?PROGRAMS[cur].desc:'';
+  box.innerHTML=`<select id="program-select" onchange="_programPreview(this.value)" style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;">${options}</select>
+    <div id="program-desc" style="font-size:11px;color:var(--text3);line-height:1.5;margin-top:8px;">${desc}${p.programmeStartDate?` · since ${p.programmeStartDate}`:''}</div>`;
+}
+function _programPreview(id){
+  const d=document.getElementById('program-desc');
+  if(d&&PROGRAMS[id])d.textContent=PROGRAMS[id].desc;
+}
+function saveProgramFromUI(){
+  const sel=document.getElementById('program-select');
+  const id=sel?sel.value:null;
+  if(!id||!PROGRAMS[id]){showToast('Pick a programme');return;}
+  if(id===getProgramId()){showToast('Already on '+PROGRAMS[id].name);return;}
+  if(typeof setProgramme!=='function'||!setProgramme(id)){showToast('Could not switch programme');return;}
+  showToast('Switched to '+PROGRAMS[id].name+' ✓');
+  renderAll();
+}
 function loadSessionTimesUI(){
   const grid=document.getElementById('session-times-grid');
   if(!grid)return;

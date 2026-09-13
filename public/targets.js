@@ -287,7 +287,16 @@ const PROGRAM_LABELS = {
   'upper-lower-4d': 'Upper / Lower split · 4 days a week',
   'full-body-3d': 'Full Body · 3 days a week',
   'home-3d': 'Home Full Body · 3 days a week · minimal equipment',
+  'upper-lower-5d-fixed': 'Upper / Lower split · 5 days a week (fixed weekdays)',
+  'hyper-5d-bulk': 'Hypertrophy 5-Day · Bulk (21+) · Push / Pull / Legs / Upper / Lower',
+  'hyper-5d-cut': 'Hypertrophy 5-Day · Cut (21+) · same lifts, trimmed volume + conditioning',
 };
+// Phase 115: which programmes a wizard user may pick by hand (gym users get the
+// full list; home users only the home template). The auto-pick stays the default.
+function programOptionsFor(equipment) {
+  if (equipment === 'home') return ['home-3d'];
+  return ['full-body-3d', 'upper-lower-4d', 'upper-lower-5d-fixed', 'hyper-5d-bulk', 'hyper-5d-cut'];
+}
 
 // experience: 'new'|'some'|'regular' · daysPerWeek: 2..5 · equipment: 'gym'|'home'
 // Beginners get full-body regardless of available days — they progress faster on it.
@@ -301,6 +310,6 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     computeBMR, computeTargets, computeWaterTarget, PHASE_DEFAULTS, ACTIVITY_FACTORS,
     BF_BANDS, BMI_BANDS, LBMI_BANDS, bandFor, recommendGoal, PHASE_LABELS,
-    PROGRAM_LABELS, pickProgramId,
+    PROGRAM_LABELS, pickProgramId, programOptionsFor,
   };
 }

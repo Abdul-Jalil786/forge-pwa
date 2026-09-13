@@ -1967,6 +1967,13 @@ const STRENGTH_STD = {
   l4: { male:[0.40, 0.70, 0.95, 1.20], female:[0.30, 0.50, 0.70, 0.90] },
   l5: { male:[1.00, 1.50, 2.25, 3.00], female:[0.80, 1.20, 1.80, 2.40] },
   l6: { male:[1.00, 1.50, 2.00, 2.75], female:[0.75, 1.10, 1.50, 2.05] },
+  // Phase 115: barbell lifts from the 21+ programmes (StrengthLevel-style ×BW)
+  back_squat: { male:[1.00, 1.50, 2.00, 2.50], female:[0.70, 1.05, 1.45, 1.80] },
+  bb_bench:   { male:[0.75, 1.25, 1.75, 2.00], female:[0.35, 0.65, 1.00, 1.25] },
+  ohp_bb:     { male:[0.50, 0.80, 1.10, 1.40], female:[0.30, 0.50, 0.70, 0.90] },
+  bb_row:     { male:[0.75, 1.15, 1.50, 1.85], female:[0.45, 0.70, 0.95, 1.20] },
+  trap_dl:    { male:[1.25, 1.75, 2.50, 3.00], female:[0.90, 1.30, 1.80, 2.20] },
+  hack_squat: { male:[1.00, 1.75, 2.50, 3.25], female:[0.75, 1.25, 1.80, 2.40] },
 };
 // Resolve an exercise display name from the shared single source (falls back to id).
 function _exDisplayName(exId){
@@ -3830,6 +3837,14 @@ function renderMore(){
 
     ${_mOpen('trainsched','Training Schedule')}
     <div class="card" style="margin-bottom:10px;">
+      <div style="font-weight:700;font-size:14px;margin-bottom:6px;">Programme</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">
+        Your split. Switching keeps every lift's history — the same exercise carries its weights into the new programme. Fixed-weekday programmes start today; the 21+ programmes also set a deload cadence (bulk every 6 weeks, cut every 5).
+      </div>
+      <div id="program-ui"></div>
+      <button class="btn btn-lime btn-sm" style="width:100%;margin-top:12px;" onclick="saveProgramFromUI()">Switch Programme</button>
+    </div>
+    <div class="card" style="margin-bottom:10px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
         Your training start time for each day. Shown on the Today card. Leave a day blank if you don't normally train then.
       </div>
@@ -3891,6 +3906,7 @@ function renderMore(){
   renderMedsList();
   renderBloodMarkersList();
   loadSessionTimesUI();
+  if(typeof loadProgramUI==='function')loadProgramUI();
   if(typeof loadDeloadConfigUI==='function')loadDeloadConfigUI();
   renderInjuryList();
   if(typeof isOwner==='function'&&isOwner()&&typeof loadAdminStats==='function')loadAdminStats();

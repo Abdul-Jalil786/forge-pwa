@@ -1979,3 +1979,75 @@ test("Phase 114: wizard weigh-in choice → profile.weighMethod + Boditrax/sleep
     assert.ok(rems.some(r => r.id === "rem_sleep_log" && r.daysOfWeek.length === 7), "daily sleep-log reminder seeded");
   });
 });
+
+// ---- Phase 115: 21+ hypertrophy programmes — pickers, defaults, guided render ----
+test("Phase 115: More programme picker switches to hyper-5d-bulk with start date, deload cadence and Mon–Fri times", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext("STATE.profile.programId='upper-lower-4d'; STATE.profile.deloadConfig=undefined; STATE.profile.sessionTimes=undefined; STATE.profile.programmeStartDate=undefined;", ctx);
+  ctx.renderMore();
+  assert.ok(/id="program-select"/.test(els["program-ui"]._html), "programme select rendered");
+  assert.ok(/Hypertrophy 5-Day · Bulk \(21\+\)/.test(els["program-ui"]._html) && /Hypertrophy 5-Day · Cut \(21\+\)/.test(els["program-ui"]._html), "both 21+ programmes offered");
+  ctx.document.getElementById("program-select").value = "hyper-5d-bulk";
+  ctx.saveProgramFromUI();
+  const p = ctx.getActive();
+  assert.equal(p.programId, "hyper-5d-bulk");
+  assert.equal(p.programmeStartDate, ctx.todayStr(), "fixed-weekday programme anchors to today");
+  const dl = JSON.parse(vm.runInContext("JSON.stringify(STATE.profile.deloadConfig)", ctx));
+  assert.equal(dl.enabled, true); assert.equal(dl.everyWeeks, 6);
+  assert.ok(dl.anchorMonday > ctx.todayStr(), "first deload is a full cycle out, not this week");
+  const st = JSON.parse(vm.runInContext("JSON.stringify(STATE.profile.sessionTimes)", ctx));
+  for (const d of ["1", "2", "3", "4", "5"]) assert.equal(st[d], "16:00", "Mon–Fri session time filled (day " + d + ")");
+  // the schedule now resolves through PROGRAMS → shared weekday map
+  const mon = "2026-09-14";
+  vm.runInContext("STATE.profile.programmeStartDate='2026-09-14'", ctx);
+  assert.equal(ctx.getSessionTypeForDate(mon), "push");
+  assert.equal(ctx.getSessionTypeForDate("2026-09-18"), "lowerH");
+  assert.equal(ctx.getSessionTypeForDate("2026-09-20"), null);
+  // switching to the cut keeps the ids and sets a 5-week cadence
+  ctx.document.getElementById("program-select").value = "hyper-5d-cut";
+  ctx.saveProgramFromUI();
+  assert.equal(ctx.getActive().programId, "hyper-5d-cut");
+  assert.equal(JSON.parse(vm.runInContext("JSON.stringify(STATE.profile.deloadConfig)", ctx)).everyWeeks, 5);
+  assert.equal(ctx.getSessionTypeForDate("2026-09-16"), "legsC");
+  assert.ok(ctx.getWorkout("legsC").exercises.some(e => e.id === "kb_swing"), "cut leg day carries the KB swing finisher");
+});
+
+test("Phase 115: wizard programme picker — hand pick survives other answers; step 5 writes programme defaults", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext("obData={name:'Sam',age:21,sex:'male',heightCm:173,weight:75.2,bf:null,activityLevel:'moderate',phase:'lean-bulk',weighMethod:'boditrax'}; STATE.reminders=[];", ctx);
+  for (const g of ["experience", "daysPerWeek", "equipment", "weighMethod"]) ctx.document.getElementById("ob-grp-" + g).children = [];
+  ctx.obSetTrain("experience", "some"); ctx.obSetTrain("daysPerWeek", 4); ctx.obSetTrain("equipment", "gym");
+  const picker = (ctx.document.getElementById("ob-prog-preview") || {})._html || "";
+  assert.ok(/ob-prog-select/.test(picker) && /hyper-5d-bulk/.test(picker), "wizard offers the 21+ programmes to gym users");
+  assert.equal(vm.runInContext("obData.programId", ctx), "upper-lower-4d", "auto-pick is still the default");
+  ctx.obChooseProgram("hyper-5d-bulk");
+  ctx.obSetTrain("experience", "regular");
+  assert.equal(vm.runInContext("obData.programId", ctx), "hyper-5d-bulk", "hand pick kept when another answer changes");
+  ctx.obSetTrain("equipment", "home");
+  assert.equal(vm.runInContext("obData.programId", ctx), "home-3d", "home equipment narrows to the home template");
+  ctx.obSetTrain("equipment", "gym"); ctx.obChooseProgram("hyper-5d-bulk");
+  return ctx.obStep(5).then(() => {
+    const p = ctx.getActive();
+    assert.equal(p.programId, "hyper-5d-bulk");
+    assert.equal(p.programmeStartDate, ctx.todayStr());
+    assert.equal(p.deloadConfig.everyWeeks, 6);
+    assert.equal(p.sessionTimes["2"], "16:00", "Tuesday gets a session time (default was off)");
+  });
+});
+
+test("Phase 115: a push session renders in the guided runner with calibration for the new barbell lifts", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext("STATE.profile.programId='hyper-5d-bulk'; STATE.profile.programmeStartDate='2026-09-14'; STATE.exLog={};", ctx);
+  const w = ctx.getWorkout("push");
+  assert.equal(w.exercises[0].id, "bb_bench");
+  assert.equal(vm.runInContext("FORGE_PROGRAMME.exerciseName('bb_bench')", ctx), "Barbell Bench Press");
+  ctx.startGuidedWorkout("push");
+  const html = ctx.document.getElementById("wmContent")._html;
+  assert.ok(/Barbell Bench Press|PUSH|How do you feel/.test(html), "guided runner opened on the push session");
+  assert.ok(/Trap-Bar Deadlift/.test(JSON.stringify(ctx.getWorkout("pull").exercises.map(e => e.name))));
+  // strength standards know the new barbell lifts
+  assert.ok(/bb_bench/.test(vm.runInContext("Object.keys(STRENGTH_STD).join()", ctx)), "strength standards know the new barbell lifts");
+});

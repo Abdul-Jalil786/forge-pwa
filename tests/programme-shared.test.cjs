@@ -209,3 +209,39 @@ test("SESSION_EXERCISE_IDS matches each WORKOUTS session's exercise ids exactly"
     assert.deepEqual(shared.SESSION_EXERCISE_IDS[k], parsed[k], `ids drift for session ${k}`);
   }
 });
+
+// --- Phase 115: 21+ hypertrophy programmes (hyper-5d-bulk / hyper-5d-cut) ---
+test("hyper-5d-bulk maps Mon push · Tue pull · Wed legs · Thu upper · Fri lower · weekend rest", () => {
+  const START = "2026-09-14"; // Monday
+  const expect = { "2026-09-14": "push", "2026-09-15": "pull", "2026-09-16": "legs", "2026-09-17": "upperH", "2026-09-18": "lowerH", "2026-09-19": null, "2026-09-20": null };
+  for (const [date, sess] of Object.entries(expect)) assert.equal(shared.sessionTypeForDate("hyper-5d-bulk", date, START), sess, `bulk @ ${date}`);
+  // the cut uses the same weekday map with C-suffixed session keys
+  assert.equal(shared.sessionTypeForDate("hyper-5d-cut", "2026-09-16", START), "legsC");
+  assert.equal(shared.sessionTypeForDate("hyper-5d-cut", "2026-09-18", START), "lowerHC");
+  assert.equal(shared.sessionTypeForDate("hyper-5d-cut", "2026-09-19", START), null);
+  // start-date gate: mid-week start schedules the rest of that week, nothing before
+  assert.equal(shared.sessionTypeForDate("hyper-5d-bulk", "2026-09-16", "2026-09-16"), "legs", "starts on the switch day");
+  assert.equal(shared.sessionTypeForDate("hyper-5d-bulk", "2026-09-15", "2026-09-16"), null, "day before the start is unscheduled");
+  assert.equal(shared.sessionTypeForDate("hyper-5d-bulk", "2026-09-21", START), "push", "repeats weekly");
+});
+
+test("hyper-5d cut templates reuse the bulk exercise ids (history carries) and trim volume", () => {
+  const ids = shared.SESSION_EXERCISE_IDS;
+  for (const k of ["push", "pull", "legs", "upperH", "lowerH"]) {
+    assert.ok(Array.isArray(ids[k]) && ids[k].length >= 6, k + " has a template");
+    const cut = ids[k + "C"];
+    assert.ok(Array.isArray(cut), k + "C exists");
+    for (const id of ids[k]) assert.ok(cut.includes(id), `${id} kept in ${k}C`);
+  }
+  assert.ok(ids.legsC.includes("kb_swing") && ids.lowerHC.includes("kb_swing"), "KB swing finisher on the cut leg days only");
+  assert.ok(!ids.legs.includes("kb_swing") && !ids.pushC.includes("kb_swing"));
+  // every muscle twice a week: chest (push + upper), back (pull + upper), quads (legs + lower)
+  assert.ok(ids.push.includes("bb_bench") && ids.upperH.includes("u1"));
+  assert.ok(ids.pull.includes("bb_row") && ids.upperH.includes("cs_row"));
+  assert.ok(ids.legs.includes("back_squat") && ids.lowerH.includes("hack_squat"));
+  // none of the owner-specific items
+  for (const k of Object.keys(ids).filter(x => /^(push|pull|legs|upperH|lowerH)C?$/.test(x)))
+    for (const bad of ["neck_ext", "neck_front", "reh_1", "reh_2", "reh_3", "dead_hang"]) assert.ok(!ids[k].includes(bad), `${bad} not in ${k}`);
+  assert.equal(shared.PROGRAMME_LABELS["hyper-5d-bulk"].name, "Hypertrophy 5-Day · Bulk (21+)");
+  for (const id of ["bb_bench", "ohp_bb", "pull_up", "bb_row", "trap_dl", "hack_squat"]) assert.ok(shared.EXERCISE_REPS[id], id + " has a rep range for stall detection");
+});

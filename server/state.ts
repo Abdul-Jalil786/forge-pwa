@@ -795,6 +795,38 @@ router.put("/profile/session-times", requireAuth, async (req: Request, res: Resp
 
 // Phase 70: user-configured deload cadence (program-agnostic). Subfield of profile.
 // { enabled, everyWeeks (1-52), anchorMonday (YYYY-MM-DD, a Monday) }.
+// Phase 115: programme switch — programId + programmeStartDate written together
+// (jsonb_set, atomic) so a fixed-weekday programme never lands without its anchor.
+router.put("/profile/program", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { programId, programmeStartDate } = req.body || {};
+    if (typeof programId !== "string" || !/^[a-z0-9-]{3,40}$/.test(programId)) { res.status(400).json({ error: "programId must be a programme id" }); return; }
+    let start: string | null = null;
+    if (programmeStartDate != null) {
+      if (typeof programmeStartDate !== "string" || !DATE_RE.test(programmeStartDate)) { res.status(400).json({ error: "programmeStartDate must be YYYY-MM-DD" }); return; }
+      start = programmeStartDate;
+    }
+    const idJson = JSON.stringify(programId);
+    const startJson = JSON.stringify(start);
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET state = jsonb_set(
+        jsonb_set(
+          jsonb_set(COALESCE(state, '{}')::jsonb, '{profile}', COALESCE(state->'profile', '{}'), true),
+          '{profile,programId}', ${idJson}::jsonb, true
+        ),
+        '{profile,programmeStartDate}', ${startJson}::jsonb, true
+      ),
+      "updatedAt" = NOW()
+      WHERE id = ${req.userId}
+    `;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Put program error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.put("/profile/deload-config", requireAuth, async (req: Request, res: Response) => {
   try {
     const { deloadConfig } = req.body || {};
