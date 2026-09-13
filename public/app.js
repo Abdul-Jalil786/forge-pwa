@@ -3125,6 +3125,76 @@ async function adminResetPassword(){
   }catch{showToast('Reset failed — network error');}
 }
 
+// Phase 116: Admin → AI usage & limits. One editor row per account (owner row is
+// read-only usage). Saves profile.aiLimits via PUT /api/admin/ai-limits/:userId.
+const AI_LIMIT_FEATURES=[
+  ['weeklyReport','Sunday report (Opus)'],['sessionBrief','Session brief (Haiku)'],['sessionReflection','Session reflection (Haiku)'],
+  ['recomputeMacros','Weekly macro recompute (Opus)'],['estimateFood','Food estimator (Haiku)'],['proactive','Proactive nudges'],
+  ['regeneratePlan','Regenerate meal plan (Opus)'],['maxLbm','Max-LBM projection (Opus)'],['monthlyDeepDive','Monthly deep dive (Opus)'],
+];
+let _aiLimitsData=null;
+async function loadAiLimitsUI(){
+  const el=document.getElementById('ai-limits-list');
+  if(!el)return;
+  el.innerHTML='<span style="color:var(--text3);">Loading…</span>';
+  const jwt=localStorage.getItem('forge_token');
+  try{
+    const res=await fetch('/api/admin/ai-limits',{headers:{Authorization:'Bearer '+jwt}});
+    if(res.status===403){el.innerHTML='<span style="color:var(--red);">Owner only</span>';return;}
+    if(!res.ok){const e=await res.json().catch(()=>({}));el.innerHTML='<span style="color:var(--red);">Error: '+_esc(e.error||res.status)+'</span>';return;}
+    const d=await res.json();
+    _aiLimitsData=d;
+    if(!d.users||!d.users.length){el.innerHTML='<span style="color:var(--text3);">No accounts yet</span>';return;}
+    el.innerHTML=d.users.map(u=>_aiLimitsRowHTML(u,d.month)).join('');
+  }catch(e){el.innerHTML='<span style="color:var(--red);">Could not load AI usage</span>';}
+}
+function _aiLimitsRowHTML(u,month){
+  const L=u.limits||{};
+  const m=u.month||{total:0};
+  const used=AI_LIMIT_FEATURES.filter(([k])=>m[k]).map(([k,label])=>`${label.split(' (')[0]} ${m[k]}`).join(' · ');
+  const capTxt=`${u.today}/${L.dailyCap} today · ${m.total||0}${L.monthlyCap!=null?'/'+L.monthlyCap:''} this month`;
+  const head=`<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
+      <div style="font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;">${_esc(u.email)}${u.isOwner?' <span style="font-size:9px;color:var(--lime);">OWNER</span>':''}${u.hasKey?'':' <span style="font-size:9px;color:var(--text3);">no key</span>'}</div>
+      <div style="font-size:11px;color:${u.today>=L.dailyCap?'var(--orange)':'var(--text3)'};white-space:nowrap;">${capTxt}</div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:2px;">${used||'no AI calls this month'}${u.custom?' · <span style="color:var(--lime);">custom limits</span>':''}</div>`;
+  if(u.isOwner)return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">${head}</div>`;
+  const uid=_esc(u.id);
+  const toggles=AI_LIMIT_FEATURES.map(([k,label])=>`<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);"><input type="checkbox" id="ail-${uid}-${k}" ${L[k]?'checked':''}> ${label}</label>`).join('');
+  return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">${head}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;">
+      <input class="inp" id="ail-${uid}-dailyCap" type="number" min="0" max="200" placeholder="Calls / day" value="${L.dailyCap!=null?L.dailyCap:''}" style="margin:0;">
+      <input class="inp" id="ail-${uid}-monthlyCap" type="number" min="0" max="5000" placeholder="Calls / month (blank = none)" value="${L.monthlyCap!=null?L.monthlyCap:''}" style="margin:0;">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-top:8px;">${toggles}</div>
+    <div style="display:flex;gap:6px;margin-top:8px;">
+      <button class="btn btn-lime btn-sm" style="flex:1;font-size:11px;" onclick="saveAiLimits('${uid}')">Save limits</button>
+      <button class="btn btn-ghost btn-sm" style="font-size:11px;" onclick="resetAiLimits('${uid}')">Defaults</button>
+    </div>
+  </div>`;
+}
+function _readAiLimitsForm(uid){
+  const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const out={};
+  const d=parseInt(v(`ail-${uid}-dailyCap`),10); if(Number.isFinite(d))out.dailyCap=d;
+  const mRaw=v(`ail-${uid}-monthlyCap`); const mo=parseInt(mRaw,10); out.monthlyCap=(mRaw===''||!Number.isFinite(mo))?null:mo;
+  AI_LIMIT_FEATURES.forEach(([k])=>{const e=document.getElementById(`ail-${uid}-${k}`);if(e)out[k]=!!e.checked;});
+  return out;
+}
+async function _putAiLimits(uid,aiLimits){
+  const jwt=localStorage.getItem('forge_token');
+  const res=await fetch('/api/admin/ai-limits/'+encodeURIComponent(uid),{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt},body:JSON.stringify({aiLimits})});
+  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||('HTTP '+res.status));}
+  return res.json();
+}
+async function saveAiLimits(uid){
+  try{await _putAiLimits(uid,_readAiLimitsForm(uid));showToast('AI limits saved ✓');loadAiLimitsUI();}
+  catch(e){showToast('Could not save: '+(e&&e.message||e));}
+}
+async function resetAiLimits(uid){
+  try{await _putAiLimits(uid,null);showToast('Back to default limits');loadAiLimitsUI();}
+  catch(e){showToast('Could not reset: '+(e&&e.message||e));}
+}
 async function loadAdminStats(){
   const el=document.getElementById('admin-stats-body');
   if(!el)return;

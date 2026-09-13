@@ -3894,6 +3894,12 @@ function renderMore(){
       <button class="btn btn-lime btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="generateInviteLink()">✉️ Generate invite link</button>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px;" onclick="openContextPreview()">🔍 What my coach sees</button>
       <div id="invite-list" style="margin-top:10px;"></div>
+    </div>
+    <div class="card" style="margin-bottom:10px;">
+      <div style="font-weight:700;font-size:14px;margin-bottom:4px;">AI usage &amp; limits</div>
+      <div style="font-size:11px;color:var(--text2);line-height:1.5;margin-bottom:10px;">Per account: which AI features run and how many calls a day / month. New accounts start on the safe defaults; you keep the owner allowance. Counts reset at UK midnight and on the 1st.</div>
+      <div id="ai-limits-list" style="font-size:12px;color:var(--text2);">Loading…</div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px;" onclick="loadAiLimitsUI()">↻ Refresh usage</button>
     </div>${_mClose()}`:''}
   `;
 
@@ -3911,6 +3917,7 @@ function renderMore(){
   renderInjuryList();
   if(typeof isOwner==='function'&&isOwner()&&typeof loadAdminStats==='function')loadAdminStats();
   if(typeof isOwner==='function'&&isOwner()&&typeof loadInviteList==='function')loadInviteList();
+  if(typeof isOwner==='function'&&isOwner()&&typeof loadAiLimitsUI==='function')loadAiLimitsUI();
 }
 
 // Phase 42e: Calorie Stage Guide computed from the user's own profile + the

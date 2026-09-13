@@ -3,6 +3,7 @@ import webpush from "web-push";
 import prisma from "./db";
 import { syncOuraForAllUsers } from "./oura";
 import { syncWithingsForAllUsers } from "./withings";
+import { chargeAiBudget } from "./ai-budget";
 import { generateWeeklyReport, saveReport, hoursSinceLastReport, hoursSinceLastPlanRegen, recomputeMealPlanMacros, generateMonthlyDeepDive } from "./ai-coach";
 import { sessionTypeForDate } from "./programme-shared";
 import { runNightlyCorrelations, runDailyScanner, isFirstSundayOfMonth } from "./proactive";
@@ -110,6 +111,10 @@ export async function runWeeklyCoaching(minHoursSinceReport: number, reason: str
       const state: any = user.state || {};
       if (!state.coachingKey) continue;
       if (hoursSinceLastReport(state) < minHoursSinceReport) continue;
+      // Phase 116: per-user limits — the report can be switched off for an account;
+      // when on, it is counted but never blocked by the daily/monthly caps.
+      const wrCharge = await chargeAiBudget(user.id, "weeklyReport", { enforceCaps: false });
+      if (!wrCharge.allowed) { console.log(`[coach] Weekly report OFF for ${user.email} (limits)`); continue; }
       try {
         const report = await generateWeeklyReport(user.id);
         await saveReport(user.id, report);
@@ -152,7 +157,8 @@ export async function runWeeklyCoaching(minHoursSinceReport: number, reason: str
         const shouldRefresh =
           (cadence === "weekly-sunday" && planHrs >= 24 * 6) ||
           (cadence === "biweekly" && planHrs >= 24 * 13);
-        if (shouldRefresh) {
+        const rcCharge = shouldRefresh ? await chargeAiBudget(user.id, "recomputeMacros", { enforceCaps: false }) : null;
+        if (shouldRefresh && rcCharge && rcCharge.allowed) {
           try {
             const result = await recomputeMealPlanMacros(user.id);
             if (result.updated > 0) {
@@ -645,6 +651,8 @@ export function startCron() {
         if (!state.coachingKey) continue;
         const last = state.lastMonthlyDeepDiveAt;
         if (last && (Date.now() - new Date(last).getTime()) / 86400000 < 25) continue; // one/month
+        const ddCharge = await chargeAiBudget(user.id, "monthlyDeepDive", { enforceCaps: false });
+        if (!ddCharge.allowed) continue; // Phase 116: off by default for non-owner accounts
         try {
           const report = await generateMonthlyDeepDive(user.id);
           await saveReport(user.id, report, "monthly");

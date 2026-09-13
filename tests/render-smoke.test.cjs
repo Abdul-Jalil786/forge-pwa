@@ -2051,3 +2051,40 @@ test("Phase 115: a push session renders in the guided runner with calibration fo
   // strength standards know the new barbell lifts
   assert.ok(/bb_bench/.test(vm.runInContext("Object.keys(STRENGTH_STD).join()", ctx)), "strength standards know the new barbell lifts");
 });
+
+// ---- Phase 116: Admin → AI usage & limits ----
+test("Phase 116: AI limits card lists accounts with usage, edits a non-owner's limits, PUTs them", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  const calls = [];
+  const payload = { month: "2026-09", defaults: {}, users: [
+    { id: "u_owner", email: "jay@afjltd.co.uk", isOwner: true, hasKey: true, limits: { dailyCap: 40, monthlyCap: null, weeklyReport: true }, custom: null, today: 3, month: { total: 12, weeklyReport: 2, sessionBrief: 8 } },
+    { id: "u_sam", email: "sam@example.com", isOwner: false, hasKey: true, limits: { dailyCap: 4, monthlyCap: 60, weeklyReport: true, sessionBrief: true, sessionReflection: true, recomputeMacros: true, regeneratePlan: false, maxLbm: false, monthlyDeepDive: false, estimateFood: true, proactive: true }, custom: null, today: 0, month: { total: 1, weeklyReport: 1 } },
+  ] };
+  ctx.fetch = (url, opts) => { calls.push({ url, opts }); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(opts && opts.method === "PUT" ? { success: true } : payload) }); };
+  ctx.renderMore();
+  assert.ok(/AI usage/.test(els["page-more"]._html) && /id="ai-limits-list"/.test(els["page-more"]._html), "card rendered in Admin");
+  return ctx.loadAiLimitsUI().then(() => {
+    const html = els["ai-limits-list"]._html;
+    assert.ok(/sam@example.com/.test(html) && /OWNER/.test(html), "both accounts listed");
+    assert.ok(/3\/40 today/.test(html) && /0\/4 today · 1\/60 this month/.test(html), "usage vs caps shown");
+    assert.ok(/ail-u_sam-dailyCap/.test(html) && !/ail-u_owner-dailyCap/.test(html), "editor for the non-owner only");
+    assert.ok(/Sunday report \(Opus\)/.test(html) && /Session brief \(Haiku\)/.test(html), "feature toggles labelled");
+    // "report only" edit: uncheck the two Haiku bookends + recompute, cap 2/day
+    ctx.document.getElementById("ail-u_sam-dailyCap").value = "2";
+    ctx.document.getElementById("ail-u_sam-monthlyCap").value = "";
+    for (const k of ["weeklyReport", "estimateFood", "proactive"]) ctx.document.getElementById("ail-u_sam-" + k).checked = true;
+    for (const k of ["sessionBrief", "sessionReflection", "recomputeMacros", "regeneratePlan", "maxLbm", "monthlyDeepDive"]) ctx.document.getElementById("ail-u_sam-" + k).checked = false;
+    return ctx.saveAiLimits("u_sam");
+  }).then(() => {
+    const put = calls.find(c => c.opts && c.opts.method === "PUT");
+    assert.ok(put && /\/api\/admin\/ai-limits\/u_sam$/.test(put.url), "PUT to the user's limits route");
+    const body = JSON.parse(put.opts.body).aiLimits;
+    assert.equal(body.dailyCap, 2); assert.equal(body.monthlyCap, null);
+    assert.equal(body.weeklyReport, true); assert.equal(body.sessionBrief, false); assert.equal(body.recomputeMacros, false);
+    return ctx.resetAiLimits("u_sam");
+  }).then(() => {
+    const reset = calls.filter(c => c.opts && c.opts.method === "PUT").pop();
+    assert.equal(JSON.parse(reset.opts.body).aiLimits, null, "Defaults sends null");
+  });
+});

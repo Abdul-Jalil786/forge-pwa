@@ -57,3 +57,21 @@ test("Phase 114: no hardcoded 52yo / LVH / male 50-59 labels in the coach contex
   assert.ok(/healthConditions/.test(coach.slice(coach.indexOf("BLOOD PRESSURE") - 800, coach.indexOf("BLOOD PRESSURE"))), "BP target gated on recorded health conditions");
   assert.ok(/export function vo2Norms\(sex: any, age: any\)/.test(coach), "VO2 norms resolved by sex + age");
 });
+
+// ---- Phase 116: every AI-spending route names its feature for per-user limits ----
+test("Phase 116: AI routes are budgeted per feature; cron paths honour the toggles", () => {
+  const cs = fs.readFileSync(path.join(__dirname, "..", "server", "coach-settings.ts"), "utf8");
+  assert.ok(!/aiBudget\(\)/.test(cs), "no un-named aiBudget() left");
+  for (const [route, feat] of [["generate-now", "weeklyReport"], ["session-brief", "sessionBrief"], ["session-reflection", "sessionReflection"], ["recompute-macros", "recomputeMacros"], ["regenerate-plan", "regeneratePlan"], ["max-lbm", "maxLbm"], ["estimate-food", "estimateFood"], ["test", "keyTest"]])
+    assert.ok(new RegExp(`router\\.post\\("/${route}", requireAuth, aiBudget\\("${feat}"\\)`).test(cs), `${route} → ${feat}`);
+  for (const route of ["ask", "chat", "deep-analysis", "eating-advice", "estimate-meal-out", "extract-record"])
+    assert.ok(new RegExp(`router\\.post\\("/${route}", requireAuth, requireOwnerCheck, aiBudget\\("owner"\\)`).test(cs), `${route} stays owner-only`);
+  const cron = fs.readFileSync(path.join(__dirname, "..", "server", "cron.ts"), "utf8");
+  assert.ok(/chargeAiBudget\(user\.id, "weeklyReport", \{ enforceCaps: false \}\)/.test(cron), "Sunday report counted, never capped, but can be switched off");
+  assert.ok(/chargeAiBudget\(user\.id, "recomputeMacros", \{ enforceCaps: false \}\)/.test(cron));
+  assert.ok(/chargeAiBudget\(user\.id, "monthlyDeepDive", \{ enforceCaps: false \}\)/.test(cron));
+  const pro = fs.readFileSync(path.join(__dirname, "..", "server", "proactive.ts"), "utf8");
+  assert.ok(/chargeAiBudget\(user\.id, "proactive"\)/.test(pro));
+  const budget = fs.readFileSync(path.join(__dirname, "..", "server", "ai-budget.ts"), "utf8");
+  assert.ok(/reason: "disabled"/.test(budget) && /aiFeatureAllowed\(limits, feature\)/.test(budget), "disabled features are refused before being charged");
+});
