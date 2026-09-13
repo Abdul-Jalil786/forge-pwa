@@ -162,8 +162,11 @@ async function obStep(step){
       foodPrefs:{excluded:obData.excluded||[],notes:'',refreshCadence:'manual'},
       onboarded:true,
     };
-    STATE.weightLog=[{date:t,weight:obData.weight,source:'manual'}];
-    if(obData.bf!=null)STATE.bfLog=[{date:t,bf:obData.bf,source:'manual'}];
+    // Phase 117: the signup weigh-in is tagged 'onboarding' (not 'manual') so a
+    // Boditrax scan or a proper weigh-in on the same day replaces it instead of
+    // losing to the manual-wins rule.
+    STATE.weightLog=[{date:t,weight:obData.weight,source:'onboarding'}];
+    if(obData.bf!=null)STATE.bfLog=[{date:t,bf:obData.bf,source:'onboarding'}];
     STATE.planStartDate=t;
     STATE.trainingStartDate=t;
     STATE.supplements=STATE.supplements||[]; // never inherit another user's list

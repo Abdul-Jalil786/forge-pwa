@@ -125,9 +125,21 @@ function renderToday(){
   const showKbExtra=p.programId==='upper-lower-5d-fixed'&&!_kbToday&&typeof startKbConditioning==='function';
   const cw=getCurrentWeight();
   const bf=getCurrentBf();
+  // Phase 117: the header + progress card are phase-aware and survive a profile
+  // with no target weight (a lean-bulk signup can leave it blank) — no more
+  // "Day 1 of your cut", "undefinedkg" or "NaN%" for a non-cut user.
+  const _phase=String((p.personal&&p.personal.phase)||p.phase||(p.activePhase&&p.activePhase.phase)||'cut').toLowerCase();
+  const _phaseWord=_phase==='lean-bulk'?'bulk':_phase==='recomp'?'recomp':_phase==='maintenance'?'plan':'cut';
+  const _gaining=_phase==='lean-bulk';
+  const _hasTarget=Number(p.targetWeight)>0&&Number(p.startWeight)>0;
+  const _delta=Math.round((cw-(p.startWeight||cw))*10)/10; // + = up since start
   const lost=Math.max(0,p.startWeight-cw);
-  const toGo=Math.max(0,cw-p.targetWeight);
-  const pct=Math.max(0,Math.min(100,Math.round((lost/(p.startWeight-p.targetWeight))*100)));
+  const toGo=_hasTarget?Math.max(0,_gaining?(p.targetWeight-cw):(cw-p.targetWeight)):0;
+  const _span=_hasTarget?Math.abs(p.targetWeight-p.startWeight):0;
+  const pct=(_hasTarget&&_span>0)?Math.max(0,Math.min(100,Math.round(((_gaining?Math.max(0,_delta):lost)/_span)*100))):0;
+  const _progressLbl=_hasTarget
+    ?(_gaining?`${Math.max(0,_delta).toFixed(1)}kg gained · ${toGo.toFixed(1)}kg to go`:`${lost.toFixed(1)}kg lost · ${toGo.toFixed(1)}kg to go`)
+    :`${Math.abs(_delta).toFixed(1)}kg ${_delta>=0?'up':'down'} since start · no target set`;
   const totals=getTodayTotals();
   const _dynT=(typeof getDynamicTargetForDate==='function')?getDynamicTargetForDate(todayStr()):null;
   const calTarget=_dynT?_dynT.calories:(session?p.calsGym:p.calsRest);
@@ -205,7 +217,7 @@ function renderToday(){
           <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;">${dayName()} ${new Date().getDate()} ${new Date().toLocaleDateString('en-GB',{month:'short'})}</div>
           <div style="display:flex;align-items:flex-end;gap:8px;">
             <div class="pg-title">Day ${dayOfCut}</div>
-            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">of your cut</div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">of your ${_phaseWord}</div>
           </div>
         </div>
         ${renderNotificationBell()}
@@ -234,11 +246,11 @@ function renderToday(){
         </div>
         <div style="text-align:right;">
           <div style="font-size:10px;color:var(--text2);">TARGET</div>
-          <div style="font-family:'Archivo Black',sans-serif;font-size:18px;">${p.targetWeight}kg @ ${p.targetBF||15}%</div>
+          <div style="font-family:'Archivo Black',sans-serif;font-size:18px;">${_hasTarget?`${p.targetWeight}kg @ ${p.targetBF||15}%`:'<span style="color:var(--text3);font-size:14px;">not set</span>'}</div>
         </div>
       </div>
       <div class="pb-wrap" style="margin-bottom:0;">
-        <div class="pb-head"><span class="pb-lbl">${lost.toFixed(1)}kg lost · ${toGo.toFixed(1)}kg to go</span><span class="pb-pct">${pct}%</span></div>
+        <div class="pb-head"><span class="pb-lbl">${_progressLbl}</span><span class="pb-pct">${_hasTarget?pct+'%':''}</span></div>
         <div class="pb"><div class="pb-fill" style="width:${pct}%"></div></div>
       </div>
     </div>
@@ -3874,7 +3886,7 @@ function renderMore(){
     ${_mOpen('profileset','Profile Settings')}
     <div class="card">
       <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${p.name}</div>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">Start: ${p.startWeight}kg · Target: ${p.targetWeight}kg @ ${p.targetBF||15}% BF</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">Start: ${p.startWeight}kg · Target: ${p.targetWeight?p.targetWeight+'kg':'not set'} @ ${p.targetBF||15}% BF</div>
       <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">Protein: ${p.proteinTarget}g · Fat: ${p.fatTarget||'auto'}g · Carbs: ${p.carbsTarget||'auto'}g</div>
       ${(p.targetOverrides&&p.targetOverrides.macros)?`<div style="font-size:10px;color:var(--lime);margin-bottom:12px;">📌 Pinned targets · ${p.targetOverrides.macros.calories} kcal · ${p.targetOverrides.macros.protein}P / ${p.targetOverrides.macros.carbs}C / ${p.targetOverrides.macros.fat}F — hold through weigh-ins</div>`:p.updatedBy==='cowork'?`<div style="font-size:10px;color:var(--lime);margin-bottom:12px;">Auto-managed by Cowork · last update ${p.updatedAt?new Date(p.updatedAt).toLocaleDateString('en-GB'):'—'}</div>`:`<div style="font-size:10px;color:var(--text3);margin-bottom:12px;">Computed from your profile · recalculates on each weigh-in</div>`}
       ${p.weighMethod==='boditrax'?`<div style="font-size:10px;color:var(--text3);margin-bottom:8px;">Weigh-in: Boditrax scan · Fridays</div>`:''}
