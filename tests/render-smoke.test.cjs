@@ -2088,3 +2088,25 @@ test("Phase 116: AI limits card lists accounts with usage, edits a non-owner's l
     assert.equal(JSON.parse(reset.opts.body).aiLimits, null, "Defaults sends null");
   });
 });
+
+// ---- Phase 117: Today survives a lean-bulk profile with no target weight ----
+test("Phase 117: Today header + progress card are phase-aware and never print undefined/NaN without a target", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  vm.runInContext("STATE.profile.personal.phase='lean-bulk'; STATE.profile.targetWeight=undefined; STATE.profile.targetBF=undefined; STATE.profile.startWeight=75.2; STATE.weightLog=[{date:'2026-09-13',weight:75.6,source:'boditrax'}]; STATE.bfLog=[];", ctx);
+  ctx.renderToday();
+  const html = els["page-today"]._html;
+  assert.ok(/of your bulk/.test(html), "header says bulk, not cut");
+  assert.ok(!/undefined/.test(html) && !/NaN/.test(html), "no undefined / NaN anywhere on Today");
+  assert.ok(/0\.4kg up since start · no target set/.test(html), "progress line reads the change since start");
+  // with a target on a bulk, the bar counts UP toward it
+  vm.runInContext("STATE.profile.targetWeight=80;", ctx);
+  ctx.renderToday();
+  assert.ok(/0\.4kg gained · 4\.4kg to go/.test(els["page-today"]._html), "bulk framing with a target");
+  // cut profile keeps the original wording
+  vm.runInContext("STATE.profile.personal.phase='cut'; STATE.profile.startWeight=113.5; STATE.profile.targetWeight=93; STATE.weightLog=[{date:'2026-09-13',weight:105,source:'manual'}];", ctx);
+  ctx.renderToday();
+  assert.ok(/of your cut/.test(els["page-today"]._html) && /8\.5kg lost · 12\.0kg to go/.test(els["page-today"]._html));
+  ctx.renderMore();
+  assert.ok(!/undefinedkg/.test(els["page-more"]._html), "profile settings never shows undefinedkg");
+});
