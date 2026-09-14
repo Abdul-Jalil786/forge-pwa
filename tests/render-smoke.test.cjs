@@ -62,7 +62,7 @@ function makeContext() {
   return { ctx, els };
 }
 
-const FILES = ["targets.js", "programme-shared.js", "proactive-core.js", "kb-emom.js", "kb-density.js", "data.js", "workout.js", "pages.js", "app.js"];
+const FILES = ["targets.js", "starter-plan.js", "programme-shared.js", "proactive-core.js", "kb-emom.js", "kb-density.js", "data.js", "workout.js", "pages.js", "app.js"];
 function bootApp() {
   const { ctx, els } = makeContext();
   for (const f of FILES) {
@@ -2016,12 +2016,18 @@ test("Phase 115: More programme picker switches to hyper-5d-bulk with start date
 test("Phase 115: wizard programme picker — hand pick survives other answers; step 5 writes programme defaults", () => {
   const { ctx } = bootApp();
   seed(ctx);
-  vm.runInContext("obData={name:'Sam',age:21,sex:'male',heightCm:173,weight:75.2,bf:null,activityLevel:'moderate',phase:'lean-bulk',weighMethod:'boditrax'}; STATE.reminders=[];", ctx);
+  vm.runInContext("obData={name:'Sam',age:21,sex:'male',heightCm:173,weight:75.2,bf:null,activityLevel:'moderate',phase:'lean-bulk',weighMethod:'boditrax'}; STATE.reminders=[]; STATE.mealPlan=null;", ctx);
   for (const g of ["experience", "daysPerWeek", "equipment", "weighMethod"]) ctx.document.getElementById("ob-grp-" + g).children = [];
   ctx.obSetTrain("experience", "some"); ctx.obSetTrain("daysPerWeek", 4); ctx.obSetTrain("equipment", "gym");
   const picker = (ctx.document.getElementById("ob-prog-preview") || {})._html || "";
   assert.ok(/ob-prog-select/.test(picker) && /hyper-5d-bulk/.test(picker), "wizard offers the 21+ programmes to gym users");
-  assert.equal(vm.runInContext("obData.programId", ctx), "upper-lower-4d", "auto-pick is still the default");
+  assert.equal(vm.runInContext("obData.programId", ctx), "hyper-5d-bulk", "Phase 118: lean-bulk + gym + 4+ days auto-picks the 5-day bulk (not the owner's split)");
+  assert.ok(!/upper-lower-5d-fixed/.test(picker), "Phase 118: the owner's fixed-weekday split is not offered in the wizard");
+  vm.runInContext("obData.programChosen=false; obSelectGoal('maintenance')", ctx);
+  assert.equal(vm.runInContext("obData.programId", ctx), "upper-lower-4d", "maintenance keeps the 4-day upper/lower");
+  vm.runInContext("obSelectGoal('cut')", ctx);
+  assert.equal(vm.runInContext("obData.programId", ctx), "hyper-5d-cut", "changing the goal re-picks (cut → 5-day cut)");
+  vm.runInContext("obSelectGoal('lean-bulk')", ctx);
   ctx.obChooseProgram("hyper-5d-bulk");
   ctx.obSetTrain("experience", "regular");
   assert.equal(vm.runInContext("obData.programId", ctx), "hyper-5d-bulk", "hand pick kept when another answer changes");
@@ -2034,6 +2040,40 @@ test("Phase 115: wizard programme picker — hand pick survives other answers; s
     assert.equal(p.programmeStartDate, ctx.todayStr());
     assert.equal(p.deloadConfig.everyWeeks, 6);
     assert.equal(p.sessionTimes["2"], "16:00", "Tuesday gets a session time (default was off)");
+    // Phase 118: a new account starts with a starter meal plan scaled to its targets
+    const mp = JSON.parse(vm.runInContext("JSON.stringify(STATE.mealPlan)", ctx));
+    assert.ok(mp && mp.starter && mp.meals.length >= 5, "wizard writes a starter meal plan");
+    assert.ok(/Lean bulk starter plan/.test(mp.name), mp.name);
+    assert.ok(mp.meals.every(m => m.ingredients.length && m.time && m.cals > 0), "every meal has timed, priced ingredients");
+    assert.ok(mp.meals.reduce((a, m) => a + m.protein, 0) >= 140, "protein scaled to the bulk target");
+  });
+});
+
+test("Phase 118: Food page — no plan shows the starter-plan button (AI button owner-only); eating window card follows the profile; createStarterPlan builds + saves", () => {
+  const { ctx, els } = bootApp();
+  seed(ctx);
+  ctx.localStorage.setItem("forge_email", "steve@example.com"); ctx.window._forgeUserEmail = "steve@example.com";
+  vm.runInContext("STATE.mealPlan=null; STATE.profile.email='steve@example.com'; STATE.profile.personal={age:21,heightCm:178,sex:'male',activityLevel:'moderate',phase:'lean-bulk'}; STATE.profile.eatingWindow={enabled:false,start:12,end:20}; STATE.profile.foodPrefs={excluded:['fish'],notes:'',refreshCadence:'manual'};", ctx);
+  vm.runInContext("renderFood()", ctx);
+  let html = els["page-food"]._html;
+  assert.ok(/createStarterPlan\(\)/.test(html), "starter-plan button offered when there is no plan");
+  assert.ok(!/regeneratePlanNow\(\)/.test(html), "AI generate button hidden for a non-owner (needs their own key)");
+  assert.ok(!/8-HOUR WINDOW · LOW GI · RECOMP/.test(html) && !/Eating Window/.test(html), "no eating-window card when the window is off");
+  vm.runInContext("STATE.profile.eatingWindow={enabled:true,start:12,end:20}", ctx);
+  vm.runInContext("renderFood()", ctx);
+  html = els["page-food"]._html;
+  assert.ok(/8-HOUR WINDOW · LEAN BULK/.test(html) && /12:00 PM — 8:00 PM/.test(html) && /16 hours fasting/.test(html), "window card reads the profile's window + phase");
+  assert.ok(!/LOW GI · RECOMP/.test(html), "hardcoded label gone");
+  const calls = [];
+  ctx.fetch = (url, opts) => { calls.push({ url, opts }); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ success: true }) }); };
+  ctx.localStorage.setItem("forge_token", "t");
+  return ctx.createStarterPlan().then(() => {
+    const mp = JSON.parse(vm.runInContext("JSON.stringify(STATE.mealPlan)", ctx));
+    assert.ok(mp && mp.starter && mp.meals.length >= 5, "starter plan built for an existing account");
+    assert.ok(!JSON.stringify(mp).toLowerCase().includes("salmon"), "excluded 'fish' removed (salmon swapped out)");
+    const put = calls.find(c => /\/api\/state\/meal-plan$/.test(c.url) && c.opts && c.opts.method === "PUT");
+    assert.ok(put && JSON.parse(put.opts.body).mealPlan.starter, "saved through the validated meal-plan endpoint");
+    assert.ok(/Today's Plan/.test(els["page-food"]._html), "Food page re-rendered with the plan");
   });
 });
 
