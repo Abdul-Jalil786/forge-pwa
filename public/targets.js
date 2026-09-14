@@ -10,9 +10,26 @@
 const PHASE_DEFAULTS = {
   'cut':         { deficitPct: 0.20,  proteinPerKg: 2.2 },
   'recomp':      { deficitPct: 0.10,  proteinPerKg: 2.0 },
-  'lean-bulk':   { deficitPct: -0.10, proteinPerKg: 1.8 },
+  // Phase 119: lean-bulk surplus is at least MIN_BULK_SURPLUS kcal (10% of a
+  // modest TDEE was only ~220 kcal — too little to actually gain); protein 2.0 g/kg.
+  'lean-bulk':   { deficitPct: -0.10, proteinPerKg: 2.0, minSurplus: 300 },
   'maintenance': { deficitPct: 0,     proteinPerKg: 1.6 },
 };
+
+// Phase 119: the wizard asks how active you are OUTSIDE the gym, so the lifestyle
+// factor must not be expected to include training — each weekly training session
+// adds TRAINING_DAY_FACTOR to the multiplier (5 sessions on a desk job ≈ 1.45,
+// i.e. between the textbook "light" and "moderate" bands). Sessions per week come
+// from the programme (the 4-day alternating cycle averages 3.5).
+const TRAINING_DAY_FACTOR = 0.05;
+const PROGRAM_DAYS = {
+  'full-body-3d': 3, 'home-3d': 3, 'upper-lower-4d': 3.5,
+  'upper-lower-5d-fixed': 5, 'hyper-5d-bulk': 5, 'hyper-5d-cut': 5,
+};
+function activityFactorFor(activityLevel, trainingDays) {
+  const base = ACTIVITY_FACTORS[activityLevel] || 1.55;
+  return Math.min(1.9, base + TRAINING_DAY_FACTOR * (+trainingDays || 0));
+}
 
 const ACTIVITY_FACTORS = {
   'sedentary': 1.2,
@@ -29,7 +46,7 @@ function computeBMR(p) {
 }
 
 // params: { weight, leanMass?, sessionType:'rest'|'upper'|'lower',
-//           age, heightCm, sex, phase?, activityLevel?, overrides? }
+//           age, heightCm, sex, phase?, activityLevel?, trainingDays?, overrides? }
 // Returns null when the profile is too incomplete to compute safely —
 // callers fall back to legacy profile fields and prompt for the profile.
 function computeTargets(params) {
@@ -41,7 +58,7 @@ function computeTargets(params) {
   const pd = PHASE_DEFAULTS[phase] || PHASE_DEFAULTS['maintenance'];
 
   const bmr = computeBMR({ weight, heightCm, age, sex });
-  const af = o.activityFactor || ACTIVITY_FACTORS[params.activityLevel] || 1.55;
+  const af = o.activityFactor || activityFactorFor(params.activityLevel, params.trainingDays);
   const tdee = bmr * af;
 
   // Phase 114: full-macro override. A user-pinned daily plan (set via More →
@@ -65,6 +82,7 @@ function computeTargets(params) {
 
   // Minors never get a deficit, whatever the phase says.
   let deficit = (o.deficitFixed != null) ? o.deficitFixed : tdee * pd.deficitPct;
+  if (o.deficitFixed == null && pd.minSurplus && deficit > -pd.minSurplus) deficit = -pd.minSurplus;
   if (age < 18 && deficit > 0) deficit = 0;
 
   const sessionBonus = sessionType === 'lower' ? (o.sessionBonusLower != null ? o.sessionBonusLower : 150)
@@ -324,5 +342,6 @@ if (typeof module !== 'undefined' && module.exports) {
     computeBMR, computeTargets, computeWaterTarget, PHASE_DEFAULTS, ACTIVITY_FACTORS,
     BF_BANDS, BMI_BANDS, LBMI_BANDS, bandFor, recommendGoal, PHASE_LABELS,
     PROGRAM_LABELS, pickProgramId, programOptionsFor,
+    PROGRAM_DAYS, TRAINING_DAY_FACTOR, activityFactorFor,
   };
 }

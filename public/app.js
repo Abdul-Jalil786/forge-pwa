@@ -93,10 +93,17 @@ function obToggleWindow(){
   b.style.color=obData.eatingWindowEnabled?'var(--lime)':'var(--text2)';
 }
 
+// Phase 119: sessions/week for the activity multiplier — the chosen programme's
+// day count, else the days-a-week answer.
+function _obTrainingDays(){
+  const pd=(typeof PROGRAM_DAYS!=='undefined')?PROGRAM_DAYS[obData.programId]:null;
+  return pd!=null?pd:(+obData.daysPerWeek||0);
+}
 function renderObConfirm(){
   const area=document.getElementById('ob-confirm-area');
   if(!area)return;
   const base={age:obData.age,heightCm:obData.heightCm,sex:obData.sex,phase:obData.phase,activityLevel:obData.activityLevel,
+    trainingDays:_obTrainingDays(),
     weight:obData.weight,leanMass:obData.bf!=null?obData.weight*(1-obData.bf/100):null};
   const rest=computeTargets({...base,sessionType:'rest'});
   const train=computeTargets({...base,sessionType:'upper'});
@@ -155,7 +162,7 @@ async function obStep(step){
       startBF:obData.bf!=null?obData.bf:undefined,
       startLBM:obData.bf!=null?Math.round(obData.weight*(1-obData.bf/100)*100)/100:undefined,
       targetWeight:obData.targetWeight||undefined,
-      personal:{age:obData.age,heightCm:obData.heightCm,sex:obData.sex,activityLevel:obData.activityLevel,phase:obData.phase},
+      personal:{age:obData.age,heightCm:obData.heightCm,sex:obData.sex,activityLevel:obData.activityLevel,phase:obData.phase,trainingDays:+obData.daysPerWeek||undefined},
       programId:obData.programId,
       // Phase 115: fixed-weekday programmes anchor to today; the 21+ programmes
       // also get their deload cadence + Mon–Fri session times.
@@ -179,7 +186,7 @@ async function obStep(step){
     // from ordinary foods and scaled to the computed training-day targets (no AI,
     // no key). Before this a new user saw no Food plan at all.
     if(!STATE.mealPlan&&typeof buildStarterMealPlan==='function'){
-      const sp=_starterPlanFromTargets({age:obData.age,heightCm:obData.heightCm,sex:obData.sex,phase:obData.phase,activityLevel:obData.activityLevel,weight:obData.weight,leanMass:obData.bf!=null?obData.weight*(1-obData.bf/100):null});
+      const sp=_starterPlanFromTargets({age:obData.age,heightCm:obData.heightCm,sex:obData.sex,phase:obData.phase,activityLevel:obData.activityLevel,trainingDays:_obTrainingDays(),weight:obData.weight,leanMass:obData.bf!=null?obData.weight*(1-obData.bf/100):null});
       if(sp)STATE.mealPlan=sp;
     }
     if(obData.weighMethod==='boditrax'){
@@ -1854,7 +1861,10 @@ async function createStarterPlan(){
   const bf=(typeof getCurrentBf==='function')?getCurrentBf():null;
   const phase=per.phase||p.phase||(p.activePhase&&p.activePhase.phase)||'maintenance';
   if(!per.age||!per.heightCm||!per.sex||!w){showToast('Fill in Personal Profile (age, height, sex) first');return;}
-  const sp=_starterPlanFromTargets({age:per.age,heightCm:per.heightCm,sex:per.sex,phase,activityLevel:per.activityLevel||'moderate',weight:w,leanMass:bf?w*(1-bf/100):null,overrides:p.targetOverrides});
+  // Phase 119: refresh the stored targets with the current engine first, so the
+  // Food-page numbers and the plan agree.
+  if(typeof applyDynamicTargets==='function')applyDynamicTargets();
+  const sp=_starterPlanFromTargets({age:per.age,heightCm:per.heightCm,sex:per.sex,phase,activityLevel:per.activityLevel||'moderate',trainingDays:(typeof getTrainingDaysPerWeek==='function')?getTrainingDaysPerWeek():0,weight:w,leanMass:bf?w*(1-bf/100):null,overrides:p.targetOverrides});
   if(!sp||!sp.meals.length){showToast('Could not build a plan from your profile');return;}
   const prev=STATE.mealPlan;
   STATE.mealPlan=sp;

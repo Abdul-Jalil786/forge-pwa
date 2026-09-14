@@ -556,7 +556,7 @@ function _formulaTDEE(){
     const weight=(typeof getCurrentWeight==='function')?getCurrentWeight():(p.startWeight||0);
     if(!weight||!pe.age||!pe.heightCm||!pe.sex)return null;
     const phase=pe.phase||p.phase||(p.activePhase&&p.activePhase.phase)||'maintenance';
-    const t=(typeof computeTargets==='function')?computeTargets({weight,age:pe.age,heightCm:pe.heightCm,sex:pe.sex,activityLevel:pe.activityLevel,phase}):null;
+    const t=(typeof computeTargets==='function')?computeTargets({weight,age:pe.age,heightCm:pe.heightCm,sex:pe.sex,activityLevel:pe.activityLevel,phase,trainingDays:(typeof getTrainingDaysPerWeek==='function')?getTrainingDaysPerWeek():0,overrides:p.targetOverrides}):null;
     return t?t.tdee:null;
   }catch(e){ return null; }
 }

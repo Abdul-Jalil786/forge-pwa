@@ -2186,8 +2186,18 @@ function calculateDynamicTargets(weight,leanMass,sessionType){
     weight,leanMass,sessionType,
     age:personal.age,heightCm:personal.heightCm,sex:personal.sex,
     phase:personal.phase,activityLevel:personal.activityLevel,
+    trainingDays:getTrainingDaysPerWeek(),
     overrides:p.targetOverrides,
   });
+}
+// Phase 119: weekly training sessions for the activity multiplier — from the
+// programme (PROGRAM_DAYS), else the wizard's days-a-week answer, else 0.
+function getTrainingDaysPerWeek(){
+  const p=STATE.profile||{};
+  const pd=(typeof PROGRAM_DAYS!=='undefined')?PROGRAM_DAYS[p.programId]:null;
+  if(pd!=null)return pd;
+  const per=p.personal||{};
+  return +per.trainingDays||0;
 }
 // Recompute targets for all three session types + persist to profile
 function applyDynamicTargets(){
