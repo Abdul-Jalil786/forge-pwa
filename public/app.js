@@ -47,6 +47,11 @@ function renderObGoal(){
 
 function obSelectGoal(phase){
   obData.phase=phase;
+  // Phase 118: the auto-picked programme depends on the goal — re-pick if the
+  // training answers were already given and no programme was hand-picked.
+  if(!obData.programChosen&&obData.experience&&obData.daysPerWeek&&obData.equipment){
+    obData.programId=pickProgramId(obData.experience,obData.daysPerWeek,obData.equipment,{phase:obData.phase,age:obData.age});
+  }
   renderObGoal();
 }
 
@@ -63,7 +68,7 @@ function obSetTrain(key,val){
     // Phase 115: the auto-pick stays the default, but a hand-picked programme
     // (obChooseProgram) is kept when the other answers change.
     const opts=(typeof programOptionsFor==='function')?programOptionsFor(obData.equipment):Object.keys(PROGRAM_LABELS);
-    if(!obData.programChosen||!opts.includes(obData.programId))obData.programId=pickProgramId(obData.experience,obData.daysPerWeek,obData.equipment);
+    if(!obData.programChosen||!opts.includes(obData.programId))obData.programId=pickProgramId(obData.experience,obData.daysPerWeek,obData.equipment,{phase:obData.phase,age:obData.age});
     _renderObProgramPicker(opts);
   }
 }
@@ -170,6 +175,13 @@ async function obStep(step){
     STATE.planStartDate=t;
     STATE.trainingStartDate=t;
     STATE.supplements=STATE.supplements||[]; // never inherit another user's list
+    // Phase 118: every new account starts with a real, editable meal plan built
+    // from ordinary foods and scaled to the computed training-day targets (no AI,
+    // no key). Before this a new user saw no Food plan at all.
+    if(!STATE.mealPlan&&typeof buildStarterMealPlan==='function'){
+      const sp=_starterPlanFromTargets({age:obData.age,heightCm:obData.heightCm,sex:obData.sex,phase:obData.phase,activityLevel:obData.activityLevel,weight:obData.weight,leanMass:obData.bf!=null?obData.weight*(1-obData.bf/100):null});
+      if(sp)STATE.mealPlan=sp;
+    }
     if(obData.weighMethod==='boditrax'){
       // Phase 114: no home scale + no wearable at signup → two push reminders in the
       // cron's reminder shape (time / daysOfWeek / title / body). Push only fires
@@ -1818,6 +1830,38 @@ function openIngredientEdit(ingIdx){
   document.getElementById('ie-edited-note').style.display = isNew ? 'none' : 'block';
   document.getElementById('ie-delete-btn').style.display = isNew ? 'none' : 'block';
   openModal('modal-ing-edit');
+}
+
+// Phase 118: build the starter plan from a computeTargets() base (training day).
+function _starterPlanFromTargets(base){
+  if(typeof buildStarterMealPlan!=='function'||typeof computeTargets!=='function')return null;
+  const t=computeTargets({...base,sessionType:'upper'});
+  if(!t)return null;
+  const p=STATE.profile||{};
+  const ew=(typeof getEatingWindow==='function')?getEatingWindow():null;
+  return buildStarterMealPlan({calories:t.calories,protein:t.protein,carbs:t.carbs,fat:t.fat},{
+    phase:base.phase,excluded:(p.foodPrefs&&p.foodPrefs.excluded)||[],
+    eatingWindow:(p.eatingWindow&&ew)?ew:null,
+  });
+}
+// Phase 118: "Create a starter plan" on the Food page — for accounts that signed
+// up before starter plans existed (or cleared theirs). Uses the profile's own
+// numbers + food exclusions; saved through the validated meal-plan endpoint.
+async function createStarterPlan(){
+  const p=STATE.profile||{};const per=p.personal||{};
+  if(STATE.mealPlan&&STATE.mealPlan.meals&&STATE.mealPlan.meals.length&&!confirm('Replace your current meal plan with a starter plan?'))return;
+  const w=(typeof getCurrentWeight==='function')?getCurrentWeight():p.startWeight;
+  const bf=(typeof getCurrentBf==='function')?getCurrentBf():null;
+  const phase=per.phase||p.phase||(p.activePhase&&p.activePhase.phase)||'maintenance';
+  if(!per.age||!per.heightCm||!per.sex||!w){showToast('Fill in Personal Profile (age, height, sex) first');return;}
+  const sp=_starterPlanFromTargets({age:per.age,heightCm:per.heightCm,sex:per.sex,phase,activityLevel:per.activityLevel||'moderate',weight:w,leanMass:bf?w*(1-bf/100):null,overrides:p.targetOverrides});
+  if(!sp||!sp.meals.length){showToast('Could not build a plan from your profile');return;}
+  const prev=STATE.mealPlan;
+  STATE.mealPlan=sp;
+  try{await _saveMealPlanToServer();}
+  catch(e){STATE.mealPlan=prev;showToast(e.message||'Save failed');return;}
+  showToast('Starter plan created — tap a meal to edit it');
+  if(typeof renderFood==='function')renderFood();
 }
 
 async function _saveMealPlanToServer(){

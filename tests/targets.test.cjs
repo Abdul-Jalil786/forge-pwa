@@ -1,7 +1,7 @@
 // Phase 42a: nutrition targets engine tests — run with `npm test` (node --test, no deps).
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { computeTargets, computeWaterTarget } = require("../public/targets.js");
+const { computeTargets, computeWaterTarget, pickProgramId, programOptionsFor } = require("../public/targets.js");
 
 // Jay's seeded profile.targetOverrides — must match seedJayTargetOverridesV1 in server/index.ts
 const JAY_OVERRIDES = {
@@ -158,4 +158,21 @@ test("Phase 114: a pinned macros override is returned verbatim for every session
   assert.equal(computed.overridden, undefined);
   assert.notEqual(computed.calories, 3100);
   assert.equal(computed.protein, 135, "lean-bulk default protein untouched");
+});
+
+// Phase 118: the wizard's programme auto-pick is phase-aware and never hands a new
+// user the owner's fixed-weekday split.
+test("Phase 118: pickProgramId is phase-aware; programOptionsFor omits the owner split", () => {
+  assert.equal(pickProgramId("some", 4, "gym", { phase: "lean-bulk", age: 21 }), "hyper-5d-bulk");
+  assert.equal(pickProgramId("regular", 5, "gym", { phase: "recomp", age: 30 }), "hyper-5d-bulk");
+  assert.equal(pickProgramId("some", 4, "gym", { phase: "cut", age: 45 }), "hyper-5d-cut");
+  assert.equal(pickProgramId("some", 4, "gym", { phase: "maintenance", age: 21 }), "upper-lower-4d");
+  assert.equal(pickProgramId("some", 4, "gym", { phase: "lean-bulk", age: 16 }), "upper-lower-4d", "minors never get the 5-day barbell programmes");
+  assert.equal(pickProgramId("new", 4, "gym", { phase: "lean-bulk", age: 21 }), "full-body-3d", "beginners still start on full body");
+  assert.equal(pickProgramId("some", 3, "gym", { phase: "lean-bulk", age: 21 }), "full-body-3d");
+  assert.equal(pickProgramId("regular", 5, "home", { phase: "lean-bulk", age: 21 }), "home-3d");
+  assert.equal(pickProgramId("some", 4, "gym"), "upper-lower-4d", "legacy 3-arg call unchanged");
+  assert.ok(!programOptionsFor("gym").includes("upper-lower-5d-fixed"), "owner split not in the wizard list");
+  assert.ok(programOptionsFor("gym").includes("hyper-5d-bulk") && programOptionsFor("gym").includes("hyper-5d-cut"));
+  assert.deepEqual(programOptionsFor("home"), ["home-3d"]);
 });

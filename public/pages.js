@@ -770,7 +770,7 @@ function renderFood(){
     ${isToday?renderMounjaroBanner():''}
     ${isToday?renderTrainingNutritionBanners():''}
     ${isToday?renderProteinDistribution():''}
-    ${isToday && STATE.mealPlan?renderTodaysPlan():''}
+    ${isToday?renderTodaysPlan():''}
 
     <div class="card hi">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px;">
@@ -848,13 +848,7 @@ function renderFood(){
         </div>`).join('')}
     </div>`:''}
 
-    ${isToday?`
-    <div class="sec-label">Eating Window</div>
-    <div class="card">
-      <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">8-HOUR WINDOW · LOW GI · RECOMP</div>
-      <div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:var(--lime);">12:00 PM — 8:00 PM</div>
-      <div style="font-size:12px;color:var(--text2);margin-top:4px;">16 hours fasting</div>
-    </div>`:''}
+    ${isToday?_eatingWindowCardHTML():''}
   `;
 
   renderFoodTemplatesModal();
@@ -886,7 +880,9 @@ function renderTodaysPlan(){
     return `<div class="sec-label">Today's Plan</div>
       <div class="card" style="margin-bottom:10px;text-align:center;color:var(--text3);font-size:13px;padding:20px;">
         No meal plan yet.
-        <button class="btn btn-lime btn-sm" style="display:block;width:100%;margin-top:12px;" onclick="regeneratePlanNow()">Generate plan with AI Coach</button>
+        <button class="btn btn-lime btn-sm" style="display:block;width:100%;margin-top:12px;" onclick="createStarterPlan()">Create a starter plan from my targets</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5;">Ordinary foods scaled to your calories &amp; macros — edit any item afterwards.</div>
+        ${isOwner()?`<button class="btn btn-sm" style="display:block;width:100%;margin-top:10px;" onclick="regeneratePlanNow()">Generate plan with AI Coach</button>`:''}
       </div>`;
   }
   const todayFoods=getFoods();
@@ -3969,6 +3965,24 @@ function _fmtHM(mins){
   return h>0?`${h}h ${m}m`:`${m}m`;
 }
 
+// Phase 118: the Eating Window card reads the profile's own window (hidden when
+// the user has no window) — it used to be a hardcoded "8-HOUR · LOW GI · RECOMP".
+function _eatingWindowCardHTML(){
+  if(typeof getEatingWindow!=='function')return '';
+  const ew=getEatingWindow();
+  if(!ew||!ew.enabled||!(ew.end>ew.start))return '';
+  const hrs=ew.end-ew.start;
+  const fmt=h=>{const hh=h%12||12;return hh+':00 '+(h<12||h===24?'AM':'PM');};
+  const p=STATE.profile||{};const per=p.personal||{};
+  const phase=per.phase||p.phase||(p.activePhase&&p.activePhase.phase)||'';
+  const word={'cut':'CUT','recomp':'RECOMP','lean-bulk':'LEAN BULK','maintenance':'MAINTENANCE'}[phase]||'';
+  return `<div class="sec-label">Eating Window</div>
+    <div class="card">
+      <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${hrs}-HOUR WINDOW${word?' · '+word:''}</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:24px;color:var(--lime);">${fmt(ew.start)} — ${fmt(ew.end)}</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px;">${24-hrs} hours fasting</div>
+    </div>`;
+}
 function renderFastingCard(){
   if(typeof getWindowCountdown!=='function')return '';
   const c=getWindowCountdown();

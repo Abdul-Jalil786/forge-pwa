@@ -293,16 +293,29 @@ const PROGRAM_LABELS = {
 };
 // Phase 115: which programmes a wizard user may pick by hand (gym users get the
 // full list; home users only the home template). The auto-pick stays the default.
+// Phase 118: the owner's fixed-weekday Upper/Lower split is NOT offered in the
+// wizard any more — a new user picking "5 days" landed on it and got the owner's
+// exact programme. It stays switchable from More → Training Schedule.
 function programOptionsFor(equipment) {
   if (equipment === 'home') return ['home-3d'];
-  return ['full-body-3d', 'upper-lower-4d', 'upper-lower-5d-fixed', 'hyper-5d-bulk', 'hyper-5d-cut'];
+  return ['full-body-3d', 'upper-lower-4d', 'hyper-5d-bulk', 'hyper-5d-cut'];
 }
 
 // experience: 'new'|'some'|'regular' · daysPerWeek: 2..5 · equipment: 'gym'|'home'
 // Beginners get full-body regardless of available days — they progress faster on it.
-function pickProgramId(experience, daysPerWeek, equipment) {
+// Phase 118: phase-aware. An adult gym user with 4+ days who is building muscle
+// (lean-bulk / recomp) gets the 5-day hypertrophy bulk programme; a cut gets its
+// cut variant (same lifts, trimmed volume + conditioning); maintenance keeps the
+// 4-day Upper/Lower. Minors never get the 5-day barbell programmes.
+function pickProgramId(experience, daysPerWeek, equipment, opts) {
+  opts = opts || {};
   if (equipment === 'home') return 'home-3d';
-  if ((daysPerWeek || 3) >= 4 && experience !== 'new') return 'upper-lower-4d';
+  if ((daysPerWeek || 3) >= 4 && experience !== 'new') {
+    const adult = opts.age == null || opts.age >= 18;
+    if (adult && (opts.phase === 'lean-bulk' || opts.phase === 'recomp')) return 'hyper-5d-bulk';
+    if (adult && opts.phase === 'cut') return 'hyper-5d-cut';
+    return 'upper-lower-4d';
+  }
   return 'full-body-3d';
 }
 
