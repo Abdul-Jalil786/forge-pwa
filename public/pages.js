@@ -892,7 +892,7 @@ function renderTodaysPlan(){
   return `
     <div class="sec-label">Today's Plan${plan.name?' — '+plan.name:''}</div>
     <div class="card" style="margin-bottom:10px;border-color:var(--lime);background:linear-gradient(135deg,rgba(200,255,0,.04),transparent);">
-      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${plan.meals.length} meals · ${totalCals} kcal · ${totalP}g protein${(()=>{const ap=(STATE.profile||{}).activePhase;if(!ap||!ap.calorieTarget)return '';const d=totalCals-ap.calorieTarget;const big=Math.abs(d)>100;return ` · <span style="color:${big?'var(--orange)':'var(--text3)'};">${d>=0?'+':''}${d} vs ${ap.phase} target ${ap.calorieTarget}${big?' ⚠️':''}</span>`;})()} · tap a meal for details</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${plan.meals.length} meals · ${totalCals} kcal · ${totalP}g protein${(()=>{const ap=(STATE.profile||{}).activePhase;if(!ap||!ap.calorieTarget)return '';const d=totalCals-ap.calorieTarget;const big=Math.abs(d)>100;return ` · <span style="color:${big?'var(--orange)':'var(--text3)'};">${d>=0?'+':''}${d} vs ${ap.phase} target ${ap.calorieTarget}${big?' ⚠️':''}</span>`;})()} · tap a meal for details${plan.starter?` · <a href="#" onclick="createStarterPlan();return false;" style="color:var(--lime);text-decoration:none;white-space:nowrap;">↻ Rebuild from my targets</a>`:''}</div>
       ${plan.meals.map(m=>{
         const ings=getMealIngredients(m);
         const supps=getMealSupplements(m);

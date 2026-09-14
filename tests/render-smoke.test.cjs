@@ -2074,6 +2074,7 @@ test("Phase 118: Food page — no plan shows the starter-plan button (AI button 
     const put = calls.find(c => /\/api\/state\/meal-plan$/.test(c.url) && c.opts && c.opts.method === "PUT");
     assert.ok(put && JSON.parse(put.opts.body).mealPlan.starter, "saved through the validated meal-plan endpoint");
     assert.ok(/Today's Plan/.test(els["page-food"]._html), "Food page re-rendered with the plan");
+    assert.ok(/Rebuild from my targets/.test(els["page-food"]._html), "starter plans offer a one-tap rebuild (after pinning targets)");
   });
 });
 
