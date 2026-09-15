@@ -1116,10 +1116,10 @@ test("rest panel: one accessory set per rest, locks, then resumes/advances next 
   assert.doesNotThrow(() => vm.runInContext(`renderWmRest()`, ctx), "rest screen renders the accessory panel");
   let html = els['wmContent']._html;
   // Only the FIRST rehab accessory (Band External Rotation, reh_1) is the active row.
-  assert.ok(/wmRestLogSet\('reh_1'\)/.test(html), "first accessory (reh_1) is the active one");
-  assert.ok(!/wmRestLogSet\('reh_3'\)/.test(html), "the next accessory (reh_3) is NOT shown as an active row yet");
+  assert.ok(/wmRestLogSet\('reh_1'/.test(html), "first accessory (reh_1) is the active one");
+  assert.ok(!/wmRestLogSet\('reh_3'/.test(html), "the next accessory (reh_3) is NOT shown as an active row yet");
   assert.ok(/Then: Banded Shoulder Flexion Raise/.test(html), "a 'Then:' hint names what's queued next");
-  assert.ok(!/wmRestLogSet\('u4'\)/.test(html), "the compound being rested is not offered as its own accessory");
+  assert.ok(!/wmRestLogSet\('u4'/.test(html), "the compound being rested is not offered as its own accessory");
   // Log ONE set → the panel LOCKS for this rest (no second Log button).
   vm.runInContext(`document.getElementById('wm-acc-reps-reh_1').value='14'; wmRestLogSet('reh_1');`, ctx);
   const locked = vm.runInContext(`_wmAccessoryRowsHTML('u4')`, ctx);
@@ -1129,13 +1129,13 @@ test("rest panel: one accessory set per rest, locks, then resumes/advances next 
   // ── Rest gap 2 (new restStarted) → unlocked, SAME accessory back for set 2 ──
   vm.runInContext(`wm.restStarted=2; renderWmRest();`, ctx);
   html = els['wmContent']._html;
-  assert.ok(/wmRestLogSet\('reh_1'\)/.test(html), "reh_1 comes back for its next set on the next rest");
+  assert.ok(/wmRestLogSet\('reh_1'/.test(html), "reh_1 comes back for its next set on the next rest");
   vm.runInContext(`document.getElementById('wm-acc-reps-reh_1').value='14'; wmRestLogSet('reh_1');`, ctx);
   assert.equal(vm.runInContext(`_wmExComplete('reh_1')`, ctx), true, "reh_1 done after its 2 sets across 2 rests");
   // ── Rest gap 3 → reh_1 finished, so reh_3 is now the active accessory ──
   vm.runInContext(`wm.restStarted=3; renderWmRest();`, ctx);
   html = els['wmContent']._html;
-  assert.ok(/wmRestLogSet\('reh_3'\)/.test(html), "after reh_1 finishes, reh_3 becomes active");
+  assert.ok(/wmRestLogSet\('reh_3'/.test(html), "after reh_1 finishes, reh_3 becomes active");
   const rehIdx = vm.runInContext(`getWorkout('upperA').exercises.findIndex(e=>e.id==='reh_1')`, ctx);
   assert.notEqual(vm.runInContext(`_wmNextPendingIdx(${rehIdx - 1})`, ctx), rehIdx, "completed accessory is skipped when advancing");
 });
@@ -1218,8 +1218,8 @@ test("Phase 93: rest offers the antagonist partner; logging it carries partial p
   vm.runInContext(`renderWmRest()`, ctx);
   let html = els['wmContent']._html;
   assert.ok(/Superset/.test(html), "superset card is shown");
-  assert.ok(/wmRestLogSet\('u5'\)/.test(html), "u4's antagonist partner (u5 Lat Pulldown) is offered");
-  assert.ok(!/wmRestLogSet\('u4'\)/.test(html), "the lift being rested is not offered as its own partner");
+  assert.ok(/wmRestLogSet\('u5'/.test(html), "u4's antagonist partner (u5 Lat Pulldown) is offered");
+  assert.ok(!/wmRestLogSet\('u4'/.test(html), "the lift being rested is not offered as its own partner");
   // Phase 98: superset takes priority — the band/mobility panel is hidden while a superset is on offer.
   assert.ok(!/Knock out accessories|Rest-gap mobility/.test(html), "bands + mobility hidden while a superset is offered");
   // Log ONE set of the partner during the rest → real viaRest set, no timer touched.
@@ -1232,6 +1232,17 @@ test("Phase 93: rest offers the antagonist partner; logging it carries partial p
   // Partial carry: u5 has 3 sets, one done → main flow resumes at set index 1 ("2 sets left").
   assert.equal(vm.runInContext(`_wmFirstUndoneSetIdx('u5')`, ctx), 1, "resumes at set 2 (one already done during rest)");
   assert.equal(vm.runInContext(`_wmExComplete('u5')`, ctx), false, "u5 still pending after 1 of 3 sets");
+  // Phase 120: effort-tagged rest-gap logging + within-session autoreg of the partner's next set.
+  assert.ok(/wmRestLogSet\('u5','easy'\)/.test(html) && /wmRestLogSet\('u5','tough'\)/.test(html), "superset card logs with an effort tag (easy/solid/tough buttons)");
+  vm.runInContext(`wm.restStarted=2; renderWmRest();`, ctx);
+  html = els['wmContent']._html;
+  vm.runInContext(`document.getElementById('wm-acc-reps-u5').value='12'; document.getElementById('wm-acc-kg-u5').value='60'; wmRestLogSet('u5','tough');`, ctx);
+  assert.equal(vm.runInContext(`getExLogForDate('${T}').u5.sets[1].effort`, ctx), "tough", "effort stored on the rest-gap set");
+  vm.runInContext(`wm.restStarted=3; renderWmRest();`, ctx);
+  html = els['wmContent']._html;
+  assert.ok(/Hold 60kg|Stay at 60kg/.test(html), "next set autoregulated off the tough set just done (hold)");
+  assert.ok(/id="wm-acc-kg-u5"[^>]*value="60"/.test(html), "kg prefilled from the set just done, not last week");
+  assert.equal(vm.runInContext(`_wmFirstUndoneSetIdx('u5')`, ctx), 2, "main flow now resumes at set 3");
   // Heavy posterior-chain day (Lower B) gets NO superset partner for Hip Thrust.
   vm.runInContext(`wm={active:true,session:'lowerB',exIdx:0,setIdx:0,mode:'rest',restTarget:90,restStarted:9};`, ctx);
   vm.runInContext(`STATE.profile.programId='upper-lower-5d-fixed';`, ctx);

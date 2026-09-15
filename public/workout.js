@@ -2701,8 +2701,9 @@ function updateWmRest(){
 // gated, and one filler item per rest (shared lock with the accessory panel).
 const SUPERSET_PAIRS = {
   upper:  [['u1','u3'], ['u4','u5'], ['u6','u7']],
-  upperA: [['u1','u3'], ['u4','u5']],
-  upperB: [['u2','h3'], ['u4','u8'], ['u6','u7']],
+  // Phase 120: side/rear delt pair + the ab pair so the small stuff rides in rests.
+  upperA: [['u1','u3'], ['u4','u5'], ['h5','rev_fly'], ['ab_crunch_cable','ab_knee_raise']],
+  upperB: [['u2','h3'], ['u4','u8'], ['u6','u7'], ['ab_crunch_cable','ab_knee_raise']],
   lower:  [['l3','l4']],
   lowerA: [['l1','l4']],
   full:   [['u1','u3'], ['u4','u5'], ['u6','u7']],
@@ -2758,26 +2759,47 @@ function _wmSupersetCardHTML(curId){
   const lastKg=(refSet&&parseFloat(refSet.kg))||null;
   const defKg=(sug&&sug.kg!=null)?sug.kg:(lastKg!=null?lastKg:'');
   const lastRef=refSet?`last ${refSet.kg?refSet.kg+'kg×':''}${refSet.reps||'—'}`:'';
+  // Phase 120: after the first rest-gap set, prefill the next one from THAT set.
+  const ar=_wmRestAutoreg(ex,sets);
+  const kgPre=(ar&&ar.kg!=null)?ar.kg:defKg, repsPre=(ar&&ar.reps)?ar.reps:defReps;
+  const arLine=ar?`<div style="font-size:11px;color:${ar.dir==='up'?'var(--lime)':ar.dir==='down'?'var(--orange)':'var(--text2)'};margin-top:6px;line-height:1.4;">${ar.msg}</div>`:'';
   const rows=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
         <div style="font-size:14px;color:var(--text);font-weight:700;min-width:0;">${ex.name}</div>
         <div style="font-size:11px;color:var(--text2);flex-shrink:0;">${target}×${ex.reps}${lastRef?` · <span style="color:var(--text3);">${lastRef}</span>`:''} · <span style="color:var(--lime);">${doneCount}/${target} done</span></div>
-      </div>
+      </div>${arLine}
       <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:5px;">
           <button onclick="_wmAccStep('reps-${ex.id}',-1)" style="${btnS}">−</button>
-          <input id="wm-acc-reps-${ex.id}" type="number" inputmode="numeric" value="${defReps}" style="${inS}">
+          <input id="wm-acc-reps-${ex.id}" type="number" inputmode="numeric" value="${repsPre}" style="${inS}">
           <span style="font-size:11px;color:var(--text3);">reps</span>
           <button onclick="_wmAccStep('reps-${ex.id}',1)" style="${btnS}">+</button>
         </div>
         <div style="display:flex;align-items:center;gap:5px;">
           <button onclick="_wmAccStep('kg-${ex.id}',-2.5)" style="${btnS}">−</button>
-          <input id="wm-acc-kg-${ex.id}" type="number" step="0.5" inputmode="decimal" value="${defKg}" style="${inS}">
+          <input id="wm-acc-kg-${ex.id}" type="number" step="0.5" inputmode="decimal" value="${kgPre}" style="${inS}">
           <span style="font-size:11px;color:var(--text3);">kg</span>
           <button onclick="_wmAccStep('kg-${ex.id}',2.5)" style="${btnS}">+</button>
         </div>
-        <button onclick="wmRestLogSet('${ex.id}')" style="margin-left:auto;padding:9px 14px;background:rgba(200,255,0,.14);border:1px solid var(--lime);border-radius:8px;color:var(--lime);font-size:12px;font-weight:700;cursor:pointer;">✓ Log set</button>
+        ${_wmRestLogButtonsHTML(ex.id)}
       </div>`;
   return _wmSupersetShellHTML(ex,rows);
+}
+// Phase 120: rest-gap sets are logged WITH an effort tag — the three buttons log the
+// set in one tap (easy / solid / tough), so superset + accessory sets feed the same
+// progression rules as main-flow sets (a tough set holds, easy topped-range bumps).
+function _wmRestLogButtonsHTML(exId){
+  const b=(eff,label,col)=>`<button onclick="wmRestLogSet('${exId}','${eff}')" style="padding:9px 10px;background:rgba(200,255,0,.10);border:1px solid ${col};border-radius:8px;color:${col};font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">${label}</button>`;
+  return `<div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
+      <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">log ·</span>
+      ${b('easy','😌 easy','var(--green)')}${b('solid','💪 solid','var(--lime)')}${b('tough','🔥 tough','var(--orange)')}
+    </div>`;
+}
+// Phase 120: the partner's NEXT set is autoregulated off the set you just did in the
+// previous rest gap (same double-progression as the main flow), not just last week.
+function _wmRestAutoreg(ex,todaySets){
+  const last=todaySets.length?todaySets[todaySets.length-1]:null;
+  if(!last||typeof _autoregNextSet!=='function')return null;
+  return _autoregNextSet(ex,last,todaySets.length);
 }
 function _wmSupersetShellHTML(ex,inner){
   return `<div style="background:rgba(61,155,255,.06);border:1px solid rgba(61,155,255,.3);border-radius:12px;padding:12px 14px;margin:0 0 14px;">
@@ -2867,10 +2889,13 @@ function _wmAccessoryRowsHTML(currentExId){
     const lastKg=(refSet&&parseFloat(refSet.kg))||null;
     const defKg=weighted?((sug&&sug.kg!=null)?sug.kg:(lastKg!=null?lastKg:'')):'';
     const lastRef=refSet?`last ${refSet.kg?refSet.kg+'kg×':''}${refSet.reps||'—'}`:'';
+    // Phase 120: weighted accessories autoregulate their next set off the last one today.
+    const ar=weighted?_wmRestAutoreg(ex,sets):null;
+    const kgPre=(ar&&ar.kg!=null)?ar.kg:defKg, repsPre=(ar&&ar.reps)?ar.reps:defReps;
     const kgControl=weighted?`
         <div style="display:flex;align-items:center;gap:5px;">
           <button onclick="_wmAccStep('kg-${ex.id}',-2.5)" style="${btnS}">−</button>
-          <input id="wm-acc-kg-${ex.id}" type="number" step="0.5" inputmode="decimal" value="${defKg}" style="${inS}">
+          <input id="wm-acc-kg-${ex.id}" type="number" step="0.5" inputmode="decimal" value="${kgPre}" style="${inS}">
           <span style="font-size:11px;color:var(--text3);">kg</span>
           <button onclick="_wmAccStep('kg-${ex.id}',2.5)" style="${btnS}">+</button>
         </div>`:'';
@@ -2882,12 +2907,12 @@ function _wmAccessoryRowsHTML(currentExId){
         <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:5px;">
             <button onclick="_wmAccStep('reps-${ex.id}',-1)" style="${btnS}">−</button>
-            <input id="wm-acc-reps-${ex.id}" type="number" inputmode="numeric" value="${defReps}" style="${inS}">
+            <input id="wm-acc-reps-${ex.id}" type="number" inputmode="numeric" value="${repsPre}" style="${inS}">
             <span style="font-size:11px;color:var(--text3);">reps</span>
             <button onclick="_wmAccStep('reps-${ex.id}',1)" style="${btnS}">+</button>
           </div>
           ${kgControl}
-          <button onclick="wmRestLogSet('${ex.id}')" style="margin-left:auto;padding:9px 14px;background:rgba(200,255,0,.14);border:1px solid var(--lime);border-radius:8px;color:var(--lime);font-size:12px;font-weight:700;cursor:pointer;">✓ Log set</button>
+          ${_wmRestLogButtonsHTML(ex.id)}
         </div>
       </div>`;
   }).join('')
@@ -3035,8 +3060,9 @@ function _wmAccStep(key,delta){
 // Log one real working set for a rest-gap accessory. Writes into the accessory's
 // own exLog entry (never the resting lift's), marks it done at target set count,
 // and re-renders ONLY the accessory rows so the rest countdown is untouched.
-function wmRestLogSet(exId){
+function wmRestLogSet(exId,effort){
   const w=getWorkout(wm.session);
+  effort=(effort==='easy'||effort==='solid'||effort==='tough')?effort:undefined;
   const ex=(w.exercises||[]).find(e=>e.id===exId);
   if(!ex)return;
   const date=todayStr();
@@ -3051,6 +3077,7 @@ function wmRestLogSet(exId){
   const sets=dayLog[ex.id].sets;
   let idx=0; while(sets[idx]&&sets[idx].done)idx++;
   sets[idx]={kg,reps,done:true,doneAt:Date.now(),setCompletedAt:Date.now(),viaRest:true};
+  if(effort){sets[idx].effort=effort;dayLog[ex.id].effort=effort;} // Phase 120: tagged like a main-flow set
   const target=_effectiveSets(ex);
   const doneCount=sets.filter(s=>s.done).length;
   if(doneCount>=target){
@@ -3070,7 +3097,8 @@ function wmRestLogSet(exId){
   // Phase 93: keep the superset card in sync with the shared one-per-rest lock.
   const sup=document.getElementById('wm-rest-superset');
   if(sup)sup.innerHTML=_wmSupersetCardHTML(curId);
-  showToast(doneCount>=target?`✓ ${ex.name} complete`:`✓ ${ex.name} · set ${doneCount}/${target} — next set on your next rest`);
+  const effTxt=effort?` · ${effort}`:'';
+  showToast(doneCount>=target?`✓ ${ex.name} complete${effTxt}`:`✓ ${ex.name} · set ${doneCount}/${target}${effTxt} — next set on your next rest`);
 }
 
 // Is an exercise finished for today (all sets done, or deliberately skipped)?
