@@ -624,7 +624,10 @@ function _userOnMounjaro(){
   const rx=/mounjaro|tirzepatide/i;
   const meds=(STATE.profile&&STATE.profile.medications)||[];
   const supps=STATE.supplements||[];
-  return (Array.isArray(meds)&&meds.some(m=>rx.test((m&&m.name)||'')))
+  // Phase 121: a medication with a stop date on/before today is history, not active.
+  const today=todayStr();
+  const active=m=>m&&!(typeof m.stoppedDate==='string'&&m.stoppedDate.slice(0,10)<=today);
+  return (Array.isArray(meds)&&meds.some(m=>active(m)&&rx.test((m&&m.name)||'')))
     ||supps.some(s=>rx.test((s&&s.name)||'')||(s&&s.frequency)==='weekly-wednesday');
 }
 // Configured injection day-of-week (Sun=0…Sat=6) from Coach Settings; falls back

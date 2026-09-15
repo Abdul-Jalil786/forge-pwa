@@ -454,9 +454,11 @@ export function startCron() {
         const pf: any = state.profile || {};
         const supps = state.supplements || [];
         const meds = Array.isArray(pf.medications) ? pf.medications : [];
+        // Phase 121: a GLP-1 with a stop date on/before today is history — no reminder.
+        const _today = ukToday();
         const onGlp1 =
           (Array.isArray(supps) && supps.some((s: any) => glp1Re.test(s?.name || "") || s?.frequency === "weekly-wednesday")) ||
-          meds.some((m: any) => glp1Re.test(m?.name || ""));
+          meds.some((m: any) => glp1Re.test(m?.name || "") && !(typeof m?.stoppedDate === "string" && m.stoppedDate.slice(0, 10) <= _today));
         if (!onGlp1) continue;
         const injDow = typeof pf.glp1InjectionDow === "number" ? pf.glp1InjectionDow : 3;
         if (todayDow !== injDow) continue;

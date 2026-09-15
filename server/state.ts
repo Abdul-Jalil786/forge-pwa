@@ -611,6 +611,9 @@ router.put("/profile/medications", requireAuth, async (req: Request, res: Respon
         dose: String(m.dose || "").trim().slice(0, 60),
         schedule: String(m.schedule || "").trim().slice(0, 120),
         notes: String(m.notes || "").trim().slice(0, 400),
+        // Phase 121: optional stop date — the med stays as history for the coach
+        // (KEY DATES / RECENT CHANGES) but no longer counts as active.
+        ...(/^\d{4}-\d{2}-\d{2}$/.test(String(m.stoppedDate || "")) ? { stoppedDate: String(m.stoppedDate) } : {}),
       };
     }).filter(Boolean);
     const valueJson = JSON.stringify(clean);

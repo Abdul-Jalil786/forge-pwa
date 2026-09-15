@@ -1367,9 +1367,9 @@ function renderMedsList(){
     return;
   }
   el.innerHTML = meds.map((m, i) => `
-    <div onclick="openMedEdit(${i})" style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;">
+    <div onclick="openMedEdit(${i})" style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;${m.stoppedDate ? 'opacity:.6;' : ''}">
       <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:var(--text);">${_esc(m.name)}${m.dose ? ` <span style="font-size:11px;color:var(--text3);font-weight:400;">${_esc(m.dose)}</span>` : ''}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--text);">${_esc(m.name)}${m.dose ? ` <span style="font-size:11px;color:var(--text3);font-weight:400;">${_esc(m.dose)}</span>` : ''}${m.stoppedDate ? ` <span style="font-size:10px;color:var(--orange);font-weight:700;">STOPPED ${_esc(m.stoppedDate)}</span>` : ''}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px;">${_esc(m.schedule || '—')}</div>
         ${m.notes ? `<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4;">${_esc(m.notes.slice(0,80))}${m.notes.length > 80 ? '…' : ''}</div>` : ''}
       </div>
@@ -1386,6 +1386,7 @@ function openMedEdit(idx) {
   document.getElementById('med-dose').value = m.dose || '';
   document.getElementById('med-schedule').value = m.schedule || '';
   document.getElementById('med-notes').value = m.notes || '';
+  const stopEl = document.getElementById('med-stopped'); if (stopEl) stopEl.value = m.stoppedDate || ''; // Phase 121
   document.getElementById('med-delete-btn').style.display = idx === null ? 'none' : 'block';
   openModal('modal-med-edit');
 }
@@ -1411,6 +1412,9 @@ async function saveMedication() {
     schedule: document.getElementById('med-schedule').value.trim(),
     notes: document.getElementById('med-notes').value.trim(),
   };
+  // Phase 121: optional stop date keeps the med as history (coach sees "stopped X on date").
+  const stopVal = (document.getElementById('med-stopped') || {}).value || '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(stopVal)) updated.stoppedDate = stopVal;
   const meds = [..._meds()];
   if (_medEdit.idx === null) meds.push(updated);
   else meds[_medEdit.idx] = updated;

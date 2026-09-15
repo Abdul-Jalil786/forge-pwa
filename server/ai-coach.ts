@@ -18,9 +18,18 @@ export function ageFromDob(dob: any): number | null {
   if (m < 0 || (m === 0 && now.getDate() < b.getDate())) a--;
   return a >= 0 && a < 130 ? a : null;
 }
-// True when the user is on any GLP-1 agonist (reads MEDICATIONS, not a hardcode).
+// Phase 121: a medication with a stoppedDate on/before today is history, not active.
+export function medStopped(m: any, today?: string): boolean {
+  const d = m && typeof m.stoppedDate === "string" ? m.stoppedDate.slice(0, 10) : "";
+  return !!d && d <= (today || ukToday());
+}
+export function activeMeds(meds: any[], today?: string): any[] {
+  return Array.isArray(meds) ? meds.filter((m: any) => m && !medStopped(m, today)) : [];
+}
+// True when the user is CURRENTLY on any GLP-1 agonist (reads MEDICATIONS, not a
+// hardcode; a GLP-1 with a stop date in the past no longer counts).
 export function onGlp1(meds: any[]): boolean {
-  return Array.isArray(meds) && meds.some((m: any) => /mounjaro|tirzepatide|ozempic|wegovy|semaglutide|glp-?1/i.test(m?.name || ""));
+  return activeMeds(meds).some((m: any) => /mounjaro|tirzepatide|ozempic|wegovy|semaglutide|glp-?1/i.test(m?.name || ""));
 }
 const DOW_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -468,6 +477,10 @@ function buildRecentChanges(state: any): string {
   // Skincare frequency-step change (the tretinoin ladder advance resets this).
   const sc = state.skinCare || {};
   if (sc.phaseStartDate) push(sc.phaseStartDate, `Skincare frequency step → phase ${sc.phase || "?"} of 3`);
+  // Phase 121: a stopped medication is an intervention with before/after impact.
+  for (const m of (Array.isArray(profile.medications) ? profile.medications : [])) {
+    if (m && typeof m.stoppedDate === "string" && m.stoppedDate.length >= 10) push(m.stoppedDate, `Stopped medication: ${m.name || "?"}${m.dose ? ` ${m.dose}` : ""}`);
+  }
   if (!items.length) return "";
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // newest first
   const list = items.slice(0, 12).map((it) => {
@@ -502,6 +515,10 @@ function buildKeyDates(state: any): string {
   if (profile.activePhase && profile.activePhase.startDate) {
     add(profile.activePhase.startDate, `Current phase (${profile.activePhase.phase || profile.phase || "?"})`);
   }
+  // Phase 121: medication stop dates (start dates are still not recorded).
+  for (const m of (Array.isArray(profile.medications) ? profile.medications : [])) {
+    if (m && typeof m.stoppedDate === "string" && m.stoppedDate.length >= 10) add(m.stoppedDate, `Stopped ${m.name || "medication"}`);
+  }
   const sc = state.skinCare || {};
   const ret = (Array.isArray(sc.products) ? sc.products : []).find((p: any) => p && p.type === "retinol");
   if (ret && ret.startedDate) add(ret.startedDate, `${ret.name || "Retinoid"} regime start`);
@@ -525,7 +542,7 @@ function buildKeyDates(state: any): string {
     return `  ${it.date}${dd != null ? ` (${dd <= 0 ? "today" : dd + "d ago"})` : ""}: ${it.label}`;
   });
   return [
-    "KEY DATES (foundational start / anchor dates — when the user asks \"when did I start\" or \"how long have I been on\" something, answer from THESE exact dates, never invent one; medication start dates are NOT recorded, so if something isn't listed here say it isn't logged rather than guessing):",
+    "KEY DATES (foundational start / anchor dates — when the user asks \"when did I start\" or \"how long have I been on\" something, answer from THESE exact dates, never invent one; medication START dates are NOT recorded (stop dates are, listed as \"Stopped X\"), so if something isn't listed here say it isn't logged rather than guessing):",
     ...list, "",
   ].join("\n");
 }
@@ -1151,9 +1168,21 @@ export function buildContext(state: any): string {
   if (tdee) lines.push(`  Estimated BMR: ${tdee.bmr} kcal · TDEE (Mifflin-St Jeor × activity factor, excludes training): ${tdee.tdee} kcal/day`);
   else lines.push(`  TDEE estimate unavailable (demographics incomplete — coach should flag this if accuracy matters)`);
   lines.push("");
-  lines.push("MEDICATIONS (factor these into interpretation):");
-  if (meds.length === 0) lines.push("  (none recorded)");
-  else for (const m of meds) lines.push(`  - ${m.name}${m.dose ? ` ${m.dose}` : ""}${m.schedule ? ` · ${m.schedule}` : ""}${m.notes ? ` · ${m.notes}` : ""}`);
+  lines.push("MEDICATIONS (CURRENT — factor these into interpretation):");
+  const _activeMeds = activeMeds(meds);
+  const _stoppedMeds = (Array.isArray(meds) ? meds : []).filter((m: any) => m && medStopped(m));
+  if (_activeMeds.length === 0) lines.push("  (none current)");
+  else for (const m of _activeMeds) lines.push(`  - ${m.name}${m.dose ? ` ${m.dose}` : ""}${m.schedule ? ` · ${m.schedule}` : ""}${m.notes ? ` · ${m.notes}` : ""}`);
+  // Phase 121: stopped medications stay visible as history with the stop date, so
+  // the coach can reason about the post-medication period (e.g. appetite returning
+  // after a GLP-1) instead of assuming the user is still on it.
+  if (_stoppedMeds.length) {
+    lines.push("  STOPPED (history — NOT current; do not apply on-medication rules, DO apply post-medication rules):");
+    for (const m of _stoppedMeds) {
+      const dd = Math.round((new Date(ukToday() + "T12:00:00").getTime() - new Date(m.stoppedDate.slice(0, 10) + "T12:00:00").getTime()) / 86400000);
+      lines.push(`  - ${m.name}${m.dose ? ` ${m.dose}` : ""} — stopped ${m.stoppedDate.slice(0, 10)} (${dd}d / ${(dd / 7).toFixed(1)} wks ago)${m.notes ? ` · ${m.notes}` : ""}`);
+    }
+  }
   // Phase 57: GLP-1 injection day — read from profile field, gated on actually
   // being on a GLP-1 (no hardcoded "Wednesday").
   if (onGlp1(meds)) {
@@ -1772,6 +1801,7 @@ INTERPRETATION RULES:
   - Cite the actual figure and panel date from the BLOOD MARKERS block; never cite a value that isn't there.
 - MEDICATIONS (apply a class rule ONLY for a medication actually listed in the MEDICATIONS block):
   - GLP-1 agonists (Mounjaro / Ozempic / Wegovy / semaglutide / tirzepatide): non-linear weight curves, plateau-then-re-accelerate on dose escalations. Injection-day weight differs systematically from mid-cycle. Don't credit week 1 or panic week 3.
+  - STOPPED GLP-1 (only if a GLP-1 appears under MEDICATIONS → STOPPED with a date): appetite returns over the first 2–6 weeks off the drug and the scale typically rises 1–3 kg in the first fortnight from water + glycogen + gut content — that is NOT fat regain, say so. The deficit now depends on habits, not the drug: protein at every meal, fibre, the meal plan, the eating window. Watch logged intake vs the plan week-over-week and flag creeping intake EARLY. Re-check measured maintenance (ADAPTIVE NUTRITION) 4+ weeks after the stop date before changing targets. Never apply on-GLP-1 rules (injection-day appetite, nausea, low-intake-is-expected) once it is stopped.
   - Statins: muscle soreness common — factor into training feedback before suggesting volume bumps.
   - Metformin: GI tolerance, slight insulin sensitivity boost, mild appetite effect.
   - Other meds: read user notes carefully and apply common sense.

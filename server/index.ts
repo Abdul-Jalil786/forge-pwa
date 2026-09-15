@@ -1369,6 +1369,43 @@ async function fixJayShakeExactMacrosV1() {
 // 211P / 233C / 78F. Targets re-pointed everywhere the app reads them:
 // activePhase (Food-page header), coachTargets floor, dynamicTargets,
 // calsGym/calsRest, macros. Protein floor 180 → 200 (user: "never below 200").
+// Phase 121: Jay stopped Mounjaro (~5 weeks before 2026-09-15 → last Wednesday
+// injection ≈ 2026-08-12). Keep the medication as HISTORY with a stoppedDate (the
+// coach reasons about the post-GLP-1 period from it) and remove the Wednesday
+// supplement-checklist entry so it stops nagging / counting as a missed critical.
+async function stopJayMounjaroV1() {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
+    if (!user) return;
+    const state: any = user.state || {};
+    if (state.jayMounjaroStoppedV1) return;
+    const STOP = "2026-08-12";
+    const rx = /mounjaro|tirzepatide/i;
+    state.profile = state.profile || {};
+    const meds: any[] = Array.isArray(state.profile.medications) ? state.profile.medications : [];
+    let found = false;
+    for (const m of meds) {
+      if (m && rx.test(m.name || "")) {
+        found = true;
+        m.stoppedDate = STOP;
+        m.notes = ((m.notes || "").replace(/\s+$/, "") + ` Stopped ${STOP} (self-managed; no longer on a GLP-1).`).trim().slice(0, 400);
+      }
+    }
+    if (!found) meds.push({ id: "med_mounjaro", name: "Mounjaro", dose: "", schedule: "was weekly Wednesday 18:00", notes: `GLP-1 (tirzepatide). Stopped ${STOP} — no longer on a GLP-1.`, stoppedDate: STOP });
+    state.profile.medications = meds;
+    if (Array.isArray(state.supplements)) {
+      const before = state.supplements.length;
+      state.supplements = state.supplements.filter((s: any) => !(s && (rx.test(s.name || "") || s.frequency === "weekly-wednesday")));
+      console.log(`[migration] stopJayMounjaroV1: removed ${before - state.supplements.length} Mounjaro supplement entr(y/ies)`);
+    }
+    state.jayMounjaroStoppedV1 = true;
+    await prisma.user.update({ where: { id: user.id }, data: { state } });
+    console.log(`[migration] stopJayMounjaroV1: Mounjaro marked stopped ${STOP} (${found ? "existing" : "new history"} medication entry)`);
+  } catch (err) {
+    console.error("[migration] stopJayMounjaroV1 failed:", err);
+  }
+}
+
 async function seedJayPlan2500V1() {
   try {
     const user = await prisma.user.findUnique({ where: { email: "jay@afjltd.co.uk" } });
@@ -2807,6 +2844,7 @@ const server = app.listen(PORT, async () => {
   await updateJayPostShake2ScoopsV1(); // Phase 96: post-workout shake → 2 scoops (40g protein)
   await fixJayShakeExactMacrosV1(); // Phase 111: exact product macros (231/41/17/1.3) + edited:true, recompute-proof
   await seedJayPlan2500V1(); // Phase 113: flat 2,500 kcal daily plan (oats/basmati bumps, edited:true) + targets
+  await stopJayMounjaroV1(); // Phase 121: Mounjaro stopped 2026-08-12 — history entry + Wednesday checklist item removed
   await fixJayLegPressSledV1();
   await seedCoachDynamicFieldsV1();
   await switchAbdulToTretinoinV1();

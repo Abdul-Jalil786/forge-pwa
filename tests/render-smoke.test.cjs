@@ -2162,3 +2162,25 @@ test("Phase 117: Today header + progress card are phase-aware and never print un
   ctx.renderMore();
   assert.ok(!/undefinedkg/.test(els["page-more"]._html), "profile settings never shows undefinedkg");
 });
+
+test("Phase 121: a medication with a stop date is history — Mounjaro UI gate off, modal round-trips the date", () => {
+  const { ctx } = bootApp();
+  seed(ctx);
+  vm.runInContext("todayStr=function(){return '2026-09-15';}; STATE.supplements=[]; STATE.profile.medications=[{id:'m1',name:'Mounjaro',dose:'5mg',schedule:'Wed',notes:''}];", ctx);
+  assert.equal(ctx._userOnMounjaro(), true, "active GLP-1 → on");
+  vm.runInContext("STATE.profile.medications[0].stoppedDate='2026-08-12'", ctx);
+  assert.equal(ctx._userOnMounjaro(), false, "stopped GLP-1 → off (no Wednesday banners / injection tick)");
+  vm.runInContext("STATE.profile.medications[0].stoppedDate='2026-12-01'", ctx);
+  assert.equal(ctx._userOnMounjaro(), true, "a future stop date is still active");
+  vm.runInContext("STATE.profile.medications[0].stoppedDate='2026-08-12'; renderMedsList(); openMedEdit(0);", ctx);
+  assert.equal(ctx.document.getElementById("med-stopped").value, "2026-08-12", "stop date populated in the modal");
+  assert.ok(/STOPPED 2026-08-12/.test(ctx.document.getElementById("meds-list")._html), "list shows the stop date");
+  const calls = [];
+  ctx.fetch = (url, opts) => { calls.push({ url, opts }); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ success: true }) }); };
+  ctx.localStorage.setItem("forge_token", "t");
+  ctx.document.getElementById("med-stopped").value = "2026-08-13";
+  return ctx.saveMedication().then(() => {
+    const put = calls.find(c => /profile\/medications$/.test(c.url));
+    assert.equal(JSON.parse(put.opts.body).medications[0].stoppedDate, "2026-08-13", "stop date saved through the medications endpoint");
+  });
+});
