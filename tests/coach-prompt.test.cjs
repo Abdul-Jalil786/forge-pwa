@@ -75,3 +75,14 @@ test("Phase 116: AI routes are budgeted per feature; cron paths honour the toggl
   const budget = fs.readFileSync(path.join(__dirname, "..", "server", "ai-budget.ts"), "utf8");
   assert.ok(/reason: "disabled"/.test(budget) && /aiFeatureAllowed\(limits, feature\)/.test(budget), "disabled features are refused before being charged");
 });
+
+// Phase 121: stopped medications are history, never "current".
+test("Phase 121: onGlp1 only counts ACTIVE meds; stopped meds get their own block + rules; cron reminder honours stoppedDate", () => {
+  assert.ok(/export function activeMeds\(/.test(coach) && /export function medStopped\(/.test(coach));
+  assert.ok(/export function onGlp1\(meds: any\[\]\): boolean \{\s*return activeMeds\(meds\)/.test(coach), "onGlp1 filters through activeMeds");
+  assert.ok(/STOPPED \(history — NOT current/.test(coach), "context lists stopped meds separately");
+  assert.ok(/STOPPED GLP-1 \(only if a GLP-1 appears under MEDICATIONS → STOPPED/.test(coach), "post-GLP-1 rule is gated on the stopped block");
+  assert.ok(/Stopped medication: /.test(coach) && /`Stopped \$\{m\.name \|\| "medication"\}`/.test(coach), "stop dates reach RECENT CHANGES + KEY DATES");
+  const cron = fs.readFileSync(path.join(__dirname, "..", "server", "cron.ts"), "utf8");
+  assert.ok(/stoppedDate\.slice\(0, 10\) <= _today/.test(cron), "injection reminder skips a stopped GLP-1");
+});

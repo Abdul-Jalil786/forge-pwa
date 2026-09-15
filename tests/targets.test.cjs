@@ -1,7 +1,7 @@
 // Phase 42a: nutrition targets engine tests — run with `npm test` (node --test, no deps).
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { computeTargets, computeWaterTarget, pickProgramId, programOptionsFor } = require("../public/targets.js");
+const { computeTargets, computeWaterTarget, pickProgramId, programOptionsFor, activityFactorFor, PROGRAM_DAYS } = require("../public/targets.js");
 
 // Jay's seeded profile.targetOverrides — must match seedJayTargetOverridesV1 in server/index.ts
 const JAY_OVERRIDES = {
@@ -94,7 +94,7 @@ test("lean-bulk eats above TDEE", () => {
     weight: 70, sessionType: "rest",
     age: 24, heightCm: 178, sex: "male", phase: "lean-bulk", activityLevel: "moderate",
   });
-  assert.equal(t.calories, Math.round(t.tdee * 1.10));
+  assert.equal(t.calories, Math.round(t.tdee + Math.max(t.tdee * 0.10, 300)), "Phase 119: surplus = max(10%, 300 kcal)");
 });
 
 test("maintenance eats at TDEE", () => {
@@ -157,7 +157,7 @@ test("Phase 114: a pinned macros override is returned verbatim for every session
   const computed = computeTargets({ ...base, sessionType: "rest", overrides: { macros: { calories: 0 } } });
   assert.equal(computed.overridden, undefined);
   assert.notEqual(computed.calories, 3100);
-  assert.equal(computed.protein, 135, "lean-bulk default protein untouched");
+  assert.equal(computed.protein, 150, "lean-bulk default protein computed (Phase 119: 2.0 g/kg)");
 });
 
 // Phase 118: the wizard's programme auto-pick is phase-aware and never hands a new
@@ -175,4 +175,26 @@ test("Phase 118: pickProgramId is phase-aware; programOptionsFor omits the owner
   assert.ok(!programOptionsFor("gym").includes("upper-lower-5d-fixed"), "owner split not in the wizard list");
   assert.ok(programOptionsFor("gym").includes("hyper-5d-bulk") && programOptionsFor("gym").includes("hyper-5d-cut"));
   assert.deepEqual(programOptionsFor("home"), ["home-3d"]);
+});
+
+// Phase 119: the wizard asks about activity OUTSIDE the gym, so training sessions
+// add to the multiplier instead of being assumed inside it.
+test("Phase 119: training days raise the activity multiplier; lean-bulk gets a real surplus; Jay's override untouched", () => {
+  assert.equal(activityFactorFor("sedentary", 0), 1.2);
+  assert.equal(+activityFactorFor("sedentary", 5).toFixed(2), 1.45);
+  assert.equal(activityFactorFor("very-active", 5), 1.9, "capped at 1.9");
+  assert.equal(PROGRAM_DAYS["hyper-5d-bulk"], 5);
+  assert.equal(PROGRAM_DAYS["upper-lower-4d"], 3.5);
+  const steve = { weight: 72, age: 21, heightCm: 178, sex: "male", phase: "lean-bulk", activityLevel: "sedentary" };
+  const before = computeTargets({ ...steve, sessionType: "upper" });
+  const after = computeTargets({ ...steve, sessionType: "upper", trainingDays: 5 });
+  assert.ok(after.tdee > before.tdee * 1.15, `5 sessions/wk lifts TDEE ${before.tdee} → ${after.tdee}`);
+  assert.ok(after.calories >= 2800 && after.calories <= 3100, "72kg 21yo desk job + 5 gym days bulks on ~2.8–3.1k on a training day: " + after.calories);
+  assert.equal(after.protein, 144, "lean-bulk protein 2.0 g/kg");
+  assert.ok(after.calories - after.tdee >= 300 + 100, "surplus ≥300 + the training-day bonus");
+  // owner parity: activityFactor override wins, no training-day bump
+  const jay = computeTargets({ weight: 100, leanMass: 72, sessionType: "upper", ...JAY, trainingDays: 5 });
+  const jay0 = computeTargets({ weight: 100, leanMass: 72, sessionType: "upper", ...JAY });
+  assert.equal(jay.calories, jay0.calories);
+  assert.equal(jay.tdee, jay0.tdee);
 });

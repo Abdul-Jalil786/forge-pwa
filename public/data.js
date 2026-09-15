@@ -624,7 +624,10 @@ function _userOnMounjaro(){
   const rx=/mounjaro|tirzepatide/i;
   const meds=(STATE.profile&&STATE.profile.medications)||[];
   const supps=STATE.supplements||[];
-  return (Array.isArray(meds)&&meds.some(m=>rx.test((m&&m.name)||'')))
+  // Phase 121: a medication with a stop date on/before today is history, not active.
+  const today=todayStr();
+  const active=m=>m&&!(typeof m.stoppedDate==='string'&&m.stoppedDate.slice(0,10)<=today);
+  return (Array.isArray(meds)&&meds.some(m=>active(m)&&rx.test((m&&m.name)||'')))
     ||supps.some(s=>rx.test((s&&s.name)||'')||(s&&s.frequency)==='weekly-wednesday');
 }
 // Configured injection day-of-week (Sun=0…Sat=6) from Coach Settings; falls back
@@ -2186,8 +2189,18 @@ function calculateDynamicTargets(weight,leanMass,sessionType){
     weight,leanMass,sessionType,
     age:personal.age,heightCm:personal.heightCm,sex:personal.sex,
     phase:personal.phase,activityLevel:personal.activityLevel,
+    trainingDays:getTrainingDaysPerWeek(),
     overrides:p.targetOverrides,
   });
+}
+// Phase 119: weekly training sessions for the activity multiplier — from the
+// programme (PROGRAM_DAYS), else the wizard's days-a-week answer, else 0.
+function getTrainingDaysPerWeek(){
+  const p=STATE.profile||{};
+  const pd=(typeof PROGRAM_DAYS!=='undefined')?PROGRAM_DAYS[p.programId]:null;
+  if(pd!=null)return pd;
+  const per=p.personal||{};
+  return +per.trainingDays||0;
 }
 // Recompute targets for all three session types + persist to profile
 function applyDynamicTargets(){

@@ -93,10 +93,17 @@ function obToggleWindow(){
   b.style.color=obData.eatingWindowEnabled?'var(--lime)':'var(--text2)';
 }
 
+// Phase 119: sessions/week for the activity multiplier — the chosen programme's
+// day count, else the days-a-week answer.
+function _obTrainingDays(){
+  const pd=(typeof PROGRAM_DAYS!=='undefined')?PROGRAM_DAYS[obData.programId]:null;
+  return pd!=null?pd:(+obData.daysPerWeek||0);
+}
 function renderObConfirm(){
   const area=document.getElementById('ob-confirm-area');
   if(!area)return;
   const base={age:obData.age,heightCm:obData.heightCm,sex:obData.sex,phase:obData.phase,activityLevel:obData.activityLevel,
+    trainingDays:_obTrainingDays(),
     weight:obData.weight,leanMass:obData.bf!=null?obData.weight*(1-obData.bf/100):null};
   const rest=computeTargets({...base,sessionType:'rest'});
   const train=computeTargets({...base,sessionType:'upper'});
@@ -155,7 +162,7 @@ async function obStep(step){
       startBF:obData.bf!=null?obData.bf:undefined,
       startLBM:obData.bf!=null?Math.round(obData.weight*(1-obData.bf/100)*100)/100:undefined,
       targetWeight:obData.targetWeight||undefined,
-      personal:{age:obData.age,heightCm:obData.heightCm,sex:obData.sex,activityLevel:obData.activityLevel,phase:obData.phase},
+      personal:{age:obData.age,heightCm:obData.heightCm,sex:obData.sex,activityLevel:obData.activityLevel,phase:obData.phase,trainingDays:+obData.daysPerWeek||undefined},
       programId:obData.programId,
       // Phase 115: fixed-weekday programmes anchor to today; the 21+ programmes
       // also get their deload cadence + Mon–Fri session times.
@@ -179,7 +186,7 @@ async function obStep(step){
     // from ordinary foods and scaled to the computed training-day targets (no AI,
     // no key). Before this a new user saw no Food plan at all.
     if(!STATE.mealPlan&&typeof buildStarterMealPlan==='function'){
-      const sp=_starterPlanFromTargets({age:obData.age,heightCm:obData.heightCm,sex:obData.sex,phase:obData.phase,activityLevel:obData.activityLevel,weight:obData.weight,leanMass:obData.bf!=null?obData.weight*(1-obData.bf/100):null});
+      const sp=_starterPlanFromTargets({age:obData.age,heightCm:obData.heightCm,sex:obData.sex,phase:obData.phase,activityLevel:obData.activityLevel,trainingDays:_obTrainingDays(),weight:obData.weight,leanMass:obData.bf!=null?obData.weight*(1-obData.bf/100):null});
       if(sp)STATE.mealPlan=sp;
     }
     if(obData.weighMethod==='boditrax'){
@@ -1360,9 +1367,9 @@ function renderMedsList(){
     return;
   }
   el.innerHTML = meds.map((m, i) => `
-    <div onclick="openMedEdit(${i})" style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;">
+    <div onclick="openMedEdit(${i})" style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;${m.stoppedDate ? 'opacity:.6;' : ''}">
       <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:var(--text);">${_esc(m.name)}${m.dose ? ` <span style="font-size:11px;color:var(--text3);font-weight:400;">${_esc(m.dose)}</span>` : ''}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--text);">${_esc(m.name)}${m.dose ? ` <span style="font-size:11px;color:var(--text3);font-weight:400;">${_esc(m.dose)}</span>` : ''}${m.stoppedDate ? ` <span style="font-size:10px;color:var(--orange);font-weight:700;">STOPPED ${_esc(m.stoppedDate)}</span>` : ''}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px;">${_esc(m.schedule || '—')}</div>
         ${m.notes ? `<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4;">${_esc(m.notes.slice(0,80))}${m.notes.length > 80 ? '…' : ''}</div>` : ''}
       </div>
@@ -1379,6 +1386,7 @@ function openMedEdit(idx) {
   document.getElementById('med-dose').value = m.dose || '';
   document.getElementById('med-schedule').value = m.schedule || '';
   document.getElementById('med-notes').value = m.notes || '';
+  const stopEl = document.getElementById('med-stopped'); if (stopEl) stopEl.value = m.stoppedDate || ''; // Phase 121
   document.getElementById('med-delete-btn').style.display = idx === null ? 'none' : 'block';
   openModal('modal-med-edit');
 }
@@ -1404,6 +1412,9 @@ async function saveMedication() {
     schedule: document.getElementById('med-schedule').value.trim(),
     notes: document.getElementById('med-notes').value.trim(),
   };
+  // Phase 121: optional stop date keeps the med as history (coach sees "stopped X on date").
+  const stopVal = (document.getElementById('med-stopped') || {}).value || '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(stopVal)) updated.stoppedDate = stopVal;
   const meds = [..._meds()];
   if (_medEdit.idx === null) meds.push(updated);
   else meds[_medEdit.idx] = updated;
@@ -1854,7 +1865,10 @@ async function createStarterPlan(){
   const bf=(typeof getCurrentBf==='function')?getCurrentBf():null;
   const phase=per.phase||p.phase||(p.activePhase&&p.activePhase.phase)||'maintenance';
   if(!per.age||!per.heightCm||!per.sex||!w){showToast('Fill in Personal Profile (age, height, sex) first');return;}
-  const sp=_starterPlanFromTargets({age:per.age,heightCm:per.heightCm,sex:per.sex,phase,activityLevel:per.activityLevel||'moderate',weight:w,leanMass:bf?w*(1-bf/100):null,overrides:p.targetOverrides});
+  // Phase 119: refresh the stored targets with the current engine first, so the
+  // Food-page numbers and the plan agree.
+  if(typeof applyDynamicTargets==='function')applyDynamicTargets();
+  const sp=_starterPlanFromTargets({age:per.age,heightCm:per.heightCm,sex:per.sex,phase,activityLevel:per.activityLevel||'moderate',trainingDays:(typeof getTrainingDaysPerWeek==='function')?getTrainingDaysPerWeek():0,weight:w,leanMass:bf?w*(1-bf/100):null,overrides:p.targetOverrides});
   if(!sp||!sp.meals.length){showToast('Could not build a plan from your profile');return;}
   const prev=STATE.mealPlan;
   STATE.mealPlan=sp;
